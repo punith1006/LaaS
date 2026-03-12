@@ -1,0 +1,269 @@
+I am the owner of a small software services agency (startup). I have limited personal knowledge of networking, cloud infrastructure, and virtualization. You are a **senior solutions architect, product manager, and technical consultant** with deep expertise in networking, cloud, IT infrastructure, virtualization, and security.
+
+This project is critical to the survival and growth of my agency. There is no margin for error, no overlooked considerations.
+
+First completely go through each and every line, detail, notes and consideration i have mentioned below to understand the project / solution to be built, its expectations and outcomes and then make a research plan per section. 
+There is also a research doc available ".cursor\plans\laas_platform_architecture_fbe78c48.plan.md", go through, dont get baised on treat it as absolutely true, take its learning and augement ur research flow / plan
+Research online to gain as much information as required of the technicalities, proven implementations of similar such projects or solutions, re-iterate and critically reflect and evaluate your findings and understandings over multiple passes to provide the best solution implementation for the project
+Look up for the up-to-date techniques, methodologies, guides, best way to implement this project to ensure max success rate
+
+---
+
+## THE PROJECT
+My client owns 4 high-performance on-premises machines. The goal is to build a **Lab as a Service (LaaS) platform** that commercially monetizes these machines by extending them remotely to a diaspora of end users — university students (multiple universities), faculty, researchers, engineers. And to public who need temporary compute for some workloads. This is the client's revenue model.
+
+The platform / solution I build must handle all of this end-to-end: infrastructure, virtualization, user access, session management, billing, admin visibility, and audit logging and other functions that are imperative to such solutions
+
+there are 2 modes of engagement:
+
+1. The  full GUI / CLI based remote usage of the system to run the proprietary software installed in these machines (stateful, which means the data of the session is persisted , its essentially like a remote personal computer)
+2. Ephemeral session for user are want the compute for temporary bases, interaction mode thru CLI / jupyter notebook (what ever they choose). the public users can only spin up such instance (not the stateful ones)
+
+What i mean or expect by stateful machine ((this expectation is important, please think through clearly))
+
+They' ll have acess to one stateful machine, essentially their remote personal compute where the config of this machine changes based on the chosen spec config before starting the session or machine.
+lets say i am an user called Punith , i will launch my stateful machine (remote personal computer), which delivers me a new computer on first boot (in my whole membership with the solution) essentially on which i can install apps, add files, delete files and so on, but i should not be able to delete anything that was installed as base in that computer . (this is very important as this is the use case for the members of the platforms , where base computer will have its all the necessary software's, configs and so on) each user will have stateful 15GB storage for their personal computer regardless of what system spec they subscribe to.
+
+
+these are machine config offerings, and the user will be priced accordingly : 
+one complete machine for a user (solely for them, including full GPU access), or multiple stateful CPU-only GUI / CLI instances, or multiple ephemeral instances (CLI / jupyter notebook, with optional GPU time-slicing). combination can be anything!! based on the available resources and predefined machine configs it should be seamless !!
+
+Very Important:
+The provision system's architecture should allow for system virtualization to allow concurrent session (for both the above mentioned usecase) while having strong disk partition (for the mentioned use cases, this is a hard partition to keep the stateful usecase away from emphemeral usecase so that emphemeral session corruption doesnt ruin the disk data of the part of the system that has proprietory softwares and user datas).
+
+Should provide the best isolation between concurrent sessions, memory, process, data isolation (look for the approaches which best suites these)! so that any one failure doesnt corrupt anything else!.and one user of a session doesnt get affected by others or one fault in the session doesn't ruin or affect the system!!
+
+---
+
+## HARDWARE SPECIFICATIONS (4 identical machines)
+
+| Component | Model |
+|---|---|
+| CPU | AMD Ryzen 9 9950X3D (16 cores / 32 threads, 3D V-Cache) |
+| Motherboard | ASUS ProArt X670E-Creator WiFi DDR5 |
+| GPU | Zotac RTX 5090 Solid OC 32GB |
+| RAM | G.SKILL DDR5 Trident Z5 NEO 6000MHz 64GB (2×32GB) CL30 |
+| Storage | Samsung 990 EVO Plus NVMe 2TB (7250 MB/s) |
+| PSU | Corsair AX1600i 1600W |
+| Cabinet | Corsair 3500X (3 ARGB fans) |
+| Cooler | Corsair Nautilus RS ARGB 360mm AIO |
+
+**Fleet total:** 4 nodes × (16C/64GB/32GB VRAM/2TB NVMe) = 64 cores, 256GB RAM, 128GB VRAM, 8TB NVMe + A small NFS OR NAS
+
+
+## THE USER MODEL — 
+
+### Account Structure
+- Every user (university member) will **one individual account** with a unique identity (e.g., `priya@cs.university.ac.in`)
+- Semester/department/role is a **Keycloak group** (authorization label), NOT a login credential. i am not sure of keycloak whether the universities have it or not.
+- Shared logins are explicitly rejected — individual accounts are non-negotiable
+- Users authenticate via **university SSO** (Keycloak federated with university Google Workspace or LDAP) — same credentials as their college portal
+- for public users (who are not associated members of university and want temporary compute, its should have oauth or sso with google (for emphermeal only interactions)
+
+### OS Choice (Chosen Once at Registration) - for the first time when the user is building there stateful system
+- Ubuntu 22.04 LTS for now! and i ll provide other distros later
+- This is their environment for their entire membership
+- They can switch OS at any time, BUT this **permanently wipes their entire 15GB personal storage** — requires explicit typed confirmation ("DELETE") as consent
+- There is no dual-OS — one user, one OS (one personal computer), one persistent environment
+
+### Storage — Final Model
+- Each user gets exactly **15GB of personal persistent storage** — their "personal layer"
+- This is an LVM thin volume (`lv_user_<uid>`) on VG_STATEFUL
+- It contains: their home directory (`/home/<uid>/` on Linux), their saved files, their personal settings, their project work
+- **The base VM image is NOT counted in their 15GB** — it is a separate read-only shared layer
+- 15GB is a hard limit enforced at the LVM volume level — cannot be exceeded
+- Storage persists across ALL sessions, ALL compute configs, INDEFINITELY (for their membership tenure)
+- Storage is OS-specific: if they switch OS, the old 15GB is wiped and a new 15GB begins fresh
+
+### Base VM Images (Shared, Read-Only, Maintained by Platform)
+- **One base images exist** on the platform: (this is an estimate or an example)
+  - `lv_base_linux` (~60GB): Ubuntu 22.04 LTS + MATLAB, Python, CUDA toolkit, Blender, development tools
+- These are **read-only** — no user can modify them
+- They are **replicated on all 4 nodes**
+- A software update to the base image = every user gets it on their next session automatically
+- Users cannot install system-level software (no admin rights in VM); only user-profile-level changes are saved to their 15GB layer
+
+### Session Mechanics -> (think this through critically, and check if there are better ways to do it or if this is the best approach)
+- When a session launches: a **thin LVM clone** of the base image is created for that session + user's 15GB volume is mounted into the VM
+- When a session ends: the thin clone of the base image is **destroyed** (any system-level changes gone — clean slate)
+- The user's 15GB personal volume: **always preserved**
+- This means: same software environment every session (base image), personal files always there (15GB layer)
+
+---
+
+## TWO ENGAGEMENT MODES
+
+### Mode 1 — Stateful GUI Desktop (Persistent, CPU-Only)
+- Full remote desktop experience (Linux GUI via software rendering + xrdp/Guacamole in browser) — Linux based distro as OS for now!
+- CPU-only VMs (no GPU) — sufficient for MATLAB computation, Python coding, office work, light CAD, development tools
+- Users who need GPU must use Tier 1 (Full Machine, exclusive) or Tier 3 ephemeral GPU containers
+- User's 15GB personal layer persists across all sessions
+- Multiple users can run stateful GUI sessions simultaneously on the same physical machine (each in their own isolated KVM VM)
+- Hardware-level isolation (AMD-V): absolute process, memory, and data isolation between concurrent VMs
+- Users also have CLI access within their stateful environment
+
+### Mode 2 — Ephemeral Compute Sessions (Temporary)
+- Jupyter Notebook, Code-Server (VS Code in browser), or SSH CLI
+- Session data (scratch) is wiped after session ends
+- The ephemeral instance will have pre-defined capacity (based on the config chosen by the user) — so their notebooks and code files are persistent even though the session itself is ephemeral
+- for the public users, their work like the jupyter file will be saved in their account. (like how google colab operates), they can essentially spin a compute for this jupyter notebook if they want to.!!
+- Available as CPU-only or with GPU time-slicing (via Docker containers using CUDA MPS + HAMi-core for software-enforced VRAM limits). GPU sharing in containers has weaker isolation than VMs — acceptable for temporary/ephemeral workloads but documented to users.
+- concurrent users per machine sharing resources (depending on what config they choose) (depending on the available resources in the machine / fleet and the configs available) 
+- No booking required for ephemeral — launch immediately.
+
+---
+
+## THREE-TIER COMPUTE ARCHITECTURE
+
+### Tier 1 — Full Machine (Exclusive, GPU Included)
+- One user gets the entire node exclusively: all CPU cores, RAM, and the full RTX 5090 GPU (32GB VRAM via vfio-pci passthrough to a KVM VM)
+- Maximum 4 concurrent Tier 1 users across the fleet (one per node)
+- For: GPU-accelerated workloads — deep learning, 3D GPU rendering, CUDA development, heavy simulation
+- GPU is ONLY available in this tier for stateful sessions (hardware limitation: consumer GPUs cannot be partitioned across VMs)
+
+### Tier 2 — Multi-User Stateful GUI Desktops (Concurrent, CPU-Only)
+- Multiple KVM VMs per node, no GPU access
+- Full GUI desktop experience via software rendering (xrdp + Guacamole in browser)
+- All proprietary software available and functional in CPU computation mode (MATLAB, Python, Blender CPU rendering, development tools)
+- Hardware-level isolation between concurrent VMs (AMD-V) — strongest possible isolation
+- For: coding, MATLAB computation, document work, data analysis, light CAD, general development
+
+### Tier 3 — Ephemeral Compute (Concurrent, Multi-User), subjected to user choice
+- Docker containers for Jupyter, Code-Server, SSH CLI
+- Available as CPU-only or with GPU time-slicing (GPU shared via CUDA MPS + HAMi-core in containers — software-enforced VRAM and compute limits, weaker isolation than VMs, acceptable for ephemeral/temporary workloads)
+- For: quick compute runs, notebook execution, ML training/inference, public user access
+
+---
+
+## PRE-DEFINED COMPUTE CONFIGURATIONS (User selects at booking) (this is not final, this is an example)
+
+The user can choose from the pre-configured system infra config. Available configs and allocation happen based on the available resources in the host machine or fleet.
+
+**Stateful GUI Desktop Configs (Tier 1 & Tier 2 — KVM VMs):**
+
+| Config | vCPU | RAM | GPU | Mode | Best For | Price |
+|---|---|---|---|---|---|---|
+| Starter | 2 | 4GB | None | CPU-only VM | Light coding, docs | ₹15/hr |
+| Standard | 4 | 8GB | None | CPU-only VM | MATLAB, office, development | ₹30/hr |
+| Performance | 8 | 16GB | None | CPU-only VM | Heavy computation, large datasets | ₹60/hr |
+| Full Machine | 16 | 48GB | 32GB (full RTX 5090) | Exclusive VM + GPU passthrough | GPU rendering, DL, CUDA research | ₹300/hr |
+
+Note: GPU is only available in the Full Machine config (Tier 1) for stateful sessions. Consumer GPUs (RTX 5090) cannot be partitioned across multiple VMs — GPU passthrough is all-or-nothing. Tier 2 stateful desktops are CPU-only; all proprietary software runs in CPU computation mode.
+
+**Ephemeral Compute Configs (Tier 3 — Docker Containers):**
+
+| Config | vCPU | RAM | GPU | Mode | Best For | Price |
+|---|---|---|---|---|---|---|
+| Ephemeral CPU | 2 | 4GB | None | Container | Jupyter, Code-Server, SSH | ₹10/hr |
+| Ephemeral GPU-S | 2 | 4GB | 4GB VRAM (time-sliced) | Container + MPS/HAMi-core | Light ML inference | ₹40/hr |
+| Ephemeral GPU-M | 4 | 8GB | 8GB VRAM (time-sliced) | Container + MPS/HAMi-core | Standard ML training | ₹75/hr |
+| Ephemeral GPU-L | 4 | 16GB | 16GB VRAM (time-sliced) | Container + MPS/HAMi-core | Heavy ML, large models | ₹120/hr |
+
+Note: Ephemeral GPU configs use software-enforced VRAM limits via CUDA MPS and HAMi-core (libvgpu.so). This provides GPU sharing across containers but with weaker isolation than VMs — a fatal GPU fault from one container can affect co-resident containers. This is acceptable for ephemeral/temporary workloads and is standard practice for educational GPU-sharing platforms (comparable to Google Colab, Kaggle).
+
+All configs: storage = user's 15GB personal layer. No exceptions. Full Machine: user still only sees their own 15GB. (only for stateful users). For public users, only their worked jupyter file will be saved in the system (application) not in the machine (like how google colab works). The public user can only spin up ephemeral instances either with notebook mode or CLI (depending on the config they choose)
+
+---
+
+## ISOLATION REQUIREMENTS (Non-Negotiable) (think this critically and research to validate the listed in the best approach, else mention the alternates )
+
+All four isolations must be enforced simultaneously:
+
+### Data Isolation — Absolute
+
+
+### Memory Isolation — Strong
+
+
+### Process Isolation — Absolute for VMs, Strong for Containers
+
+
+### Session Isolation — Enforced
+
+
+---
+
+## STORAGE ARCHITECTURE
+The disk storage in each host machine will be hard split into handle stateful machines and ephemeral instances (for absolute data isolation and ensure no empheral instance ruins of corrupts the data at the stateful side as it would have user personal data, proprietory software and configs)
+ 
+### Per-Node NVMe Layout (2TB per machine)
+```
+nvme0n1p1  128GB  EXT4   → OS + swap
+nvme0n1p2  900GB  LVM PV → VG_STATEFUL (base images + active thin clone deltas)
+nvme0n1p3  700GB  LVM PV → VG_EPHEMERAL (container scratch, temp, wiped on session end)
+nvme0n1p4  240GB  EXT4   → Shared read-only datasets
+```
+
+### Centralized NAS (5th machine — required for multi-user scale)
+- TrueNAS Scale or Synology with ZFS, 4×4TB HDDs (~12TB usable RAIDZ1)
+- Hosts ALL user 15GB personal volumes (NFS over 15GbE to all 4 nodes)
+- Benefit: any user can run on any available node — their files follow them
+- Node failure: user reconnects on a different node, same files
+- Backup target: daily ZFS snapshots
+
+### Base Images on Each Node (Replicated) (for now the idea (for stateful machines) is to create one base VM image and then create thin 
+- `lv_base_linux` ~60GB — replicated on all 4 nodes
+- Active thin clone deltas: ~20GB per active session (local NVMe, fast)
+- Destroyed when session ends
+
+---
+
+## NETWORKING REQUIREMENTS
+
+- Add **10GbE PCIe NIC** (Intel X550-T1) to each machine — onboard 2.5GbE is insufficient for multi-user remote desktop streaming
+- **VLAN separation**: Management (10), Stateful VMs (20), Ephemeral containers (30), User-facing proxy (40)
+- **Remote access**: Cloudflare Tunnel (browser users, zero port-forwarding) + Tailscale (SSH/Moonlight power users, works through university firewalls)
+- **Dummy HDMI dongle** required on each RTX 5090 for headless GPU operation (needed for Tier 1 GPU passthrough and Tier 3 ephemeral GPU containers)
+
+---
+
+## USER EXPERIENCE — KEY FLOWS
+
+### Onboarding (once)
+1. User registers on `lab.youragency.in` with university email
+2. Chooses OS: (permanent until they explicitly switch)
+3. Account Registered: account created → 15GB LVM volume provisioned on NAS
+4. Logs in with university SSO (same credentials as their college portal)
+
+### Booking and Launching a Session
+1. Login → Dashboard shows storage usage, upcoming bookings, fleet status
+2. Click "Book Session" → select compute config → select time (now or scheduled)
+3. At session time: "Launch" button appears → click → ~15–20 seconds → desktop appears in browser
+4. Work. Save files to personal home directory. Files persist on NAS.
+5. 15-min and 5-min warnings sent before session end
+6. Graceful shutdown → thin clone destroyed → resources freed → billing recorded
+
+### Session Reconnection
+- If browser closes mid-session: VM continues running (till the subscribed time)
+- User reopens portal → "Reconnect" button → resumes exactly where they left off
+
+### OS Switch (with consent)
+- Account Settings → Switch OS → explicit "DELETE" confirmation → all 15GB wiped → fresh environment
+
+---
+
+## ADMIN / AUDIT CAPABILITIES
+
+Every session generates complete audit data:
+- Session start/end timestamps, user identity, IP address, device
+- Resource utilization: CPU%, RAM%, GPU%, VRAM peak, disk written, network transferred
+- Duration and billable hours
+- All events: connect, disconnect, reconnect, warnings sent, shutdown sequence
+- Real-time Grafana dashboards: per-user, per-node, GPU health, fleet overview
+- Alerts: GPU temperature, disk usage, GPU unresponsive events, login anomalies
+
+---
+
+Implemented as a Python FastAPI microservice with Redis state store, talking to Proxmox API.
+
+
+## WHAT THIS PROJECT IS NOT
+
+- Not a cloud service (AWS/Azure) — all on-premises, client's hardware
+- Not VMware Horizon or Citrix (expensive enterprise licensing)
+
+---
+
+Also, look for consideration, or points i would have failed to list out or false assumption or misleading points!! and reflect evaluate your findings critically for multiple pass through with feedbacks. Since you are senior solutions architect, product manager, and technical consultant** with deep expertise in networking, cloud, IT infrastructure, virtualization, and security (think like you are building such a system from scratch, gain every essential expertise first and the build the response).
+
+this whole learning and research to get the solid infra setup and backend foundations and understand or get the best approach for implementation! (software implementation we''ll  consider later)

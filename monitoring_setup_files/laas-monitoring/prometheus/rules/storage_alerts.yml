@@ -1,0 +1,94 @@
+groups:
+
+  # ──────────────────────────────────────────────────────────
+  # ZFS POOL HEALTH
+  # datapool: RAIDZ1 (prod) / file-backed (MVP)
+  # ──────────────────────────────────────────────────────────
+  - name: zfs_pool_health
+    rules:
+      - alert: ZFSPoolDegraded
+        expr: node_zfs_pool_state{state!="online"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          category: storage
+        annotations:
+          summary: "ZFS pool {{ $labels.pool }} is DEGRADED"
+          description: "ZFS pool {{ $labels.pool }} is in '{{ $labels.state }}' state. Data integrity is at risk. Check 'zpool status {{ $labels.pool }}'."
+
+      - alert: ZFSPoolUsageHigh
+        expr: |
+          (node_zfs_pool_allocated_bytes / node_zfs_pool_size_bytes) > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "ZFS pool {{ $labels.pool }} > 80% full"
+          description: "ZFS pool {{ $labels.pool }} is over 80% full. ZFS performance degrades above 80%. Add storage or clean up old snapshots."
+
+      - alert: ZFSPoolCritical
+        expr: |
+          (node_zfs_pool_allocated_bytes / node_zfs_pool_size_bytes) > 0.92
+        for: 5m
+        labels:
+          severity: critical
+          category: storage
+        annotations:
+          summary: "ZFS pool {{ $labels.pool }} nearly full — user data at risk"
+          description: "ZFS pool {{ $labels.pool }} is over 92% full. New user storage quotas cannot be created. Immediate expansion required."
+
+  # ──────────────────────────────────────────────────────────
+  # ZFS I/O PERFORMANCE
+  # NFS latency directly affects desktop responsiveness
+  # ──────────────────────────────────────────────────────────
+  - name: zfs_io
+    rules:
+      - alert: ZFSReadLatencyHigh
+        expr: |
+          rate(node_zfs_read_time_ns_total[5m]) / rate(node_zfs_reads_total[5m]) / 1000000 > 50
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "ZFS read latency > 50ms on {{ $labels.instance }}"
+          description: "Average ZFS read latency is {{ printf \"%.0f\" $value }}ms. High latency causes slow home directory loads and laggy file operations in user sessions."
+
+      - alert: ZFSScrubRequired
+        expr: |
+          (time() - node_zfs_pool_scrub_time_ns_total / 1e9) / 86400 > 14
+        for: 1h
+        labels:
+          severity: info
+          category: storage
+        annotations:
+          summary: "ZFS pool {{ $labels.pool }} hasn't been scrubbed in 14+ days"
+          description: "Run: zpool scrub {{ $labels.pool }}"
+
+  # ──────────────────────────────────────────────────────────
+  # USER STORAGE QUOTA
+  # Each user: 15GB hard ZFS quota. Track via textfile exporter.
+  # (Populated by the session-exporter or a cron script)
+  # ──────────────────────────────────────────────────────────
+  - name: user_storage_quota
+    rules:
+      - alert: UserStorageQuotaHigh
+        expr: laas_user_storage_used_bytes / laas_user_storage_quota_bytes > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "User {{ $labels.user_id }} approaching storage quota"
+          description: "User {{ $labels.user_id }} has used over 85% of their 15GB storage quota."
+
+      - alert: UserStorageQuotaFull
+        expr: laas_user_storage_used_bytes / laas_user_storage_quota_bytes > 0.98
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "User {{ $labels.user_id }} storage quota almost full"
+          description: "User {{ $labels.user_id }} is at over 98% of their 15GB limit. pip installs and file saves will fail soon."

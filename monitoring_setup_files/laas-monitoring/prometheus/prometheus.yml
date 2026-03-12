@@ -1,0 +1,194 @@
+# ============================================================
+# Prometheus Configuration — LaaS Platform MVP
+# Designed for single-node MVP, multi-node production ready
+# Reload: curl -X POST http://localhost:9090/-/reload
+# ============================================================
+
+global:
+  scrape_interval:     15s      # default collection frequency
+  evaluation_interval: 15s      # alert rule evaluation
+  scrape_timeout:      10s
+
+  # Labels applied to ALL metrics — critical for multi-node
+  external_labels:
+    platform: "laas"
+    environment: "mvp"           # change to "production" on prod
+
+# ── Alert Rules ───────────────────────────────────────────────
+rule_files:
+  - "/etc/prometheus/rules/gpu_alerts.yml"
+  - "/etc/prometheus/rules/container_alerts.yml"
+  - "/etc/prometheus/rules/host_alerts.yml"
+  - "/etc/prometheus/rules/storage_alerts.yml"
+  - "/etc/prometheus/rules/session_alerts.yml"
+  - "/etc/prometheus/rules/security_alerts.yml"
+
+# ── Alertmanager ─────────────────────────────────────────────
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+      timeout: 10s
+
+# ─────────────────────────────────────────────────────────────
+# SCRAPE CONFIGS
+# ─────────────────────────────────────────────────────────────
+scrape_configs:
+
+  # ── Prometheus self-monitoring ──────────────────────────────
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          node: 'monitoring'
+
+  # ── Host metrics (node-exporter) ───────────────────────────
+  # Add more nodes to targets for multi-node production:
+  # - targets: ['node1:9100', 'node2:9100', 'node3:9100', 'node4:9100']
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          node: 'node-mvp'
+          role: 'compute'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+).*'
+        replacement: '$1'
+
+  # ── Per-container metrics (cAdvisor) ───────────────────────
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8999']
+        labels:
+          node: 'node-mvp'
+    metric_relabel_configs:
+      # Keep only the containers we care about (drop monitoring stack itself)
+      - source_labels: [container_label_laas_session_id]
+        regex: '.+'
+        target_label: __tmp_keep
+        replacement: 'true'
+      # Also keep containers without session labels (all containers visible)
+      - source_labels: [container_label_laas_session_id]
+        regex: ''
+        target_label: __tmp_keep
+        replacement: 'true'
+
+  # ── GPU telemetry (DCGM Exporter) ──────────────────────────
+  # The most important exporter for LaaS.
+  # Key metrics: DCGM_FI_DEV_GPU_TEMP, DCGM_FI_DEV_POWER_USAGE,
+  #   DCGM_FI_DEV_FB_USED, DCGM_FI_DEV_GPU_UTIL,
+  #   DCGM_FI_DEV_SM_CLOCK, DCGM_FI_DEV_ENC_UTIL (NVENC)
+  - job_name: 'dcgm-exporter'
+    scrape_interval: 5s                    # faster GPU polling
+    static_configs:
+      - targets: ['dcgm-exporter:9400']
+        labels:
+          node: 'node-mvp'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'DCGM_FI_.*'
+        target_label: __tmp_keep_dcgm
+        replacement: 'true'
+
+  # ── CUDA MPS state + NVENC session count (custom exporter) ──
+  - job_name: 'mps-exporter'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['mps-exporter:9500']
+        labels:
+          node: 'node-mvp'
+
+  # ── Active session metrics (custom exporter) ────────────────
+  - job_name: 'session-exporter'
+    static_configs:
+      - targets: ['session-exporter:9501']
+        labels:
+          node: 'node-mvp'
+
+  # ── Selkies per-session WebRTC metrics (file-based SD) ──────
+  # The session-exporter writes this file dynamically.
+  # Each Selkies container exposes metrics at SELKIES_METRICS_HTTP_PORT.
+  # This allows Prometheus to scrape per-session WebRTC stats:
+  #   bitrate, framerate, ICE type (direct/relay), packet loss, RTT.
+  - job_name: 'selkies-sessions'
+    scrape_interval: 10s
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/selkies_sessions.json'
+        refresh_interval: 15s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [session_id]
+        target_label: session_id
+      - source_labels: [user_id]
+        target_label: user_id
+      - source_labels: [tier]
+        target_label: tier
+
+  # ── Endpoint health probes (blackbox-exporter) ──────────────
+  # Checks: Selkies web portal, TURN server TCP, cloudflared
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - localhost:3478           # TURN server (coturn)
+          - localhost:8081           # Selkies session 1 (if running)
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://localhost:9090/-/healthy          # Prometheus self
+          - http://localhost:3000/api/health         # Grafana
+          - http://localhost:9093/-/healthy          # Alertmanager
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ── coturn TURN server native Prometheus metrics ─────────────
+  # coturn exposes metrics on port 9641 (if compiled with --prometheus)
+  # Check: curl http://localhost:9641/metrics
+  - job_name: 'coturn'
+    static_configs:
+      - targets: ['host.docker.internal:9641']
+        labels:
+          node: 'node-mvp'
+          service: 'turn-server'
+
+  # ── Alertmanager self-monitoring ────────────────────────────
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+
+  # ─────────────────────────────────────────────────────────────
+  # FUTURE: FastAPI Orchestrator metrics endpoint
+  # Uncomment when the orchestrator is deployed
+  # ─────────────────────────────────────────────────────────────
+  # - job_name: 'laas-orchestrator'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:8000']
+  #       labels:
+  #         service: 'orchestrator'
+
+  # ── FUTURE: Redis (orchestrator state store) ─────────────────
+  # - job_name: 'redis-exporter'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']

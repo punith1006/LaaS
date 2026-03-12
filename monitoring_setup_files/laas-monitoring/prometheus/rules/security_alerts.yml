@@ -1,0 +1,85 @@
+groups:
+
+  # ──────────────────────────────────────────────────────────
+  # CRYPTO MINING DETECTION
+  # Signature: sustained >95% GPU util + no legitimate workload markers
+  # RTX 5090 is a high-value target for mining abuse
+  # ──────────────────────────────────────────────────────────
+  - name: anti_abuse_mining
+    rules:
+      - alert: SuspectedCryptoMining
+        expr: |
+          DCGM_FI_DEV_GPU_UTIL > 95
+          and
+          DCGM_FI_DEV_ENC_UTIL < 5
+        for: 15m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Suspected crypto mining activity detected on {{ $labels.node }}"
+          description: "GPU {{ $labels.gpu }} has >95% compute utilization but <5% NVENC utilization for 15+ minutes. Pattern consistent with crypto mining or unauthorized compute-intensive workload. Investigate containers: docker stats. Check outbound connections: ss -tunp | grep ESTABLISHED"
+          action: "1. Identify offending container (check laas_session labels). 2. docker stop <container>. 3. Review user's session history. 4. Block user account pending investigation."
+
+      - alert: HighOutboundNetworkSustained
+        expr: |
+          sum by (name) (rate(container_network_transmit_bytes_total{name=~"selkies-.*"}[10m]))
+          / 1048576 > 25
+        for: 10m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Sustained high outbound traffic from session {{ $labels.name }}"
+          description: "Container {{ $labels.name }} transmitting {{ printf \"%.1f\" $value }}MB/s sustained for 10 minutes. Exceeds expected desktop stream (10-15MB/s). Possible data exfiltration."
+
+  # ──────────────────────────────────────────────────────────
+  # FORK BOMB / PROCESS EXHAUSTION
+  # Container pids-limit=512 should prevent this, but monitor anyway
+  # ──────────────────────────────────────────────────────────
+  - name: anti_abuse_processes
+    rules:
+      - alert: ContainerPIDsApproachingLimit
+        expr: container_processes{name=~"selkies-.*"} > 450
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Container {{ $labels.name }} approaching PID limit"
+          description: "Container {{ $labels.name }} has {{ $value }} processes (limit: 512). Possible runaway process or fork bomb attempt."
+
+      - alert: HostProcessCountSpike
+        expr: node_processes_state{state="running"} > 200
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Unusually high running process count on {{ $labels.instance }}"
+          description: "{{ $value }} processes in running state. Possible container process escape or system issue."
+
+  # ──────────────────────────────────────────────────────────
+  # AUTHENTICATION ANOMALIES (when orchestrator is deployed)
+  # ──────────────────────────────────────────────────────────
+  - name: auth_security
+    rules:
+      - alert: MultipleFailedTokenValidations
+        expr: increase(laas_invalid_session_token_total[5m]) > 10
+        for: 0s
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Multiple invalid session tokens on {{ $labels.node }}"
+          description: "{{ $value }} invalid token attempts in 5 minutes. Possible session hijacking attempt or orchestrator bug."
+
+      - alert: UnauthorizedSessionStart
+        expr: laas_unauthorized_session_attempt_total > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Unauthorized session start attempt detected"
+          description: "Someone attempted to start a session without valid authentication. Check orchestrator logs."

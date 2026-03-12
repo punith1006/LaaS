@@ -1,0 +1,57 @@
+docker run -d \
+  --name selkies-test-2 \
+  --hostname ws-$(openssl rand -hex 4) \
+  --gpus all \
+  --cpus=4 \
+  --cpuset-cpus=0-3 \
+  --memory=8g \
+  --ipc=host --network=host --tmpfs /dev/shm:rw \
+  -e TZ=UTC \
+  -e DISPLAY=:21 \
+  -e DISPLAY_SIZEW=1920 -e DISPLAY_SIZEH=1080 -e DISPLAY_REFRESH=60 \
+  -e SELKIES_ENCODER=nvh264enc \
+  -e SELKIES_ENABLE_BASIC_AUTH=true \
+  -e SELKIES_BASIC_AUTH_PASSWORD=123 \
+  -e NGINX_PORT=8082 \
+  -e SELKIES_PORT=9082 \
+  -e SELKIES_METRICS_HTTP_PORT=19082 \
+  -e PASSWD=mypasswd \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  -e CUDA_NVRTC_ARCH=89 \
+  -e __NV_PRIME_RENDER_OFFLOAD=1 \
+  -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
+  -e CUDA_DEVICE_MEMORY_LIMIT_0=4096m \
+  -e CUDA_DEVICE_SM_LIMIT=16 \
+  -e CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=4G" \
+  -e CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=16 \
+  -e CUDA_MPS_ENABLE_PER_CTX_DEVICE_MULTIPROCESSOR_PARTITIONING=1 \
+  -e CONTAINER_MEMORY_LIMIT_BYTES=$((8*1024*1024*1024)) \
+  -e SELKIES_TURN_HOST=106.51.247.170 \
+  -e SELKIES_TURN_PORT=3478 \
+  -e SELKIES_TURN_USERNAME=selkies \
+  -e SELKIES_TURN_PASSWORD=wVIAbfwkgkxjaCiZVX4BDsdU \
+  -e SELKIES_TURN_PROTOCOL=tcp \
+  -v /mnt/nfs/users/testuser2:/home/ubuntu \
+  -v /usr/lib/libvgpu.so:/usr/lib/libvgpu.so \
+  -v /usr/lib/fake_sysconf.so:/usr/lib/fake_sysconf.so \
+  -v /tmp/vgpulock-2:/tmp/vgpulock \
+  -v /usr/bin/nvidia-smi:/usr/bin/nvidia-smi.real \
+  -v /tmp/nvidia-smi-wrapper:/usr/bin/nvidia-smi \
+  -v /usr/bin/passwd:/usr/bin/passwd.real \
+  -v /tmp/passwd-wrapper:/usr/bin/passwd \
+  -v /tmp/supervisord-hami.conf:/etc/supervisord.conf \
+  -v /tmp/bash.bashrc.orig:/etc/bash.bashrc \
+  -v /var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:ro \
+  -v /var/lib/lxcfs/proc/meminfo:/proc/meminfo:ro \
+  -v /var/lib/lxcfs/proc/stat:/proc/stat:ro \
+  -v /var/lib/lxcfs/proc/uptime:/proc/uptime:ro \
+  -v /var/lib/lxcfs/proc/loadavg:/proc/loadavg:ro \
+  -v /var/lib/lxcfs/proc/diskstats:/proc/diskstats:ro \
+  -v /var/lib/lxcfs/proc/swaps:/proc/swaps:ro \
+  -v /tmp/container-2-cpu:/sys/devices/system/cpu:ro \
+  --label laas.session_id=$(openssl rand -hex 8) \
+  --label laas.user_id=testuser2@laas.in \
+  --label laas.tier=pro \
+  --label laas.session_type=stateful \
+  --label laas.node=node-mvp \
+  ghcr.io/selkies-project/nvidia-egl-desktop:latest

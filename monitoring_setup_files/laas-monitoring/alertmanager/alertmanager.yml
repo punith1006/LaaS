@@ -1,0 +1,28 @@
+# ============================================================
+# Alertmanager Configuration — LaaS Platform
+# Minimal config: alerts go to "null" receiver for now
+# To enable Telegram: add bot token to .env and update config
+# ============================================================
+
+global:
+  resolve_timeout: 5m
+
+# ── Inhibit rules ─────────────────────────────────────────────
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'node', 'gpu']
+
+# ── Routing ────────────────────────────────────────────────────
+route:
+  group_by: ['alertname', 'node', 'category']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'null'
+
+# ── Receivers ──────────────────────────────────────────────────
+receivers:
+  - name: 'null'
