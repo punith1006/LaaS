@@ -1,0 +1,18 @@
+[Unit]
+Description=cAdvisor — Container Resource Monitor
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/usr/local/bin/cadvisor \
+  --port=8999 \
+  --housekeeping_interval=15s \
+  --docker_only=false \
+  --store_container_labels=false \
+  --whitelisted_container_labels=laas_session_id,laas_user_id,laas_tier,laas_node \
+  --disable_metrics=advtcp,cpuset,hugetlb,memory_numa,perf_event,referenced_memory,resctrl,tcp,udp
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+Ah, I see! Your test confirms that /usr/lib/libvgpu.so is perfectly fine, and HAMi is successfully enforcing the 8GB limit.
+
+So why did the performance degrade again? I found the answer in the logs you pasted earlier.
+
+Look carefully at the timestamps from your ls -l /tmp/nvidia-mps output on the host:
+
+bash
+srw-rw-rw- 1 root root 0 Mar 11 17:29 control
+-rw-rw-rw- 1 root root 0 Mar 10 18:08 control_lock
+srwxr-xr-x 1 root root 0 Mar 11 17:29 control_privileged
+prwxrwxrwx 1 root root 0 Mar 15 11:49 log
+And then look at your nvidia-smi timestamp: Sun Mar 15 11:54:43 2026
+
+The Root Cause: When you wiped things and restarted, your containers tried to connect to MPS sockets (control) that were created 4 days ago (Mar 11). The nvidia-cuda-mps-control daemon (PID 1168386) is stale/hung. Because the container can't talk to the stale socket, it gives up on MPS and grabs the GPU directly (which we saw in your nvidia-smi output where python3 processes were bypassing MPS).
+
+The Fix
+You just need to restart the MPS daemon on your host machine to create fresh sockets. Run these commands on your host:
+
+bash
+# 1. Kill the stale MPS daemon
+sudo pkill -9 nvidia-cuda-mps
+sudo rm -rf /tmp/nvidia-mps/*
+sudo rm -rf /tmp/nvidia-log/*
+# 2. Restart it properly
+export CUDA_VISIBLE_DEVICES=0
+export CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps
+export CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log
+nvidia-cuda-mps-control -d
+# 3. Verify it's running (this should show today's date)
+ls -l /tmp/nvidia-mps
+Once the fresh sockets are created today (Mar 15), restart your two containers (docker restart selkies-test-1 selkies-test-2).
+
+Run your stress test again. nvidia-smi should now correctly show nvidia-cuda-mps-server, and the isolation will be perfectly smooth again!

@@ -57,10 +57,10 @@ scrape_configs:
         regex: '([^:]+).*'
         replacement: '$1'
 
-  # ── Per-container metrics (cAdvisor) ───────────────────────
+  # ── Per-container metrics (cAdvisor - native on host) ──
   - job_name: 'cadvisor'
     static_configs:
-      - targets: ['cadvisor:8999']
+      - targets: ['192.168.10.92:8999']
         labels:
           node: 'node-mvp'
     metric_relabel_configs:

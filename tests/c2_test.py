@@ -12,7 +12,7 @@ class MiniModel(nn.Module):
 
 model = MiniModel().cuda().half()
 batch = torch.randn(64, 1024, device='cuda', dtype=torch.float16)
-t = torch.randn(int(3*1024**3/4), device='cuda')
+t = torch.randn(int(2.5*1024**3/4), device='cuda')
 
 print('[C2] Hammering — do NOT stop this')
 i = 0

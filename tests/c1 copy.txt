@@ -1,7 +1,6 @@
 docker run -d \
   --name selkies-test-1 \
   --hostname ws-$(openssl rand -hex 4) \
-  --restart unless-stopped \
   --gpus all \
   --cpus=4 \
   --cpuset-cpus=8-11 \
@@ -23,8 +22,6 @@ docker run -d \
   -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
   -e CUDA_DEVICE_MEMORY_LIMIT_0=8192m \
   -e CUDA_DEVICE_SM_LIMIT=33 \
-  -e CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps \
-  -e CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log \
   -e CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=8G" \
   -e CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=33 \
   -e CUDA_MPS_ENABLE_PER_CTX_DEVICE_MULTIPROCESSOR_PARTITIONING=1 \

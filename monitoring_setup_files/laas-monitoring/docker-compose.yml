@@ -208,7 +208,7 @@ services:
       - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$"
       - "--collector.systemd"            # systemd service health
       - "--collector.processes"          # process-level metrics
-      - "--collector.nfs"               # NFS client metrics
+      - "--collector.nfs"                # NFS client metrics
       - "--collector.nvme"              # NVMe SMART data
       - "--collector.zfs"               # ZFS metrics (if ZFS is installed)
       - "--collector.textfile.directory=/var/lib/node_exporter/textfile_collector"
@@ -228,40 +228,41 @@ services:
         limits:
           cpus: "0.3"
           memory: 128M
-
+  
   # ─────────────────────────────────────────────────────────────
-  # cADVISOR — per-container CPU, RAM, network, disk I/O
+  # CADVISOR — per-container CPU, RAM, network, disk I/O
   # ─────────────────────────────────────────────────────────────
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.52.1
-    container_name: laas-cadvisor
-    restart: unless-stopped
-    privileged: true
-    devices:
-      - /dev/kmsg
-    command:
-      - "-port=8999"
-      - "-housekeeping_interval=15s"
-      - "-docker_only=true"
-      - "-store_container_labels=true"    # preserve Docker labels as metric labels
-      - "-whitelisted_container_labels=laas.session_id,laas.user_id,laas.tier,laas.node"
-      - "-disable_metrics=advtcp,cpuset,hugetlb,memory_numa,perf_event,referenced_memory,resctrl,tcp,udp"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:rw
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
-      - /dev/disk:/dev/disk:ro
-    ports:
-      - "8999:8999"
-    networks:
-      - laas-monitoring
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
+# cadvisor:
+#    image: gcr.io/cadvisor/cadvisor:v0.52.1
+#    container_name: laas-cadvisor
+#    restart: unless-stopped
+#    privileged: true
+#    devices:
+#      - /dev/kmsg
+#    command:
+#      - "--port=8999"
+#      - "--housekeeping_interval=15s"
+#      - "--docker=unix:///var/run/docker.sock"
+#      - "--docker_only=false"
+#      - "--store_container_labels=false"
+#      - "--whitelisted_container_labels=laas_session_id,laas_user_id,laas_tier,laas_node"
+#      - "--disable_metrics=advtcp,cpuset,hugetlb,memory_numa,perf_event,referenced_memory,resctrl,tcp,udp"
+#    volumes:
+#      - /:/rootfs:ro
+#      - /var/run:/var/run:rw
+#      - /var/run/docker.sock:/var/run/docker.sock:ro
+#      - /sys:/sys:ro
+#      - /var/lib/docker:/var/lib/docker:ro
+#      - /dev/disk:/dev/disk:ro
+#    ports:
+#      - "8999:8999"
+#    networks:
+#      - laas-monitoring
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: "1.0"
+#          memory: 512M
 
   # ─────────────────────────────────────────────────────────────
   # DCGM EXPORTER — deep GPU telemetry (the critical one)
@@ -364,8 +365,9 @@ services:
       dockerfile: Dockerfile
     container_name: laas-session-exporter
     restart: unless-stopped
+    user: root
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro    # Docker API
+      - /var/run/docker.sock:/var/run/docker.sock:rw    # Docker API (rw needed for API access)
       - ./prometheus/file_sd:/app/file_sd               # writes Selkies scrape targets
     environment:
       EXPORTER_PORT: "9501"
