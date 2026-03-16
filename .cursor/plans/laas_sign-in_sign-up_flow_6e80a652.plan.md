@@ -1,203 +1,634 @@
 ---
 name: LaaS Sign-in Sign-up Flow
-overview: "Implement the full authentication layer for LaaS: two named sections (University/Institution SSO and Individual/Public), with pixel-accurate UI for regular users from the design reference, OAuth (Google/GitHub), policy checklists with scroll-to-end modals, email verification OTP, welcome email via Gmail SMTP, and rotating left-panel imagery. Backend and frontend in separate app folders using the chosen tech stack (Next.js, NestJS, Keycloak, PostgreSQL + MongoDB)."
-todos: []
+overview: "Implement the full authentication layer for LaaS: two named sections (Academic Access for university SSO, Personal Access for individual/public users), with pixel-accurate UI from design reference, OAuth (Google/GitHub), policy checklists with scroll-to-end modals, email verification OTP, welcome email via Gmail SMTP, rotating left-panel imagery, and multi-step sign-up state management. Frontend and backend are separate standalone projects (no monorepo, no docker-compose). UI is built and validated first."
+todos:
+  - id: scaffold
+    content: Scaffold Next.js 15 project in `frontend/` with Tailwind CSS 4, shadcn/ui init, and all dependencies (zustand, react-hook-form, zod, lucide-react). Copy Image_Assets to `public/images/`.
+    status: completed
+  - id: config-and-types
+    content: Create config files (constants.ts with taglines and app name, policies.ts with hardcoded policy content, institutions.ts with mock data), types (auth.ts), and validation schemas (lib/validations.ts with Zod).
+    status: completed
+  - id: shadcn-components
+    content: "Install shadcn/ui components: button, input, checkbox, dialog, label, separator, command, sonner. Create icon components for LaaS logo, Google, GitHub."
+    status: completed
+  - id: auth-layout
+    content: "Build the two-column AuthLayout: left-panel component (random rotating image, gradient overlay, LaaS logo, tagline) and right-panel shell with X close button. Route group `(auth)/layout.tsx`."
+    status: completed
+  - id: landing-page
+    content: "Build the auth selection landing page at `/` with two cards: Academic Access and Personal Access."
+    status: completed
+  - id: signin-page
+    content: "Build sign-in page matching design exactly: email, password, forgot link, sign-in button, OR divider, Google + GitHub OAuth buttons, sign-up link, footer links."
+    status: pending
+  - id: signup-store
+    content: Create Zustand signup store with sessionStorage persistence for multi-step form state (email, password, policies, firstName, lastName).
+    status: completed
+  - id: signup-page
+    content: "Build sign-up page step 1: email, password with strength indicator (per-rule green/red checks), 3 policy checkboxes with validation errors, sign-up button, OAuth buttons, sign-in link."
+    status: pending
+  - id: policy-modal
+    content: "Build policy modal: scrollable content, scroll-to-end detection + helper button, 'I have read...' checkbox + Confirm footer that appears only after scroll-to-end. Three policy variants."
+    status: pending
+  - id: name-step
+    content: "Build name step page (`/signup/details`): first name, last name inputs, Continue + Back buttons. Route guard if no sign-up state."
+    status: completed
+  - id: otp-verification
+    content: "Build OTP verification page: 6-digit input boxes with auto-advance, email display, resend with cooldown, Verify + Cancel buttons. Mock verification."
+    status: completed
+  - id: institution-page
+    content: "Build institution SSO page: searchable institution selector, Continue with SSO button, mock redirect flow."
+    status: completed
+  - id: polish-ui
+    content: "Final UI polish: responsive behavior, focus management, keyboard navigation, loading states, toast notifications, page transitions, overall alignment and spacing review against design reference."
+    status: completed
+  - id: backend-scaffold
+    content: Scaffold NestJS 11 project in `backend/` with Fastify adapter, Prisma (PostgreSQL), Mongoose (MongoDB), and all dependencies. Set up module structure.
+    status: completed
+  - id: backend-database
+    content: "PostgreSQL schema (Prisma): users, otp_verifications, user_policy_consents, refresh_tokens, login_history, organizations, roles, permissions, role_permissions, user_org_roles. Seed: 9 roles, public org. MongoDB: define telemetry collections if needed at this stage."
+    status: completed
+  - id: backend-auth
+    content: "NestJS Auth module: JWT guard (RS256, JWKS from Keycloak or app-issued), auth endpoints (register, send-otp, resend-otp with rate limit, verify-otp, login, refresh, OAuth callback). On user creation: set storage_uid, default_org_id (public org), insert user_org_roles (public_user), insert user_policy_consents."
+    status: completed
+  - id: backend-email
+    content: SMTP transport (Nodemailer/@nestjs-modules/mailer) using Gmail credentials from env. Send OTP email and welcome email with Handlebars HTML templates.
+    status: completed
+  - id: keycloak-setup
+    content: Deploy Keycloak 26.x. Create public realm (local registration + Google/GitHub identity providers). Create university realm with one test IdP (SAML or OIDC). Document IdP metadata requirements.
+    status: completed
+  - id: frontend-backend-integration
+    content: Wire frontend to real backend APIs. Replace all mock API calls with actual fetch/axios calls. Test full end-to-end flows (sign-up, OTP, sign-in, OAuth, SSO).
+    status: completed
 isProject: false
 ---
 
-# LaaS Sign-in / Sign-up Flow — Implementation Plan
+# LaaS Sign-in / Sign-up Flow -- Implementation Plan
 
 ## Context summary
 
-- **Project**: Lab as a Service (LaaS) — remote GPU/compute for university members (SSO) and public users (sign-up/sign-in). See [project_context_Beta.txt](project_context_Beta.txt) and [laas_tech_stack_365cc328.plan.md](.cursor/plans/laas_tech_stack_365cc328.plan.md).
+- **Project**: Lab as a Service (LaaS) -- remote GPU/compute for university members (SSO) and public users (sign-up/sign-in). See [project_context_Beta.txt](project_context_Beta.txt) and [laas_tech_stack_365cc328.plan.md](.cursor/plans/laas_tech_stack_365cc328.plan.md).
 - **Current state**: No application code (clean slate). Monitoring and POC infra are in [monitoring_setup_files/](monitoring_setup_files/) and [Important_docs/LaaS_POC_Runbook_v2.txt](Important_docs/LaaS_POC_Runbook_v2.txt).
-- **Database**: PostgreSQL + MongoDB (per your choice). Auth, users, orgs, roles, and billing-critical data in PostgreSQL; document-style/session metadata can live in MongoDB where it fits.
-- **SMTP**: Gmail sender using credentials from [monitoring_setup_files/laas-monitoring/.env](monitoring_setup_files/laas-monitoring/.env) (lines 28–29). Application will need its own `.env` (e.g. under `apps/api` or root) with `SMTP_USERNAME` / `SMTP_PASSWORD` (and optionally `SMTP_HOST`, `SMTP_FROM`) — do not duplicate secrets in repo; reference one source or env.
+- **Database design**: [laas_enterprise_database_design_1560fd47.plan.md](.cursor/plans/laas_enterprise_database_design_1560fd47.plan.md) -- 60+ tables across 12 domains. Auth-relevant domains: Identity/Multi-Tenancy, Users/RBAC, Auth/Security.
+- **Database**: PostgreSQL 17 (primary, ACID-critical) + MongoDB 8.x (telemetry). Auth, users, orgs, roles, OTP, policy consents, billing in PostgreSQL. Session events and WebRTC snapshots in MongoDB.
+- **SMTP**: Gmail sender using credentials from [monitoring_setup_files/laas-monitoring/.env](monitoring_setup_files/laas-monitoring/.env) (lines 28-29). Each app gets its own `.env` with `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_HOST` / `SMTP_FROM`.
+- **Design reference**: PNGs in [Design-Ref/SignUp-SignIn](Design-Ref/SignUp-SignIn) -- `signin.png`, `SignUp.png`, `SingUp1.png`, `SignUp2.png`, `SignUp3.png`, `SignUp-Verification.png`, `TOS.png`, `TOS1.png`. These are the pixel-level source of truth.
+- **Image assets**: [Image_Assets/](Image_Assets/) contains 4 images: `side-light-1.png`, `side-light-2.png`, `side-dark-1.png`, `side-dark-2.png` for the left panel.
 
 ---
 
 ## 1. Two named auth sections
 
 
-| Section                      | Name (suggested)                                                   | Behavior                                                                                                                                                              |
-| ---------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **University / Institution** | e.g. "Sign in with your institution" or "University / Institution" | **Sign-in only** via official university identity (SSO). No sign-up form; user selects institution (or is deep-linked) and is sent to university IdP.                 |
-| **Individual / Public**      | e.g. "Individual / Public" or "Create account"                     | Full **sign-up** (email, password, first name, last name, policy checklists, OTP verification, welcome email) and **sign-in** (email/password + OAuth Google/GitHub). |
+| Section                      | Name                  | Behavior                                                                                                                                                                    |
+| ---------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **University / Institution** | **"Academic Access"** | **Sign-in only** via official university identity (SSO). No sign-up form; user selects institution from a searchable list and is redirected to university IdP via Keycloak. |
+| **Individual / Public**      | **"Personal Access"** | Full **sign-up** (email, password, first name, last name, policy checklists, OTP verification, welcome email) and **sign-in** (email/password + OAuth Google/GitHub).       |
 
 
-Entry point: single landing/auth page that clearly offers both sections (e.g. two cards or two primary CTAs). No deviation from this split.
+**Entry point**: Auth selection landing page at `/` with two prominent cards, one per section. No left-panel image on this page -- full-width centered layout with LaaS text-mark.
 
 ---
 
-## 2. University SSO (sign-in only)
+## 2. Project structure (no monorepo, no docker-compose)
+
+Frontend and backend are **separate standalone projects** in their own top-level folders. No monorepo tooling (no Turborepo, no Nx, no shared `package.json` at root). No `docker-compose` for dev services -- databases and Keycloak are installed/run individually.
+
+```
+LaaS/
+├── frontend/                          # Next.js 15 standalone app
+│   ├── public/
+│   │   └── images/                    # Copy of Image_Assets (4 images)
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx             # Root layout (fonts, global styles)
+│   │   │   ├── page.tsx               # Auth selection landing page
+│   │   │   ├── (auth)/
+│   │   │   │   ├── layout.tsx         # Two-column AuthLayout wrapper
+│   │   │   │   ├── signin/
+│   │   │   │   │   └── page.tsx       # Individual sign-in
+│   │   │   │   ├── signup/
+│   │   │   │   │   ├── page.tsx       # Step 1: email + password + policies
+│   │   │   │   │   ├── details/
+│   │   │   │   │   │   └── page.tsx   # Step 2: first name + last name
+│   │   │   │   │   └── verify/
+│   │   │   │   │       └── page.tsx   # Step 3: OTP verification
+│   │   │   │   └── institution/
+│   │   │   │       └── page.tsx       # University SSO selector
+│   │   │   └── globals.css
+│   │   ├── components/
+│   │   │   ├── ui/                    # shadcn/ui components
+│   │   │   ├── auth/                  # Auth-specific components
+│   │   │   │   ├── left-panel.tsx
+│   │   │   │   ├── sign-in-form.tsx
+│   │   │   │   ├── sign-up-form.tsx
+│   │   │   │   ├── name-step-form.tsx
+│   │   │   │   ├── otp-input.tsx
+│   │   │   │   ├── otp-verification.tsx
+│   │   │   │   ├── password-strength-indicator.tsx
+│   │   │   │   ├── policy-modal.tsx
+│   │   │   │   ├── policy-checkbox.tsx
+│   │   │   │   ├── oauth-buttons.tsx
+│   │   │   │   ├── institution-selector.tsx
+│   │   │   │   ├── footer-links.tsx
+│   │   │   │   └── auth-section-card.tsx
+│   │   │   └── icons/                 # SVG icon components (logo, Google, GitHub)
+│   │   ├── lib/
+│   │   │   ├── validations.ts         # Zod schemas (password, email, name, OTP)
+│   │   │   ├── api.ts                 # API client layer (mock now, real later)
+│   │   │   └── utils.ts               # cn() helper from shadcn
+│   │   ├── stores/
+│   │   │   └── signup-store.ts        # Zustand store for multi-step sign-up state
+│   │   ├── config/
+│   │   │   ├── policies.ts            # Hardcoded policy content (3 policies)
+│   │   │   ├── constants.ts           # App name, taglines, image paths
+│   │   │   └── institutions.ts        # Mock institution list for SSO
+│   │   └── types/
+│   │       └── auth.ts                # TypeScript types for auth flows
+│   ├── .env.example
+│   ├── .env.local                     # (gitignored) local overrides
+│   ├── package.json
+│   ├── tailwind.config.ts
+│   ├── tsconfig.json
+│   ├── next.config.ts
+│   ├── components.json                # shadcn/ui config
+│   └── README.md
+│
+├── backend/                           # NestJS 11 standalone app (built after UI validation)
+│   ├── src/
+│   │   ├── main.ts
+│   │   ├── app.module.ts
+│   │   ├── auth/                      # Auth module (register, login, OTP, OAuth, JWT)
+│   │   ├── users/                     # Users module (CRUD, profile)
+│   │   ├── mail/                      # Mail module (SMTP, templates)
+│   │   ├── common/                    # Guards, interceptors, decorators, filters
+│   │   └── prisma/                    # Prisma service and module
+│   ├── prisma/
+│   │   ├── schema.prisma              # PostgreSQL schema
+│   │   ├── seed.ts                    # Seed roles, public org, permissions
+│   │   └── migrations/
+│   ├── templates/                     # Email HTML templates (Handlebars)
+│   ├── .env.example
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── nest-cli.json
+│   └── README.md
+```
+
+---
+
+## 3. University SSO -- Academic Access (sign-in only)
 
 **How it works (high level):**
 
 - Universities typically expose **SAML 2.0** (e.g. Shibboleth, InCommon) or **OIDC** (e.g. Google Workspace). Keycloak acts as the **Service Provider (SP)** for SAML or **Relying Party** for OIDC.
-- **Flow**: User clicks “Sign in with your institution” → select (or redirect to) university → redirect to university IdP → user logs in with university credentials → IdP posts back SAML assertion / OIDC tokens to Keycloak → Keycloak creates or links user and issues **our** JWT (RS256) → app receives JWT and redirects to home.
+- **Flow**: User clicks "Academic Access" on landing page -> `/institution` -> selects university from searchable list -> redirect to Keycloak with `kc_idp_hint` for that university -> Keycloak redirects to university IdP -> user logs in with university credentials -> IdP posts back SAML assertion / OIDC tokens to Keycloak -> Keycloak creates or links user and issues **our** JWT (RS256) -> app receives JWT and redirects to home.
 
 **Implementation responsibilities:**
 
 - **Keycloak**: One realm (e.g. `laas-university`) with:
   - Identity provider(s): SAML 2.0 and/or OIDC per university. Add IdPs by importing metadata (SAML Entity Descriptor) or configuring OIDC endpoints. Map IdP attributes to Keycloak user profile (e.g. email, name, groups).
-  - Optional: multiple IdPs (one per university) with a “picker” or `kc_idp_hint` for deep links.
-- **Backend (NestJS)**: Validate Keycloak-issued JWT (RS256, Keycloak’s JWKS), map token claims to internal user/org/role (e.g. create/link user in PostgreSQL on first login), enforce RBAC.
-- **Frontend (Next.js)**: “Sign in with your institution” → redirect to Keycloak with appropriate `kc_idp_hint` or realm so Keycloak shows IdP selection or goes straight to the chosen university IdP. No sign-up form for this path.
+  - Multiple IdPs (one per university) with a "picker" or `kc_idp_hint` for deep links.
+- **Backend (NestJS)**: Validate Keycloak-issued JWT (RS256, Keycloak's JWKS), map token claims to internal user/org/role (create/link user in PostgreSQL on first login via Keycloak `sub` claim), enforce RBAC.
+- **Frontend (Next.js)**: `/institution` page with searchable institution list -> redirect to Keycloak with `kc_idp_hint`. No sign-up form for this path.
 
-**Research / setup tasks:**
+**Frontend UI (`/institution`):**
 
-- Document required IdP metadata (SAML: Entity ID, SSO URL, certificate; OIDC: issuer, authorization/token/userinfo endpoints). For MVP, configure at least one test IdP (e.g. Keycloak-as-IdP in another realm, or a university test IdP if provided).
-- Do not implement custom SAML/OIDC from scratch; use Keycloak’s federation only.
+1. **Heading**: "Sign in with your Institution"
+2. **Subtitle**: "Select your university or institution to continue with SSO."
+3. **Search/select input**: Searchable dropdown of institutions (mock data: 3-5 universities like "K.S.R. College of Engineering", "IIT Madras", "Anna University"). Uses shadcn `Command` or `Popover` + search.
+4. **"Continue with SSO"** button -- black filled, full-width (disabled until institution selected)
+5. **"Back"** button -- outlined, navigates to `/`
+6. **Info text**: "You will be redirected to your institution's login page."
+7. **Footer links**
+8. On submit (mock for UI phase): Show loading, then toast "Redirecting to [Institution Name]..." and redirect to `/dashboard` after 2 seconds.
 
----
+**MVP setup tasks:**
 
-## 3. Individual / Public — design and flows
-
-**Design reference:** The provided screens (sign-in, sign-up, verification, policy modals, first/last name step) are the single source of truth. Implementation must match layout, elements, and behavior with no deviations.
-
-**Suggested placement of assets:**
-
-- **Design reference**: [Design-Ref/SignUp-SignIn](Design-Ref/SignUp-SignIn) (or equivalent path where your PNGs live) for pixel reference.
-- **Left-panel images**: Use an **Image_Assets** folder (e.g. `apps/web/public/Image_Assets` or `apps/web/assets/Image_Assets`). Populate with the multiple images you want; the app will pick one at random on each load of the sign-up/sign-in section.
-
-**Copy and branding:**
-
-- **No GMI logo.** Use LaaS/product logo and name only.
-- **Left panel bottom text**: Replace with a short, project-specific tagline (e.g. one headline + one subtitle) that reflects LaaS (remote lab, GPU compute, research, education). Example direction: “Your lab, anywhere.” / “High-performance compute and GPU labs, on demand.” Final copy can be tuned later; implementation should use a single config or constant so you can change it in one place.
-
-**Flows to implement:**
-
-1. **Sign-in**
-  - Two-column layout: left = rotating image + tagline; right = “Welcome to [LaaS]”, email, password, “Forgot your password?”, “Sign in”, OR divider, Google/GitHub OAuth, “Don’t have an account? Sign up”, footer links (Need help?, Contact Support, User Policy, User Content Disclaimer, Console Terms of Service).
-  - OAuth: Google and GitHub only; backend uses Keycloak social/identity brokering or app-level OAuth with Keycloak.
-2. **Sign-up**
-  - Same two-column layout. Right: “Create an Account”, subtitle, email, password (with strength rules: 8+ chars, 1 number, 1 lowercase, 1 uppercase, allowed chars only), then **three checkboxes**:
-    - “I agree with [Product]’s Policy” (link opens policy view)
-    - “I agree with the User Content Disclaimer” (link opens policy view)
-    - “I agree with the Console Terms of Service” (link opens policy view)
-  - On **clicking a link** (or checkbox label): open the **policy modal** (info view) for that document. Policy content: scrollable; **scroll-to-end** behavior: only when the user has scrolled to the bottom (or used the “scroll to end” helper button), show “I have read and agree to [Policy name]” checkbox and “Confirm” button. Confirm closes modal and marks that policy as agreed in the form state.
-  - **Helper button**: A “scroll to end” control (e.g. down arrow or “Scroll to end”) inside the modal that programmatically scrolls the content to the bottom so the footer appears.
-  - After all three policies are agreed, “Sign up” becomes valid. On submit: do **not** create account yet; go to **first name / last name** step (same two-column shell, right side: “First name”, “Last name”, “Continue” / “Back”). Then **email verification** step.
-3. **Email verification**
-  - Right panel: “Your Verification Code”, “Enter the code from your email:”, display of the email used at sign-up, **6 single-character OTP inputs**, “Didn’t get the email? Resend email”, “Verify” and “Cancel”.
-  - Backend: On sign-up submit (after first/last name), create user in “pending verification” state, generate 6-digit OTP, store hash + expiry in DB (e.g. PostgreSQL), send OTP email via Gmail SMTP (use credentials from your .env; app config points to same or copied env vars). On “Verify”, check OTP → mark email verified → create session → redirect to home and trigger **welcome email**.
-4. **Welcome email**
-  - Sent once after successful verification (or first login after sign-up). Use same Gmail SMTP. Content can be simple (e.g. “Welcome to LaaS…”); template and copy can be changed later.
-
-**Policy content:** Hardcoded for now (e.g. Acceptable Use Policy, User Content Disclaimer, Console ToS as static text or constants). You’ll replace with real content later; structure the modal and state so swapping content is easy.
+- Document required IdP metadata (SAML: Entity ID, SSO URL, certificate; OIDC: issuer, authorization/token/userinfo endpoints).
+- For MVP, configure at least one test IdP (e.g. Keycloak-as-IdP in another realm, or a university test IdP if provided).
+- Do not implement custom SAML/OIDC from scratch; use Keycloak's federation only.
 
 ---
 
-## 3.1 Gaps and considerations (learnings)
+## 4. Individual / Public -- Personal Access (design and flows)
 
-The following were identified during plan review; implement explicitly to avoid oversight.
+**Design reference:** The provided screens in [Design-Ref/SignUp-SignIn](Design-Ref/SignUp-SignIn) are the single source of truth. Implementation must match layout, elements, and behavior with no deviations.
 
-**OAuth buttons:** Design reference shows three buttons; requirement is **Google and GitHub only**. Implement exactly two OAuth buttons. Do not add a third social or magic-link button unless explicitly added later.
+**Branding:**
 
-**Password rules — "Use only allowed characters":** Besides 8+ chars, 1 number, 1 lowercase, 1 uppercase, the design includes "Use only allowed characters." Define allowed characters explicitly (e.g. ASCII printable, or letters + digits + a fixed set of symbols) and document in shared Zod schema and backend validation so UI (green check / red X) and API stay in sync.
-
-**Persisting policy consents:** When the user is created (after OTP verification), insert rows into `user_policy_consents` for each policy agreed during sign-up (`policy_slug`: e.g. `acceptable_use`, `user_content_disclaimer`, `console_tos`), with `agreed_at` and `ip_address`. Store agreed policy slugs in sign-up state so they are available at user creation.
-
-**Public organization and role:** Seed (or migration) must ensure one organization with `org_type = 'public'` (e.g. name "Public", slug "public"). On creating a public user (after OTP verification or OAuth link), set `users.default_org_id` to that org and insert `user_org_roles` with the `public_user` role for that org.
-
-**storage_uid:** On user creation (public or university), generate an immutable `storage_uid` (e.g. `u_` + short random string or UUID segment) and persist. Uniqueness enforced by DB (see [laas_enterprise_database_design_1560fd47.plan.md](.cursor/plans/laas_enterprise_database_design_1560fd47.plan.md)).
-
-**JWT issuer for public users:** Tech stack expects Keycloak as single signer. For the custom flow (name step, OTP, welcome email), two options: **(A)** After OTP verification, create user in PostgreSQL then create user in Keycloak via Admin API and use Keycloak token endpoint to obtain Keycloak-issued JWT (single issuer). **(B)** NestJS issues its own JWT for email/password public users; Keycloak issues JWT for university SSO and public OAuth (dual issuer). Prefer Option A; fall back to Option B if Keycloak Admin API or theme work blocks.
-
-**Resend OTP and Cancel:** Backend resend endpoint must enforce rate limit (e.g. max 3 resends per 15 minutes per email/user); frontend shows cooldown or "Resend available in X min." **Cancel** on verification step: navigate back to sign-in (or previous step); do not create/update user until Verify is used.
-
-**Forgot password:** For MVP with Option A (Keycloak as single issuer), implement "Forgot password?" as a link to Keycloak account management URL. If using Option B, add OTP-based or link-based reset flow.
-
-**Image_Assets folder:** Create `Image_Assets` under frontend static assets (e.g. `apps/web/public/Image_Assets`). Implement "pick one image at random on each load" for the sign-up/sign-in section. Add 1–2 placeholder images or a fallback so the UI never shows a broken image when the folder is empty.
-
-**Design reference source:** PNGs in [Design-Ref/SignUp-SignIn](Design-Ref/SignUp-SignIn) (e.g. TOS.png, SignUp.png, SignUp-Verification.png) are the pixel reference. Match two-column layout, left = rotating image + tagline (no GMI logo), right = form; sign-in, sign-up, name step, verification, and policy modals as described in the design.
-
-**University SSO — MVP:** For MVP, configure one test IdP (e.g. second Keycloak realm as IdP, or university test IdP if provided). Document required IdP metadata: SAML (Entity ID, SSO URL, certificate); OIDC (issuer, authorization/token/userinfo endpoints). No custom SAML/OIDC from scratch — Keycloak federation only.
+- **No GMI logo.** Use "LaaS" text-mark in a clean sans-serif font (bold, white on left panel).
+- **Left panel bottom text** (headline + subtitle, configurable in `config/constants.ts`):
+  - **Headline**: "Your lab. Any machine. Anywhere."
+  - **Subtitle**: "Enterprise-grade GPU compute and remote research environments, on demand."
 
 ---
 
-## 4. Tech stack and repo layout
+### 4.1 Two-column auth layout (shared by all auth pages)
 
-- **Frontend**: Next.js 15 (App Router), React 19, Tailwind CSS 4, shadcn/ui. Lives in `**apps/web`** (or equivalent “UI” folder).
-- **Backend**: NestJS 11 (Fastify), Prisma (PostgreSQL). Lives in `**apps/api`** (or equivalent “Backend” folder).
-- **Auth**: Keycloak 26.x (self-hosted) — realms for university SSO and for public (local registration + Google/GitHub). JWT RS256, validated by NestJS.
-- **Databases**: PostgreSQL (users, orgs, roles, OTP store, billing-related); MongoDB (optional for session metadata, logs, or other document data — schema to be defined where used).
-- **Monorepo**: Root contains `apps/web`, `apps/api`, and optionally `packages/shared` (e.g. Zod schemas, shared types). UI and backend are separate folders as requested.
+Wraps `/signin`, `/signup/`*, `/institution`. Defined as `(auth)/layout.tsx` route group.
 
-Best practices:
-
-- Reusable UI components (buttons, inputs, modals, two-column auth layout, OTP inputs) under `apps/web/components` (or `components/ui` and `components/auth`).
-- Shared validation and DTOs: Zod schemas in `packages/shared` or duplicated in api/web with a single source of truth; API documentation (OpenAPI/Swagger) from NestJS.
-- Env: `.env.example` for both apps with all required keys (no secrets); SMTP and Keycloak URLs/realms in env.
+- **Left panel (~48% width)**: Full-height background image with gradient overlay at bottom. LaaS text logo top-left (white). Tagline (headline + subtitle) at bottom-left over gradient.
+- **Right panel (~52% width)**: White background, vertically centered content area with max-width constraint, X close button at top-right (navigates to `/`).
+- **Image rotation**: On each mount of the auth layout (or on each route change within the group), pick a random image from the 4 images in `public/images/`. For light images (`side-light-`*) use dark text on the overlay; for dark images (`side-dark-`*) use white text. Detection: filename contains "light" or "dark".
+- **Responsive**: Below `md` breakpoint (768px), hide left panel entirely; right panel goes full-width. Modals and OTP inputs remain usable at all sizes.
+- **Accessibility**: Proper focus order, keyboard navigation for all interactive elements, ARIA labels on modals.
 
 ---
 
-## 5. Implementation order (high level)
+### 4.2 Sign-in (`/signin`) -- design ref: `signin.png`
 
-1. **Monorepo and env**
-  - Create repo structure: `apps/web`, `apps/api`, `packages/shared` (if used). Root or per-app `docker-compose` for PostgreSQL, MongoDB, Redis, Keycloak (and optional MailHog for dev).
-  - Add `.env.example` for API (e.g. `DATABASE_URL`, `KEYCLOAK_ISSUER`, `KEYCLOAK_JWKS_URI`, `SMTP_`*, `GOOGLE_CLIENT_`*, `GITHUB_CLIENT_*`, `MONGODB_URI` if used).
-2. **Keycloak**
-  - Deploy Keycloak (e.g. Docker). Create realm for public users: local registration, email verification, Google and GitHub identity providers. Create realm (or IdP config) for university SSO; configure one test IdP (SAML or OIDC) for development.
-3. **Backend — auth and users**
-  - PostgreSQL schema (Prisma): users (id, email, first_name, last_name, email_verified_at, keycloak_id, storage_uid, auth_type, oauth_provider, default_org_id, etc.), otp_verifications, user_policy_consents, refresh_tokens, and org/role tables for RBAC. Seed: roles (including `public_user`), one organization with `org_type = 'public'`. If using MongoDB, add a small module for the chosen collections (e.g. session metadata) and document the schema.
-  - NestJS: Auth module — JWT guard (RS256, JWKS from Keycloak; or dual issuer if Option B). Auth endpoints: register (public: email, password, first name, last name, policy slugs agreed), send-otp, resend-otp (rate limit: e.g. max 3 per 15 min per email/user), verify-otp, login (email/password or token exchange after OAuth), refresh. On user creation: set `storage_uid`, `default_org_id` (public org), insert `user_org_roles` (public_user), insert `user_policy_consents` from sign-up state. User creation/linking for university SSO on first JWT validation (by Keycloak sub).
-  - OTP: Generate 6-digit code, store hash + expiry in PostgreSQL; verify-otp marks user verified, creates/links user in Keycloak if Option A, then trigger welcome email.
-  - Email: SMTP transport (Nodemailer or similar) using Gmail credentials from env; send OTP and welcome emails.
-4. **Frontend — Individual/Public**
-  - Auth layout: Two-column component (left: image + tagline; right: slot for form). Left image: random choice from `Image_Assets` on mount (create folder under `apps/web/public/Image_Assets` with fallback if empty); tagline from config.
-  - Pages: Sign-in, Sign-up (step 1: email/password + checkboxes), Sign-up step 2 (first/last name), Sign-up step 3 (OTP). Use Next.js App Router routes (e.g. `/signin`, `/signup`, `/signup/name`, `/signup/verify`). OTP step: Resend with cooldown; Cancel → back to sign-in or previous step.
-  - Policy modals: Three modals (or one modal with three content variants). Content scrollable; detect “scroll to end” (or use helper button to scroll to bottom); show “I have read…” checkbox and “Confirm” only when at bottom; on Confirm, close and set “agreed” for that policy in sign-up state.
-  - Forms: React Hook Form + Zod; password strength checklist as in design (include "allowed characters" rule per shared schema); OTP inputs (6 boxes, auto-focus next).
-  - OAuth: “Sign in with Google” / “Sign in with GitHub” redirect to Keycloak (or direct to providers with Keycloak brokering). Callback handled by Next.js route; exchange code for tokens and set session (e.g. HTTP-only cookie or NextAuth session). (Implement exactly two OAuth buttons: Google and GitHub only.)
-5. **Frontend — University SSO**
-  - Entry: “Sign in with your institution” → redirect to Keycloak with university realm or `kc_idp_hint`. No sign-up UI; after login, Keycloak redirects back with code; frontend exchanges code (or receives tokens) and stores session, then redirect to home.
-6. **Polish**
-  - Forgot password: link from sign-in → Keycloak account console or a simple “reset password” flow (Keycloak or custom). Footer links can be placeholders (e.g. “User Policy” opens same policy modal) until real pages exist.
-  - Responsive: Two-column stacks on small screens if needed; modals and OTP inputs remain usable.
-  - Accessibility: Labels, focus order, and keyboard support for modals and OTP inputs.
+Right-panel content:
+
+1. **Heading**: "Welcome to LaaS"
+2. **Subtitle**: "Enter your email below to login to your account."
+3. **Email** input (label: "Email", placeholder: "Enter your email")
+4. **Password** label with **"Forgot your password?"** link aligned right, then input (placeholder: "Enter your password") with visibility toggle eye icon
+5. **"Sign in"** button -- black filled, full-width
+6. **"OR"** divider (horizontal rule with centered "OR" text)
+7. **OAuth buttons**: Google and GitHub only (two icon buttons in outlined/bordered style, side by side). **Exactly two buttons** -- design shows three but requirement overrides to two.
+8. **"Don't have an account? Sign up"** -- "Sign up" is a link to `/signup`
+9. **Footer links**: "Need help?" | "Contact Support" | "User Policy" | "User Content Disclaimer" | "Console Terms of Service" -- small text, centered
+
+**Behavior**: Validation via Zod (email format, password non-empty). On submit: mock API call with loading spinner on button, then redirect to `/dashboard` (placeholder). On error: toast notification via Sonner.
 
 ---
 
-## 6. Diagram (auth flows)
+### 4.3 Sign-up step 1 (`/signup`) -- design ref: `SignUp.png`, `SingUp1.png`, `SignUp2.png`, `SignUp3.png`
+
+Right-panel content:
+
+1. **Heading**: "Create an Account"
+2. **Subtitle**: "Enter email to access your account and enjoy our services."
+3. **Email** input (label: "Email", placeholder: "Enter your email")
+4. **Password** input (label: "Password", placeholder: "Enter your password") with visibility toggle
+5. **Password strength checklist** (appears once password field has focus or any value):
+  - Each rule: green checkmark icon when satisfied, red X icon when not
+  - Rules (derived from shared Zod schema):
+    - "At least 8 characters"
+    - "At least 1 number"
+    - "At least 1 lowercase letter"
+    - "At least 1 uppercase letter"
+    - "Use only allowed characters"
+  - **Allowed characters** (defined once in `lib/validations.ts`, shared with backend): `a-zA-Z0-9` and `!@#$%^&*()_+-=[]{};':"\|,.<>/?`~` and space
+6. **Three policy checkboxes**:
+  - "I agree with **LaaS's Policy**" (bold underlined link opens policy modal)
+  - "I agree with the **User Content Disclaimer**" (bold underlined link opens policy modal)
+  - "I agree with the **Console Terms of Service**" (bold underlined link opens policy modal)
+  - On submit without all checked: red text below each unchecked checkbox: "You must agree to the terms and conditions to continue."
+7. **"Sign up"** button -- black filled, full-width
+8. **"OR"** divider
+9. **OAuth buttons**: Google + GitHub (same style as sign-in)
+10. **"Already have an account? Sign In"** -- "Sign In" links to `/signin`
+11. **Footer links** (same as sign-in)
+
+**Behavior**: On valid submit (all password rules met, all policies agreed), store email, password, and agreed policy slugs in Zustand store -> navigate to `/signup/details`. Do NOT create user yet.
+
+---
+
+### 4.4 Policy modal -- design ref: `TOS.png`, `TOS1.png`
+
+Triggered by clicking a policy link text on the sign-up page. Uses shadcn `Dialog` component.
+
+- **Header**: Policy title (e.g., "Acceptable Use Policy"), effective date, last updated date (italic)
+- **Body**: Scrollable content area with hardcoded policy text from `config/policies.ts`. Three policies:
+  - "Acceptable Use Policy" (maps to checkbox "LaaS's Policy", slug `acceptable_use`)
+  - "User Content Disclaimer" (slug `user_content_disclaimer`)
+  - "Console Terms of Service" (slug `console_tos`)
+- **Scroll-to-end helper button**: A small floating down-arrow button at the bottom-right of the scroll area. On click: smooth-scrolls the content to the bottom. Hides once user is at the bottom.
+- **Footer** (only visible after scrolling to the bottom -- stays visible even if user scrolls back up):
+  - Checkbox: "I have read and agree to the [Policy Name]"
+  - "Confirm" button (enabled only when checkbox is checked)
+- **Close (X) button** top-right: closes modal without confirming
+- **Scroll detection**: `scrollTop + clientHeight >= scrollHeight - 10`. Once reached, set `reachedEnd = true` permanently for that modal instance.
+
+**On Confirm**: close modal, mark that policy as agreed in sign-up form state, auto-check the corresponding checkbox on the sign-up form.
+
+**Policy content**: Hardcoded in `config/policies.ts` as structured objects with `title`, `slug`, `effectiveDate`, `lastUpdated`, and `content` (string or React nodes). Swapping content later is a single-file change.
+
+---
+
+### 4.5 Name step (`/signup/details`) -- replaces "Create an Organization" from design ref
+
+Right-panel content:
+
+1. **Heading**: "Complete Your Profile"
+2. **Subtitle**: "Tell us a bit about yourself to get started."
+3. **First Name** input (label: "First Name", placeholder: "Enter your first name")
+4. **Last Name** input (label: "Last Name", placeholder: "Enter your last name")
+5. **"Continue"** button -- black filled, full-width
+6. **"Back"** button -- outlined, full-width (navigates to `/signup`, preserves Zustand state)
+7. **Footer links**
+
+**Behavior**: On submit: store first/last name in Zustand -> navigate to `/signup/verify`.
+
+**Route guard**: If no email/password in Zustand store (e.g. user navigated directly), redirect back to `/signup`.
+
+---
+
+### 4.6 OTP verification (`/signup/verify`) -- design ref: `SignUp-Verification.png`
+
+Right-panel content:
+
+1. **Heading**: "Your Verification Code"
+2. **Subtitle**: "Enter the code from your email :"
+3. **Email display**: Shows the email from sign-up state (e.g., "[punith.vs@gktech.ai](mailto:punith.vs@gktech.ai)")
+4. **6 OTP input boxes**: Single digit each, auto-advance on input, backspace moves to previous box. Styled as individual bordered boxes with focused state.
+5. **"Didn't get the email? Resend email"** -- "Resend email" as a link/button. Shows cooldown timer after click ("Resend available in 60s"). Max 3 resends.
+6. **"Verify"** button -- black filled, full-width (disabled/grayed until all 6 digits entered)
+7. **"Cancel"** button -- outlined, full-width (clears entire Zustand sign-up state, navigates to `/signin`)
+8. **Footer links**
+
+**Behavior (mock for UI phase)**: On verify: simulate 1.5s delay -> success toast "Account created successfully!" -> clear Zustand store -> redirect to `/dashboard` (placeholder). For the mock, any 6-digit code works.
+
+**Route guard**: If no email in Zustand store, redirect to `/signup`.
+
+---
+
+### 4.7 Welcome email
+
+Sent once after successful OTP verification (backend concern). Content: simple "Welcome to LaaS" template with user's first name. Uses same Gmail SMTP. Template stored in `backend/templates/welcome.hbs`. Copy can be changed later.
+
+---
+
+## 5. Multi-step sign-up state management
+
+### Zustand store (`stores/signup-store.ts`)
+
+```typescript
+interface SignupState {
+  email: string;
+  password: string;
+  agreedPolicies: {
+    acceptable_use: boolean;
+    user_content_disclaimer: boolean;
+    console_tos: boolean;
+  };
+  firstName: string;
+  lastName: string;
+  currentStep: 1 | 2 | 3;
+  setStep1: (email: string, password: string, policies: SignupState['agreedPolicies']) => void;
+  setStep2: (firstName: string, lastName: string) => void;
+  setPolicy: (slug: keyof SignupState['agreedPolicies'], agreed: boolean) => void;
+  reset: () => void;
+}
+```
+
+Persist to `sessionStorage` via Zustand `persist` middleware so a page refresh does not lose the multi-step form data. Clear on successful verification or cancel.
+
+---
+
+## 6. Shared validation (`lib/validations.ts`)
+
+Zod schemas defined once, reusable by both frontend and backend (copy or shared package later):
+
+- **Email**: `z.string().email("Invalid email address")`
+- **Password**: Composite schema with individual `.refine()` checks so the UI can show per-rule pass/fail:
+  - `min(8)` -- "At least 8 characters"
+  - `regex(/[0-9]/)` -- "At least 1 number"
+  - `regex(/[a-z]/)` -- "At least 1 lowercase letter"
+  - `regex(/[A-Z]/)` -- "At least 1 uppercase letter"
+  - `regex(/^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?` ~]+$/)` -- "Use only allowed characters"
+- **Name**: `z.string().min(1, "Required").max(100)`
+- **OTP**: `z.string().length(6).regex(/^\d+$/, "Must be 6 digits")`
+
+---
+
+## 7. Auth selection landing page (`/`)
+
+Clean, centered page with the LaaS text-mark and two prominent cards:
+
+- **Card 1: "Academic Access"** -- Icon (e.g. graduation cap). Subtitle: "Sign in with your university or institution credentials." CTA button: "Continue with Institution" -> navigates to `/institution`.
+- **Card 2: "Personal Access"** -- Icon (e.g. user). Subtitle: "Create an account or sign in with email." CTA button: "Continue" -> navigates to `/signin`.
+
+Minimal, premium design. No left-panel image on this page -- full-width centered layout. LaaS text-mark at top.
+
+---
+
+## 8. Gaps, considerations, and learnings
+
+The following were identified during plan review and must be implemented explicitly.
+
+**OAuth buttons:** Design reference shows three icon buttons; requirement is **Google and GitHub only**. Implement exactly two OAuth buttons. Do not add a third social or magic-link button unless explicitly added later.
+
+**Password rules -- "Use only allowed characters":** Besides 8+ chars, 1 number, 1 lowercase, 1 uppercase, the design includes "Use only allowed characters." Allowed characters are defined explicitly in `lib/validations.ts` (letters + digits + a fixed set of symbols) and documented. The Zod schema is the single source of truth; backend validation must use the identical regex.
+
+**Persisting policy consents (backend):** When the user is created (after OTP verification), insert rows into `user_policy_consents` for each policy agreed during sign-up (`policy_slug`: `acceptable_use`, `user_content_disclaimer`, `console_tos`), with `agreed_at` and `ip_address`. The frontend stores agreed policy slugs in the Zustand sign-up state so they are available at user creation time.
+
+**Public organization and role (backend seed):** Seed (or migration) must ensure one organization with `org_type = 'public'` (name "Public", slug "public"). On creating a public user (after OTP verification or OAuth link), set `users.default_org_id` to that org and insert `user_org_roles` with the `public_user` role.
+
+**storage_uid (backend):** On user creation (public or university), generate an immutable `storage_uid` (e.g. `u`_ + nanoid/UUID segment). Uniqueness enforced by DB unique constraint (see [laas_enterprise_database_design_1560fd47.plan.md](.cursor/plans/laas_enterprise_database_design_1560fd47.plan.md)).
+
+**JWT issuer for public users:** Tech stack expects Keycloak as single signer. Two options:
+
+- **(A) Preferred**: After OTP verification, create user in PostgreSQL, then create user in Keycloak via Admin API and use Keycloak token endpoint to obtain Keycloak-issued JWT (single issuer).
+- **(B) Fallback**: NestJS issues its own JWT for email/password public users; Keycloak issues JWT for university SSO and public OAuth (dual issuer). Use if Keycloak Admin API or theme work blocks progress.
+
+**Resend OTP and Cancel:** Backend resend endpoint must enforce rate limit (max 3 resends per 15 minutes per email). Frontend shows cooldown timer ("Resend available in Xs") and disables the link. **Cancel** on verification step: clears entire Zustand sign-up state, navigates to `/signin`. Do not create/update user until Verify succeeds.
+
+**Forgot password:** For MVP with Option A (Keycloak as single issuer), implement "Forgot password?" as a redirect to Keycloak account management URL. If using Option B, add OTP-based or link-based reset flow.
+
+**Image_Assets and fallback:** Copy `Image_Assets/` contents to `frontend/public/images/`. Implement random image selection on each load. Include a CSS fallback background gradient so the UI never shows a broken image if the folder is empty or an image fails to load.
+
+**Image text color adaptation:** Images have "light" and "dark" variants (filename contains `side-light-`* or `side-dark-`*). Light images need dark overlay text; dark images need white overlay text. Detect from filename.
+
+**Multi-step state persistence:** Zustand with `sessionStorage` persistence middleware. Prevents data loss on accidental page refresh during sign-up. State is cleared on successful verification, cancel, or browser tab close.
+
+**Loading states and error handling:** All form submissions show a loading spinner on the submit button (disabled during load). Errors display as toast notifications (Sonner). Network errors show a generic "Something went wrong" toast.
+
+**Responsive design:** Left panel hidden below `md` (768px) breakpoint. All forms, modals, and OTP inputs remain fully functional and well-spaced on mobile widths.
+
+**Accessibility:** Labels on all inputs, `aria-label` on icon buttons, focus trap in modals, keyboard support for OTP inputs (arrow keys, backspace), visible focus rings.
+
+**API client layer:** All API calls go through `lib/api.ts` functions (e.g. `signIn()`, `signUp()`, `verifyOtp()`, `resendOtp()`). For the UI phase, these are mocked with `setTimeout`. When the backend is built, only `lib/api.ts` changes -- no component changes.
+
+---
+
+## 9. Tech stack
+
+### Frontend (built first)
+
+
+| Concern        | Technology                                    | Version |
+| -------------- | --------------------------------------------- | ------- |
+| Framework      | Next.js 15 (App Router, Server Components)    | 15.x    |
+| UI Library     | shadcn/ui + Radix primitives + Tailwind CSS 4 | Latest  |
+| State (client) | Zustand (multi-step sign-up form)             | Latest  |
+| Forms          | React Hook Form + Zod                         | Latest  |
+| Icons          | Lucide React                                  | Latest  |
+| Toast          | Sonner (via shadcn)                           | Latest  |
+| Fonts          | Inter or Geist via `next/font/google`         | -       |
+
+
+### Backend (built after UI validation)
+
+
+| Concern          | Technology                                       | Version |
+| ---------------- | ------------------------------------------------ | ------- |
+| Framework        | NestJS 11 + Fastify adapter                      | 11.x    |
+| ORM (PostgreSQL) | Prisma                                           | 6.x     |
+| ODM (MongoDB)    | Mongoose                                         | 8.x     |
+| Auth             | Keycloak 26.x (self-hosted)                      | 26.x    |
+| JWT              | RS256 (Keycloak JWKS or app-signed)              | -       |
+| Email            | @nestjs-modules/mailer (Nodemailer + Handlebars) | Latest  |
+| Validation       | Zod (or class-validator)                         | 3.x     |
+| Cache            | Redis 7.4+                                       | 7.4+    |
+
+
+### Colors and styling (from design reference)
+
+- Primary buttons: `bg-black text-white hover:bg-gray-900`
+- Secondary/outlined buttons: `bg-white border border-gray-300 text-black`
+- Inputs: `border border-gray-300 rounded-md bg-white` with `focus:ring-2 focus:ring-black`
+- Error text: `text-red-500`
+- Success checks: `text-green-600`
+- Failed checks: `text-red-500`
+- Background: `bg-white`
+- Footer text: `text-gray-500 text-xs`
+
+---
+
+## 10. Implementation order
+
+### Phase 1: Frontend (UI only) -- build and validate first
+
+1. **Scaffold** -- `npx create-next-app@latest frontend` with App Router, TypeScript, Tailwind CSS 4. Init shadcn/ui. Install zustand, react-hook-form, @hookform/resolvers, zod, lucide-react. Copy `Image_Assets/`* to `frontend/public/images/`.
+2. **Config and types** -- Create `config/constants.ts` (app name, taglines, image paths), `config/policies.ts` (3 hardcoded policies), `config/institutions.ts` (mock university list), `types/auth.ts`, `lib/validations.ts` (Zod schemas), `lib/api.ts` (mock API functions), `lib/utils.ts` (cn helper).
+3. **shadcn components** -- Install: button, input, checkbox, dialog, label, separator, command, sonner. Create `icons/` with LaaS logo, Google icon, GitHub icon SVGs.
+4. **Auth layout** -- Build `(auth)/layout.tsx` with two-column design. Build `left-panel.tsx` (random image, gradient, logo, tagline) and right-panel shell with X close. Test image rotation and text color adaptation.
+5. **Landing page** -- Build `/` with two section cards (Academic Access, Personal Access).
+6. **Sign-in page** -- Build `/signin` matching `signin.png` exactly.
+7. **Sign-up store** -- Create Zustand store with sessionStorage persistence.
+8. **Sign-up page** -- Build `/signup` matching `SignUp*.png` exactly, including password strength indicator and policy checkboxes.
+9. **Policy modal** -- Build reusable modal with scroll detection, helper button, read-and-agree footer. Test with all 3 policies.
+10. **Name step** -- Build `/signup/details` with first/last name. Add route guard.
+11. **OTP verification** -- Build `/signup/verify` with 6-digit OTP input, resend cooldown, verify/cancel. Add route guard.
+12. **Institution page** -- Build `/institution` with searchable selector and mock SSO flow.
+13. **Polish** -- Responsive testing, focus management, keyboard navigation, loading states, toasts, overall alignment review against all 8 design reference screenshots.
+
+### Phase 2: Backend + Database (after UI is approved)
+
+1. **Backend scaffold** -- `npx @nestjs/cli new backend` with Fastify adapter. Install Prisma, Mongoose, passport, bcrypt, nodemailer, etc.
+2. **Database schema** -- Prisma schema for Phase 1 auth tables: `users`, `user_profiles`, `otp_verifications`, `user_policy_consents`, `refresh_tokens`, `login_history`, `organizations`, `roles`, `permissions`, `role_permissions`, `user_org_roles`. Seed: 9 roles, public org, initial permissions. Run migrations.
+3. **Auth module** -- JWT guard (RS256, JWKS from Keycloak or app-signed). Endpoints:
+  - `POST /auth/register` (email, password, firstName, lastName, agreedPolicies[])
+    - `POST /auth/send-otp` (email)
+    - `POST /auth/resend-otp` (email) -- rate limit: max 3 per 15 min
+    - `POST /auth/verify-otp` (email, code) -- on success: mark verified, assign storage_uid, default_org_id, public_user role, insert policy consents, trigger welcome email
+    - `POST /auth/login` (email, password)
+    - `POST /auth/refresh` (refresh token)
+    - `GET /auth/oauth/google/callback`
+    - `GET /auth/oauth/github/callback`
+4. **Email module** -- Gmail SMTP transport. Templates: OTP email, welcome email. Handlebars HTML templates in `backend/templates/`.
+5. **Keycloak setup** -- Deploy Keycloak 26.x. Public realm with local registration + Google + GitHub identity providers. University realm with one test IdP.
+
+### Phase 3: Integration
+
+1. **Wire frontend to backend** -- Replace mock API calls in `lib/api.ts` with real fetch calls to NestJS endpoints. Test full end-to-end: sign-up -> OTP -> welcome email -> sign-in -> OAuth -> SSO.
+
+---
+
+## 11. Diagram (auth flows)
 
 ```mermaid
-flowchart LR
-  subgraph university [University Section]
-    A1[Sign in with institution] --> A2[Keycloak / University IdP]
-    A2 --> A3[JWT to app]
-    A3 --> A4[Home]
-  end
+flowchart TD
+  Landing["/ Landing Page"] --> AcademicCard["Academic Access Card"]
+  Landing --> PersonalCard["Personal Access Card"]
 
-  subgraph public [Individual / Public Section]
-    B1[Sign up] --> B2[Email + Password + Policies]
-    B2 --> B3[First / Last name]
-    B3 --> B4[OTP Email]
-    B4 --> B5[Verify]
-    B5 --> B6[Welcome email + Home]
-    B7[Sign in] --> B8[Email/Password or OAuth]
-    B8 --> B6
-  end
+  AcademicCard --> Institution["/institution"]
+  Institution --> SelectUni["Select Institution"]
+  SelectUni --> KeycloakSSO["Keycloak SSO Redirect"]
+  KeycloakSSO --> UniIdP["University IdP Login"]
+  UniIdP --> JWTBack["JWT Issued"]
+  JWTBack --> Home["/dashboard Home"]
+
+  PersonalCard --> SignIn["/signin"]
+  SignIn --> EmailPwLogin["Email + Password"]
+  EmailPwLogin --> Home
+  SignIn --> OAuthLogin["Google / GitHub OAuth"]
+  OAuthLogin --> Home
+
+  SignIn --> GoSignUp["Sign up link"]
+  GoSignUp --> SignUp["/signup Step 1"]
+  SignUp --> PolicyModal["Policy Modal x3"]
+  PolicyModal --> SignUp
+  SignUp --> NameStep["/signup/details Step 2"]
+  NameStep --> OTPStep["/signup/verify Step 3"]
+  OTPStep --> VerifySuccess["OTP Verified"]
+  VerifySuccess --> WelcomeEmail["Welcome Email Sent"]
+  WelcomeEmail --> Home
 ```
 
 
 
 ---
 
-## 7. Out of scope for this plan
+## 12. Dependencies (frontend)
 
-- Full RBAC and org/role assignment (only the minimal user record and “logged in” state needed for sign-in/sign-up).
-- Forgot password implementation detail (link to Keycloak or stub).
-- Actual university IdP metadata (handled per-institution during Keycloak setup).
-- Production secrets management (use env and a single source for SMTP/Keycloak; no hardcoding).
+```
+next 15.x
+react 19.x
+react-dom 19.x
+tailwindcss 4.x
+@tailwindcss/postcss
+react-hook-form
+@hookform/resolvers
+zod
+zustand
+lucide-react
+class-variance-authority
+clsx
+tailwind-merge
+sonner
+```
+
+shadcn/ui components (installed via CLI): `button`, `input`, `checkbox`, `dialog`, `label`, `separator`, `command`, `sonner`
 
 ---
 
-## 8. Deliverables checklist
+## 13. Out of scope for this plan
 
-- Monorepo with `apps/web`, `apps/api`, and optional `packages/shared`; docker-compose for PG, Mongo, Redis, Keycloak.
-- Keycloak: public realm (registration, Google/GitHub, email verification or app-driven OTP + user sync); university realm/IdP config (one test IdP); document IdP metadata requirements (SAML/OIDC).
-- Backend: Prisma schema (Phase 1 auth tables including users, otp_verifications, user_policy_consents, refresh_tokens); seed (roles, public org); auth endpoints (register, send-otp, resend-otp with rate limit, verify-otp with user + consent creation, login, OAuth callback); JWT validation (Keycloak ± app issuer); SMTP (OTP + welcome); storage_uid and public_user assignment on create.
-- Frontend: Two-section entry (University SSO | Individual/Public), sign-in and sign-up pages matching design, policy modals with scroll-to-end and helper button, first/last name step, OTP step (Resend + Cancel), rotating left-panel images from Image_Assets (folder + fallback), no GMI logo, LaaS tagline, only Google and GitHub OAuth, password rules including "allowed characters" (defined in Zod + API).
-- Reusable components and env documentation (README or .env.example) for both apps.
+- Full RBAC and org/role assignment beyond initial public_user setup
+- Billing, wallet, subscription flows
+- Session booking and compute config selection
+- Forgot password full implementation (link to Keycloak or stub for MVP)
+- Actual university IdP metadata (handled per-institution during Keycloak setup)
+- Production secrets management (use env files; no hardcoding)
+- Mentorship platform (Phase 3)
+- Academic/LMS features (labs, assignments, grading)
+
+---
+
+## 14. Deliverables checklist
+
+**Phase 1 (UI):**
+
+- Standalone `frontend/` Next.js 15 project with Tailwind CSS 4 and shadcn/ui
+- Auth selection landing page with Academic Access and Personal Access cards
+- Two-column auth layout with rotating left-panel images (4 images from Image_Assets), LaaS text logo, and project tagline
+- Sign-in page pixel-matching `signin.png` (email, password, forgot link, Google + GitHub OAuth, footer)
+- Sign-up page pixel-matching `SignUp*.png` (email, password with 5-rule strength indicator, 3 policy checkboxes with validation)
+- Policy modal pixel-matching `TOS.png`/`TOS1.png` (scrollable, scroll-to-end detection, helper button, read-and-agree + confirm footer)
+- Name step (first name + last name, replacing "Create an Organization" from design ref)
+- OTP verification page pixel-matching `SignUp-Verification.png` (6-digit input, resend with cooldown, verify/cancel)
+- Institution SSO page (searchable selector, mock redirect)
+- Zustand store with sessionStorage for multi-step state
+- Zod validation schemas (password rules including allowed characters)
+- Mock API layer (`lib/api.ts`) structured for easy backend swap
+- Responsive design (left panel hidden on mobile)
+- Loading states, toast notifications, route guards
+- `.env.example` and README
+
+**Phase 2 (Backend):**
+
+- Standalone `backend/` NestJS 11 project with Fastify adapter
+- Prisma schema (Phase 1 auth tables per DB design doc); seed (roles, public org, permissions)
+- Auth endpoints: register, send-otp, resend-otp (rate-limited), verify-otp (with user creation, consent storage, storage_uid, role assignment), login, refresh, OAuth callbacks
+- JWT validation (Keycloak JWKS or app-signed RS256)
+- Gmail SMTP for OTP and welcome emails (Handlebars templates)
+- Keycloak 26.x configured: public realm (local + Google + GitHub), university realm (one test IdP)
+
+**Phase 3 (Integration):**
+
+- Frontend wired to real backend APIs
+- Full end-to-end testing of all auth flows
 
