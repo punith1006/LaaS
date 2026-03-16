@@ -7,6 +7,8 @@ docker run -d \
   --cpuset-cpus=8-11 \
   --memory=8g \
   --ipc=host --network=host --tmpfs /dev/shm:rw \
+  --device /dev/fuse \
+  --cap-add SYS_ADMIN \
   -e TZ=UTC \
   -e DISPLAY=:23 \
   -e DISPLAY_SIZEW=1920 -e DISPLAY_SIZEH=1080 -e DISPLAY_REFRESH=60 \
