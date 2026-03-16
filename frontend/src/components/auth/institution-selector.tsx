@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,10 +19,29 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { MOCK_INSTITUTIONS, type Institution } from "@/config/institutions";
-import { cn } from "@/lib/utils";
+
+const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
+const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
+
+function getSsoUrl(institution: Institution): string {
+  const callbackUrl = `${window.location.origin}/callback`;
+
+  if (KEYCLOAK_URL && KEYCLOAK_REALM && KEYCLOAK_CLIENT_ID) {
+    const params = new URLSearchParams({
+      client_id: KEYCLOAK_CLIENT_ID,
+      redirect_uri: callbackUrl,
+      response_type: "code",
+      scope: "openid email profile",
+      kc_idp_hint: institution.idpAlias || institution.id,
+    });
+    return `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth?${params.toString()}`;
+  }
+
+  return "/dashboard";
+}
 
 export function InstitutionSelector() {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Institution | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,10 +49,16 @@ export function InstitutionSelector() {
   const onContinue = () => {
     if (!selected) return;
     setIsLoading(true);
-    toast.success(`Redirecting to ${selected.name}…`);
-    setTimeout(() => {
-      router.push("/dashboard");
-    }, 2000);
+    toast.success(`Redirecting to ${selected.name}...`);
+
+    const url = getSsoUrl(selected);
+    if (url === "/dashboard") {
+      setTimeout(() => {
+        window.location.href = url;
+      }, 1500);
+    } else {
+      window.location.href = url;
+    }
   };
 
   return (
@@ -56,12 +80,15 @@ export function InstitutionSelector() {
             aria-expanded={open}
             className="w-full justify-between font-normal"
           >
-            {selected ? selected.name : "Select institution…"}
+            {selected ? selected.name : "Select institution..."}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <PopoverContent
+          className="w-[var(--radix-popover-trigger-width)] p-0"
+          align="start"
+        >
           <Command>
-            <CommandInput placeholder="Search institution…" />
+            <CommandInput placeholder="Search institution..." />
             <CommandList>
               <CommandEmpty>No institution found.</CommandEmpty>
               <CommandGroup>
@@ -92,7 +119,7 @@ export function InstitutionSelector() {
         disabled={!selected || isLoading}
         onClick={onContinue}
       >
-        {isLoading ? "Redirecting…" : "Continue with SSO"}
+        {isLoading ? "Redirecting..." : "Continue with SSO"}
       </Button>
 
       <Button variant="outline" className="w-full" asChild>

@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { OauthButtons } from "@/components/auth/oauth-buttons";
 import { FooterLinks } from "@/components/auth/footer-links";
 import { loginSchema, type LoginInput } from "@/lib/validations";
-import { signIn } from "@/lib/api";
+import { signIn, forgotPassword } from "@/lib/api";
 import { APP_NAME } from "@/config/constants";
 
 export function SignInForm() {
@@ -74,12 +74,25 @@ export function SignInForm() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="password">Password</Label>
-            <Link
-              href="#"
+            <button
+              type="button"
+              onClick={async () => {
+                const email = watch("email");
+                if (!email) {
+                  toast.error("Enter your email first");
+                  return;
+                }
+                try {
+                  await forgotPassword(email);
+                  toast.success("If an account exists, a password reset email has been sent.");
+                } catch {
+                  toast.success("If an account exists, a password reset email has been sent.");
+                }
+              }}
               className="text-sm text-neutral-600 underline hover:text-neutral-900"
             >
               Forgot your password?
-            </Link>
+            </button>
           </div>
           <div className="relative">
             <Input

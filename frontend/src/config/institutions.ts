@@ -8,6 +8,7 @@ export interface Institution {
   name: string;
   slug: string;
   domain?: string;
+  idpAlias?: string;
 }
 
 export const MOCK_INSTITUTIONS: Institution[] = [

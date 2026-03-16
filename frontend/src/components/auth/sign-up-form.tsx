@@ -19,6 +19,7 @@ import { PolicyModal } from "@/components/auth/policy-modal";
 import { registerStep1Schema, type RegisterStep1Input } from "@/lib/validations";
 import { useSignupStore } from "@/stores/signup-store";
 import { POLICY_SLUGS, type PolicySlug } from "@/config/policies";
+import { checkEmail } from "@/lib/api";
 
 export function SignUpForm() {
   const router = useRouter();
@@ -53,6 +54,7 @@ export function SignUpForm() {
     setShowPolicyErrors(false);
     setIsLoading(true);
     try {
+      await checkEmail(data.email);
       setStep1(data.email, data.password, agreedPolicies);
       router.push("/signup/details");
     } catch (e) {

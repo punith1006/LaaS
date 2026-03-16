@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +15,17 @@ import { sendOtp } from "@/lib/api";
 
 export function NameStepForm() {
   const router = useRouter();
-  const { email, firstName, lastName, setStep2, hasStep1Data } = useSignupStore();
+  const { email, firstName, lastName, setStep2, hasStep1Data } =
+    useSignupStore();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!hasStep1Data()) {
+      router.replace("/signup");
+    } else {
+      setReady(true);
+    }
+  }, [hasStep1Data, router]);
 
   const {
     register,
@@ -25,23 +36,22 @@ export function NameStepForm() {
     defaultValues: { firstName: firstName || "", lastName: lastName || "" },
   });
 
-  if (!hasStep1Data()) {
-    router.replace("/signup");
-    return null;
-  }
-
   const onSubmit = async (data: NameInput) => {
     setStep2(data.firstName, data.lastName);
     if (process.env.NEXT_PUBLIC_API_URL) {
       try {
         await sendOtp(email);
-      } catch {
-        toast.error("Failed to send verification email");
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "Failed to send verification email",
+        );
         return;
       }
     }
     router.push("/signup/verify");
   };
+
+  if (!ready) return null;
 
   return (
     <div className="w-full max-w-[400px] space-y-6">
@@ -84,7 +94,7 @@ export function NameStepForm() {
         </div>
 
         <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting ? "Continuing…" : "Continue"}
+          {isSubmitting ? "Continuing..." : "Continue"}
         </Button>
         <Button
           type="button"

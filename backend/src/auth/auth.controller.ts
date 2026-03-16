@@ -1,49 +1,61 @@
-import { Body, Controller, Post, Req, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { CheckEmailDto } from './dto/check-email.dto';
+import { SendOtpDto } from './dto/send-otp.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshDto } from './dto/refresh.dto';
+import { OAuthCallbackDto } from './dto/oauth-callback.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 
 @Controller('api/auth')
 export class AuthController {
   constructor(private auth: AuthService) {}
 
+  @Post('check-email')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async checkEmail(@Body() dto: CheckEmailDto) {
+    await this.auth.checkEmail(dto.email);
+  }
+
   @Post('send-otp')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async sendOtp(
-    @Body() body: { email: string },
-    @Req() req: { ip?: string },
-  ) {
-    await this.auth.sendOtp(body.email);
+  async sendOtp(@Body() dto: SendOtpDto) {
+    await this.auth.sendOtp(dto.email);
   }
 
   @Post('resend-otp')
   @HttpCode(HttpStatus.NO_CONTENT)
   async resendOtp(
-    @Body() body: { email: string },
+    @Body() dto: SendOtpDto,
     @Req() req: { ip?: string },
   ) {
-    await this.auth.resendOtp(body.email, req.ip);
+    await this.auth.resendOtp(dto.email, req.ip);
   }
 
   @Post('verify-otp')
   async verifyOtp(
-    @Body()
-    body: {
-      email: string;
-      code: string;
-      password: string;
-      firstName: string;
-      lastName: string;
-      agreedPolicies: string[];
-    },
+    @Body() dto: VerifyOtpDto,
     @Req() req: { ip?: string },
   ) {
     return this.auth.verifyOtp(
-      body.email,
-      body.code,
+      dto.email,
+      dto.code,
       {
-        password: body.password,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        agreedPolicies: body.agreedPolicies ?? [],
+        password: dto.password,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        agreedPolicies: dto.agreedPolicies ?? [],
       },
       req.ip,
     );
@@ -51,9 +63,46 @@ export class AuthController {
 
   @Post('login')
   async login(
-    @Body() body: { email: string; password: string },
+    @Body() dto: LoginDto,
     @Req() req: { ip?: string },
   ) {
-    return this.auth.login(body.email, body.password, req.ip);
+    return this.auth.login(dto.email, dto.password, req.ip);
+  }
+
+  @Post('refresh')
+  async refresh(@Body() dto: RefreshDto) {
+    return this.auth.refreshTokens(dto.refreshToken);
+  }
+
+  @Post('oauth/callback')
+  async oauthCallback(
+    @Body() dto: OAuthCallbackDto,
+    @Req() req: { ip?: string },
+  ) {
+    return this.auth.handleOAuthCallback(dto.code, dto.redirectUri, req.ip);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.auth.forgotPassword(dto.email);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async me(
+    @Req()
+    req: {
+      user: {
+        id: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        emailVerifiedAt: Date | null;
+      };
+    },
+  ) {
+    const { id, email, firstName, lastName, emailVerifiedAt } = req.user;
+    return { id, email, firstName, lastName, emailVerifiedAt };
   }
 }

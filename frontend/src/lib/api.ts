@@ -1,10 +1,5 @@
-/**
- * API client layer for auth. Mock implementations for UI phase.
- * Replace with real fetch calls when backend is integrated.
- */
-
 import type { AuthTokens, User } from "@/types/auth";
-import type { PolicySlug } from "@/config/policies";
+import { saveTokens, getAccessToken, getRefreshToken, clearTokens } from "@/lib/token";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -12,7 +7,10 @@ async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function signIn(email: string, password: string): Promise<AuthTokens> {
+export async function signIn(
+  email: string,
+  password: string,
+): Promise<AuthTokens> {
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -21,47 +19,35 @@ export async function signIn(email: string, password: string): Promise<AuthToken
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || "Sign in failed");
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || "Sign in failed");
     }
-    return res.json();
+    const tokens: AuthTokens = await res.json();
+    saveTokens(tokens);
+    return tokens;
   }
   await delay(1200);
-  return {
+  const mock: AuthTokens = {
     accessToken: "mock-access-token",
     refreshToken: "mock-refresh-token",
     expiresIn: 900,
   };
+  saveTokens(mock);
+  return mock;
 }
 
-export async function signUp(params: {
-  email: string;
-  password: string;
-  policiesAgreed: PolicySlug[];
-}): Promise<{ success: boolean }> {
+export async function checkEmail(email: string): Promise<void> {
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/auth/register`, {
+    const res = await fetch(`${API_BASE}/api/auth/check-email`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ email }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || "Sign up failed");
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || "Email validation failed");
     }
-    return res.json();
-  }
-  await delay(800);
-  return { success: true };
-}
-
-export async function completeProfile(firstName: string, lastName: string): Promise<void> {
-  if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/auth/complete-profile`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ firstName, lastName }),
-    });
-    if (!res.ok) throw new Error("Failed to save profile");
     return;
   }
   await delay(400);
@@ -76,7 +62,8 @@ export async function sendOtp(email: string): Promise<void> {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || "Failed to send code");
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || "Failed to send code");
     }
     return;
   }
@@ -92,7 +79,8 @@ export async function resendOtp(email: string): Promise<void> {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || "Resend failed");
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || "Resend failed");
     }
     return;
   }
@@ -107,7 +95,7 @@ export async function verifyOtp(
     firstName: string;
     lastName: string;
     agreedPolicies: string[];
-  }
+  },
 ): Promise<AuthTokens> {
   if (API_BASE && payload) {
     const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
@@ -124,25 +112,68 @@ export async function verifyOtp(
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || "Verification failed");
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || "Verification failed");
     }
-    return res.json();
+    const tokens: AuthTokens = await res.json();
+    saveTokens(tokens);
+    return tokens;
   }
   await delay(1500);
-  return {
+  const mock: AuthTokens = {
     accessToken: "mock-access-token",
     refreshToken: "mock-refresh-token",
     expiresIn: 900,
   };
+  saveTokens(mock);
+  return mock;
+}
+
+export async function refreshTokens(): Promise<AuthTokens> {
+  const token = getRefreshToken();
+  if (!token) throw new Error("No refresh token");
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: token }),
+    });
+    if (!res.ok) {
+      clearTokens();
+      throw new Error("Session expired");
+    }
+    const tokens: AuthTokens = await res.json();
+    saveTokens(tokens);
+    return tokens;
+  }
+  throw new Error("No API configured");
 }
 
 export async function getMe(): Promise<User | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/api/auth/me`, {
-      credentials: "include",
+      headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;
     return res.json();
   }
   return null;
+}
+
+export async function forgotPassword(email: string): Promise<void> {
+  if (API_BASE) {
+    await fetch(`${API_BASE}/api/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+  }
+}
+
+export function logout(): void {
+  clearTokens();
 }

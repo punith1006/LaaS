@@ -5,29 +5,39 @@ import { GoogleIcon } from "@/components/icons/google-icon";
 import { GithubIcon } from "@/components/icons/github-icon";
 import { cn } from "@/lib/utils";
 
+const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
+const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
+
+function getOAuthUrl(provider: "google" | "github"): string {
+  const callbackUrl = `${window.location.origin}/callback`;
+
+  if (KEYCLOAK_URL && KEYCLOAK_REALM && KEYCLOAK_CLIENT_ID) {
+    const params = new URLSearchParams({
+      client_id: KEYCLOAK_CLIENT_ID,
+      redirect_uri: callbackUrl,
+      response_type: "code",
+      scope: "openid email profile",
+      kc_idp_hint: provider,
+    });
+    return `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth?${params.toString()}`;
+  }
+
+  return "/dashboard";
+}
+
 interface OauthButtonsProps {
   mode: "signin" | "signup";
-  onGoogle?: () => void;
-  onGitHub?: () => void;
   className?: string;
 }
 
-export function OauthButtons({
-  mode,
-  onGoogle,
-  onGitHub,
-  className,
-}: OauthButtonsProps) {
+export function OauthButtons({ mode, className }: OauthButtonsProps) {
   const handleGoogle = () => {
-    if (onGoogle) onGoogle();
-    else {
-      // Mock: redirect to same page for now; wire to Keycloak later
-      window.location.href = "/dashboard";
-    }
+    window.location.href = getOAuthUrl("google");
   };
+
   const handleGitHub = () => {
-    if (onGitHub) onGitHub();
-    else window.location.href = "/dashboard";
+    window.location.href = getOAuthUrl("github");
   };
 
   return (
