@@ -26,7 +26,7 @@ export function FooterLinks({ className, onPolicyClick }: FooterLinksProps) {
   return (
     <footer
       className={cn(
-        "mt-8 flex flex-wrap justify-center gap-x-2 gap-y-1 text-center text-xs text-neutral-500",
+        "mt-6 flex flex-wrap justify-center gap-x-2 gap-y-1 text-center text-sm text-neutral-500",
         className
       )}
     >

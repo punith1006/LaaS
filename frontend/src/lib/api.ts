@@ -177,3 +177,21 @@ export async function forgotPassword(email: string): Promise<void> {
 export function logout(): void {
   clearTokens();
 }
+
+export async function retryStorageProvisioning(): Promise<{
+  status: string;
+  error?: string;
+}> {
+  const token = getAccessToken();
+  if (!token) throw new Error("Not authenticated");
+  const res = await fetch(`${API_BASE}/api/auth/storage-retry`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+    throw new Error(msg || "Storage retry failed");
+  }
+  return res.json();
+}

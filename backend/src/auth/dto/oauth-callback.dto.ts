@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class OAuthCallbackDto {
   @IsString()
@@ -8,4 +8,8 @@ export class OAuthCallbackDto {
   @IsString()
   @IsNotEmpty({ message: 'Redirect URI is required' })
   redirectUri: string;
+
+  @IsString()
+  @IsOptional()
+  idpHint?: string;
 }

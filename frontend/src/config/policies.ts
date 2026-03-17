@@ -103,7 +103,7 @@ Users retain ownership of all content they create, upload, or generate using the
 
 Content Storage and Persistence
 
-• Stateful desktop sessions include persistent storage (15GB per user) on network-attached storage;
+• Stateful desktop sessions include persistent storage (5GB per user) on network-attached storage;
 • Ephemeral session data is not persisted after session termination;
 • LaaS reserves the right to delete user data after account termination or prolonged inactivity as defined in the Terms of Service;
 • Users are responsible for backing up their own data.
@@ -123,7 +123,7 @@ LaaS shall not be liable for any loss, damage, or corruption of user content, re
 
 <h3>Content Storage and Persistence</h3>
 <ul>
-<li>Stateful desktop sessions include persistent storage (15GB per user) on network-attached storage;</li>
+<li>Stateful desktop sessions include persistent storage (5GB per user) on network-attached storage;</li>
 <li>Ephemeral session data is not persisted after session termination;</li>
 <li>LaaS reserves the right to delete user data after account termination or prolonged inactivity as defined in the Terms of Service;</li>
 <li>Users are responsible for backing up their own data.</li>

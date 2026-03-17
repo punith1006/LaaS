@@ -12,6 +12,13 @@ export interface Institution {
 }
 
 export const MOCK_INSTITUTIONS: Institution[] = [
+  {
+    id: "laas-academy",
+    name: "LaaS Academy",
+    slug: "laas-academy",
+    domain: "laas-academy.example.com",
+    idpAlias: "laas-academy",
+  },
   { id: "1", name: "K.S.R. College of Engineering", slug: "ksrce", domain: "ksrce.ac.in" },
   { id: "2", name: "IIT Madras", slug: "iitm", domain: "iitm.ac.in" },
   { id: "3", name: "Anna University", slug: "anna", domain: "annauniv.edu" },

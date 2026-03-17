@@ -31,13 +31,19 @@ export default function OAuthCallbackPage() {
     }
 
     const redirectUri = `${window.location.origin}/callback`;
+    const idpHint = sessionStorage.getItem("laas_idp_hint");
+    sessionStorage.removeItem("laas_idp_hint");
 
     (async () => {
       try {
         const res = await fetch(`${API_BASE}/api/auth/oauth/callback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, redirectUri }),
+          body: JSON.stringify({
+            code,
+            redirectUri,
+            idpHint: idpHint || undefined,
+          }),
         });
 
         if (!res.ok) {

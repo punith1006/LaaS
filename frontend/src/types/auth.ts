@@ -26,4 +26,10 @@ export interface User {
   firstName: string | null;
   lastName: string | null;
   emailVerifiedAt: string | null;
+  authType?: string;
+  /** For institution members: "pending" | "provisioned" | "failed" */
+  storageProvisioningStatus?: string | null;
+  /** Set when storageProvisioningStatus === "failed" */
+  storageProvisioningError?: string | null;
+  storageProvisionedAt?: string | null;
 }

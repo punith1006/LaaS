@@ -38,7 +38,19 @@ async function main() {
     update: {},
   });
 
+  const laasAcademyOrg = await prisma.organization.upsert({
+    where: { slug: 'laas-academy' },
+    create: {
+      name: 'LaaS Academy',
+      slug: 'laas-academy',
+      orgType: 'university',
+      isActive: true,
+    },
+    update: {},
+  });
+
   console.log('Seeded roles and public org:', publicOrg.slug);
+  console.log('Seeded LaaS Academy org:', laasAcademyOrg.slug);
 }
 
 main()

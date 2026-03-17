@@ -57,6 +57,10 @@ export function InstitutionSelector() {
         window.location.href = url;
       }, 1500);
     } else {
+      sessionStorage.setItem(
+        "laas_idp_hint",
+        selected.idpAlias || selected.id,
+      );
       window.location.href = url;
     }
   };

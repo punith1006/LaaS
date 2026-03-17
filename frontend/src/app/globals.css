@@ -12,6 +12,10 @@ body {
   font-family: var(--font-sans);
 }
 
+.auth-flow {
+  font-family: var(--font-urbanist), ui-sans-serif, system-ui, sans-serif;
+}
+
 /* Policy modal rich text */
 .policy-content h3 {
   font-weight: 700;

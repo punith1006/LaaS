@@ -79,7 +79,12 @@ export class AuthController {
     @Body() dto: OAuthCallbackDto,
     @Req() req: { ip?: string },
   ) {
-    return this.auth.handleOAuthCallback(dto.code, dto.redirectUri, req.ip);
+    return this.auth.handleOAuthCallback(
+      dto.code,
+      dto.redirectUri,
+      req.ip,
+      dto.idpHint,
+    );
   }
 
   @Post('forgot-password')
@@ -99,10 +104,40 @@ export class AuthController {
         firstName: string;
         lastName: string;
         emailVerifiedAt: Date | null;
+        authType?: string;
+        storageProvisioningStatus?: string | null;
+        storageProvisioningError?: string | null;
+        storageProvisionedAt?: Date | null;
       };
     },
   ) {
-    const { id, email, firstName, lastName, emailVerifiedAt } = req.user;
-    return { id, email, firstName, lastName, emailVerifiedAt };
+    const {
+      id,
+      email,
+      firstName,
+      lastName,
+      emailVerifiedAt,
+      authType,
+      storageProvisioningStatus,
+      storageProvisioningError,
+      storageProvisionedAt,
+    } = req.user;
+    return {
+      id,
+      email,
+      firstName,
+      lastName,
+      emailVerifiedAt,
+      authType,
+      storageProvisioningStatus: storageProvisioningStatus ?? undefined,
+      storageProvisioningError: storageProvisioningError ?? undefined,
+      storageProvisionedAt: storageProvisionedAt ?? undefined,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('storage-retry')
+  async storageRetry(@Req() req: { user: { id: string } }) {
+    return this.auth.retryStorageProvisioning(req.user.id);
   }
 }

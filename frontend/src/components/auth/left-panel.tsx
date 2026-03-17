@@ -24,7 +24,7 @@ export function LeftPanel() {
         src={imagePath}
         alt=""
         fill
-        className="object-cover opacity-90"
+        className="object-cover object-[55%_50%] opacity-90"
         sizes="50vw"
         priority
         unoptimized
@@ -41,13 +41,13 @@ export function LeftPanel() {
       </Link>
       <div
         className={cn(
-          "absolute bottom-0 left-0 right-0 z-10 p-8 text-white"
+          "absolute bottom-6 left-0 right-0 z-10 px-8 pb-8 text-white"
         )}
       >
-        <p className="text-xl font-bold leading-tight md:text-2xl">
+        <p className="text-2xl font-bold leading-tight md:text-3xl">
           {TAGLINE.headline}
         </p>
-        <p className="mt-2 text-sm opacity-90 md:text-base">
+        <p className="mt-3 text-sm opacity-90 md:text-lg">
           {TAGLINE.subtitle}
         </p>
       </div>

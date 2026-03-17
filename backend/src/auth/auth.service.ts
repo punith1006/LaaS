@@ -10,6 +10,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { KeycloakService } from './keycloak.service';
+import { StorageService } from '../storage/storage.service';
 
 const OTP_EXPIRY_MINUTES = 10;
 const RESEND_WINDOW_MINUTES = 15;
@@ -26,6 +27,7 @@ export class AuthService {
     private jwt: JwtService,
     private mail: MailService,
     private keycloak: KeycloakService,
+    private storage: StorageService,
   ) {}
 
   async checkEmail(email: string): Promise<void> {
@@ -281,7 +283,12 @@ export class AuthService {
     return this.issueTokens(user);
   }
 
-  async handleOAuthCallback(code: string, redirectUri: string, ip?: string) {
+  async handleOAuthCallback(
+    code: string,
+    redirectUri: string,
+    ip?: string,
+    idpHint?: string,
+  ) {
     if (!this.keycloak.isConfigured) {
       throw new BadRequestException('OAuth is not configured');
     }
@@ -310,14 +317,46 @@ export class AuthService {
     }
 
     if (!user) {
-      const publicOrg = await this.prisma.organization.findFirst({
-        where: { slug: 'public' },
-      });
-      const publicUserRole = await this.prisma.role.findFirst({
-        where: { name: 'public_user' },
-      });
+      const uniOrg = idpHint
+        ? await this.prisma.organization.findFirst({
+            where: { slug: idpHint, deletedAt: null },
+          })
+        : null;
+
+      let authType: string;
+      let defaultOrgId: string;
+      let roleName: string;
+      let oauthProvider: string;
+
+      if (uniOrg) {
+        const studentRole = await this.prisma.role.findFirst({
+          where: { name: 'student' },
+        });
+        if (!studentRole) {
+          throw new BadRequestException('Student role not seeded');
+        }
+        authType = 'university_sso';
+        defaultOrgId = uniOrg.id;
+        roleName = 'student';
+        oauthProvider = idpHint!;
+      } else {
+        const publicOrg = await this.prisma.organization.findFirst({
+          where: { slug: 'public' },
+        });
+        const publicUserRole = await this.prisma.role.findFirst({
+          where: { name: 'public_user' },
+        });
+        if (!publicOrg || !publicUserRole) {
+          throw new BadRequestException('Public organization not seeded');
+        }
+        authType = 'public_oauth';
+        defaultOrgId = publicOrg.id;
+        roleName = 'public_user';
+        oauthProvider = this.detectProvider(userInfo.sub);
+      }
 
       const storageUid = 'u_' + randomBytes(12).toString('hex');
+      const isInstitution = authType === 'university_sso';
 
       user = await this.prisma.user.create({
         data: {
@@ -329,25 +368,54 @@ export class AuthService {
             userInfo.name?.split(' ').slice(1).join(' ') ||
             '',
           keycloakSub: userInfo.sub,
-          authType: 'oauth',
-          oauthProvider: this.detectProvider(userInfo.sub),
-          defaultOrgId: publicOrg?.id,
+          authType,
+          oauthProvider,
+          defaultOrgId,
           storageUid,
+          storageProvisioningStatus: isInstitution ? 'pending' : null,
           isActive: true,
         },
       });
 
-      if (publicOrg && publicUserRole) {
+      const role = await this.prisma.role.findFirst({
+        where: { name: roleName },
+      });
+      if (role) {
         await this.prisma.userOrgRole.create({
           data: {
             userId: user.id,
-            organizationId: publicOrg.id,
-            roleId: publicUserRole.id,
+            organizationId: defaultOrgId,
+            roleId: role.id,
           },
         });
       }
 
       await this.mail.sendWelcomeEmail(user.email, user.firstName);
+
+      if (authType === 'university_sso' && user.storageUid) {
+        const result = await this.storage.provisionUserQuota(user.storageUid);
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: result.ok
+            ? {
+                storageProvisioningStatus: 'provisioned',
+                storageProvisionedAt: new Date(),
+                storageProvisioningError: null,
+              }
+            : {
+                storageProvisioningStatus: 'failed',
+                storageProvisioningError: result.error ?? 'Unknown error',
+              },
+        });
+        if (result.ok) {
+          user.storageProvisioningStatus = 'provisioned';
+          user.storageProvisionedAt = new Date();
+          user.storageProvisioningError = null;
+        } else {
+          user.storageProvisioningStatus = 'failed';
+          user.storageProvisioningError = result.error ?? 'Unknown error';
+        }
+      }
     }
 
     await this.prisma.user.update({
@@ -377,14 +445,64 @@ export class AuthService {
     await this.keycloak.triggerPasswordReset(email);
   }
 
+  async retryStorageProvisioning(userId: string): Promise<{
+    status: string;
+    error?: string;
+  }> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null, isActive: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    if (user.authType !== 'university_sso' || !user.storageUid) {
+      throw new BadRequestException(
+        'Storage retry is only for institution members with storage allocation.',
+      );
+    }
+    const allowed = ['pending', 'failed'].includes(
+      user.storageProvisioningStatus ?? '',
+    );
+    if (!allowed) {
+      throw new BadRequestException(
+        'Storage is already provisioned or not applicable.',
+      );
+    }
+    const result = await this.storage.provisionUserQuota(user.storageUid);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: result.ok
+        ? {
+            storageProvisioningStatus: 'provisioned',
+            storageProvisionedAt: new Date(),
+            storageProvisioningError: null,
+          }
+        : {
+            storageProvisioningStatus: 'failed',
+            storageProvisioningError: result.error ?? 'Unknown error',
+          },
+    });
+    return result.ok
+      ? { status: 'provisioned' }
+      : { status: 'failed', error: result.error };
+  }
+
   private detectProvider(keycloakSub: string): string {
     if (keycloakSub.includes('google')) return 'google';
     if (keycloakSub.includes('github')) return 'github';
     return 'keycloak';
   }
 
-  private async issueTokens(user: { id: string; email: string }) {
-    const payload = { sub: user.id, email: user.email };
+  private async issueTokens(user: {
+    id: string;
+    email: string;
+    authType: string;
+  }) {
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      authType: user.authType,
+    };
 
     const accessToken = this.jwt.sign(payload, {
       expiresIn: ACCESS_TOKEN_SECONDS,
