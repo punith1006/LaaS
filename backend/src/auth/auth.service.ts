@@ -145,8 +145,8 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(payload.password, SALT_ROUNDS);
-    const storageUid = 'u_' + randomBytes(12).toString('hex');
 
+    // Local/public users do not get a storageUid. Storage is reserved for institution SSO only.
     const user = await this.prisma.user.create({
       data: {
         email: normalised,
@@ -156,7 +156,6 @@ export class AuthService {
         lastName: payload.lastName,
         authType: 'public_local',
         defaultOrgId: publicOrg.id,
-        storageUid,
         isActive: true,
       },
     });
@@ -354,9 +353,10 @@ export class AuthService {
         roleName = 'public_user';
         oauthProvider = this.detectProvider(userInfo.sub);
       }
-
-      const storageUid = 'u_' + randomBytes(12).toString('hex');
       const isInstitution = authType === 'university_sso';
+      const storageUid = isInstitution
+        ? 'u_' + randomBytes(12).toString('hex')
+        : null;
 
       user = await this.prisma.user.create({
         data: {
