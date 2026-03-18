@@ -1,0 +1,40 @@
+The Design Style: "Utilitarian Minimalism" (also called the "Dev-Tool Aesthetic")
+This is a very specific and recognizable design language that's become popular among developer-facing SaaS products. Here's how to break it down for your agent:
+Named style references you can use:
+
+Utilitarian Minimalism — the broadest accurate term
+"Linear-style UI" — named after Linear.app, which popularized this look; widely understood in design circles
+Functional Flat Design — emphasizes purpose over decoration
+
+
+Key Characteristics to instruct your agent with:
+Color & Surface
+
+Warm off-white / greige / sage background (not pure white) — something like #E8E8E0 or #EEEEE6 for light mode
+Pure black (#0A0A0A) for dark mode with zero surface elevation
+Monochromatic palette with a single functional accent (green status dot, black CTAs)
+
+Typography
+
+Uppercase, wide-tracked (letter-spacing) labels for navigation and section headers
+Clean sans-serif (Inter, Geist, or similar)
+Small, restrained font sizes — nothing oversized
+
+Layout & Spacing
+
+Heavy whitespace — content breathes
+Left sidebar navigation, icon + uppercase label pairs
+No cards with heavy shadows; borders are thin or absent
+
+Interactive Elements
+
+Primary CTA: solid black button, white text — high contrast, no gradients
+Secondary CTA: outlined/ghost button
+Highlights only where functionally necessary (active nav item = left green border)
+Status indicators are the only "color" used (green dot = live)
+
+General Rules
+
+No decorative elements, gradients, or illustrations
+Flat hierarchy — depth is implied by spacing, not shadows
+Tables and data are presented raw and clean

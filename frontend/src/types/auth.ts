@@ -32,4 +32,6 @@ export interface User {
   /** Set when storageProvisioningStatus === "failed" */
   storageProvisioningError?: string | null;
   storageProvisionedAt?: string | null;
+  /** Allocated quota in GB for institution SSO users */
+  storageQuotaGb?: number | null;
 }

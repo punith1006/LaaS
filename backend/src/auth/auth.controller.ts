@@ -122,6 +122,8 @@ export class AuthController {
       storageProvisioningError,
       storageProvisionedAt,
     } = req.user;
+    const storageQuotaGb =
+      authType === 'university_sso' ? 5 : undefined;
     return {
       id,
       email,
@@ -132,6 +134,7 @@ export class AuthController {
       storageProvisioningStatus: storageProvisioningStatus ?? undefined,
       storageProvisioningError: storageProvisioningError ?? undefined,
       storageProvisionedAt: storageProvisionedAt ?? undefined,
+      storageQuotaGb,
     };
   }
 

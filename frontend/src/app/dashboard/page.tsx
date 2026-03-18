@@ -13,14 +13,16 @@ export default function DashboardPage() {
     getMe().then(setUser).catch(() => setUser(null));
   }, []);
 
+  const quotaGb = user?.storageQuotaGb ?? 5;
   const handleRetryStorage = async () => {
     setRetrying(true);
     try {
       const result = await retryStorageProvisioning();
       if (result.status === "provisioned") {
-        toast.success("Your 15GB storage is now ready.");
         const u = await getMe();
         setUser(u ?? null);
+        const gb = u?.storageQuotaGb ?? 5;
+        toast.success(`Your ${gb}GB storage is now ready.`);
       } else {
         toast.error(result.error ?? "Provisioning failed again.");
         const u = await getMe();
@@ -44,7 +46,7 @@ export default function DashboardPage() {
     isInstitution && user?.storageProvisioningStatus === "provisioned";
 
   return (
-    <main className="min-h-screen bg-neutral-50 p-8">
+    <div className="p-8">
       <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
       <p className="mt-2 text-neutral-600">
         {user ? "You are signed in." : "Loading…"}
@@ -58,7 +60,7 @@ export default function DashboardPage() {
           <p className="font-semibold">Disk provisioning failed</p>
           <p className="mt-1 text-sm">
             {user.storageProvisioningError ||
-              "Your 15GB persistent storage could not be created. You can retry or contact support."}
+              `Your ${quotaGb}GB persistent storage could not be created. You can retry or contact support.`}
           </p>
           <button
             type="button"
@@ -78,9 +80,9 @@ export default function DashboardPage() {
         >
           <p className="font-semibold">Setting up your storage</p>
           <p className="mt-1 text-sm">
-            Your 15GB persistent storage is being provisioned. If this message
-            persists, use &quot;Retry storage setup&quot; below or contact
-            support.
+            Your {quotaGb}GB persistent storage is being provisioned. If this
+            message persists, use &quot;Retry storage setup&quot; below or
+            contact support.
           </p>
           <button
             type="button"
@@ -98,12 +100,12 @@ export default function DashboardPage() {
           className="mt-6 rounded-lg border border-green-200 bg-green-50 p-4 text-green-800"
           role="status"
         >
-          <p className="font-semibold">Your 15GB persistent storage is ready</p>
+          <p className="font-semibold">Your {quotaGb}GB persistent storage is ready</p>
           <p className="mt-1 text-sm">
             You can use stateful sessions and your files will persist.
           </p>
         </div>
       )}
-    </main>
+    </div>
   );
 }
