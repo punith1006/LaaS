@@ -2,147 +2,238 @@
 
 import { useState } from "react";
 
-/**
- * Sidebar navigation — Utilitarian minimalism (Design\template.txt).
- * Accordions: Home (fixed), The Hub, Manage, Account.
- * Uppercase labels, wide tracking, minimal functional indicators.
- */
+const styles = `
+  .nav-item {
+    background-color: transparent;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .nav-item:hover {
+    background-color: var(--bgColor-default);
+    color: var(--fgColor-default);
+  }
+  .nav-item.active {
+    background-color: var(--bgColor-default);
+    color: var(--fgColor-default);
+  }
+  .sub-item {
+    background-color: transparent;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .sub-item:hover {
+    background-color: var(--bgColor-default);
+    color: var(--fgColor-default);
+  }
+  .sub-item.active {
+    background-color: var(--bgColor-default);
+    color: var(--fgColor-default);
+  }
+`;
 
 interface NavSection {
   id: string;
   label: string;
-  items: string[];
-  isAccordion: boolean;
+  items?: { id: string; label: string }[];
 }
 
-const sections: NavSection[] = [
-  { id: "home", label: "Home", items: [], isAccordion: false },
-  { id: "hub", label: "The Hub", items: ["Overview", "Activity", "Resources"], isAccordion: true },
-  { id: "manage", label: "Manage", items: ["Projects", "Team", "Settings"], isAccordion: true },
-  { id: "account", label: "Account", items: ["Profile", "Billing", "Security"], isAccordion: true },
+const navSections: NavSection[] = [
+  { id: "home", label: "HOME" },
+  {
+    id: "hub",
+    label: "THE HUB",
+    items: [
+      { id: "overview", label: "Overview" },
+      { id: "datasets", label: "Datasets" },
+      { id: "notebooks", label: "Notebooks" },
+      { id: "models", label: "Models" },
+    ],
+  },
+  {
+    id: "manage",
+    label: "MANAGE",
+    items: [
+      { id: "instances", label: "Instances" },
+      { id: "storage", label: "Storage" },
+      { id: "clusters", label: "Clusters" },
+      { id: "firewall", label: "Firewall" },
+    ],
+  },
+  {
+    id: "account",
+    label: "ACCOUNT",
+    items: [
+      { id: "profile", label: "Profile" },
+      { id: "ssh-keys", label: "SSH Keys" },
+      { id: "api-keys", label: "API Keys" },
+      { id: "billing", label: "Billing" },
+    ],
+  },
 ];
 
-function Chevron({ expanded }: { expanded: boolean }) {
-  return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 10 10"
-      fill="none"
-      style={{
-        transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-        transition: "transform 0.15s ease",
-      }}
-    >
-      <path
-        d="M1 3L5 7L9 3"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+// Lambda-style line icons (from Lambda.ai CSS)
+function NavIcon({ type, size = 22 }: { type: string; size?: number }) {
+  const strokeWidth = 1.5;
+  const color = "currentColor";
+
+  switch (type) {
+    case "home":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        </svg>
+      );
+    case "hub":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+        </svg>
+      );
+    case "manage":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      );
+    case "account":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+      );
+    default:
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="1" />
+        </svg>
+      );
+  }
 }
 
 export function SidebarNav() {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["hub"]));
+  return (
+    <>
+      <style>{styles}</style>
+      <NavContent />
+    </>
+  );
+}
+
+function NavContent() {
+  const [expanded, setExpanded] = useState<string[]>(["hub"]);
   const [activeItem, setActiveItem] = useState<string>("home");
 
-  const toggle = (id: string) => {
-    const next = new Set(expanded);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setExpanded(next);
+  const toggleSection = (id: string) => {
+    setExpanded((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
   };
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: "var(--text-xs)",
-    textTransform: "uppercase",
-    letterSpacing: "var(--tracking-label)",
-    fontWeight: 500,
-  };
+  const isExpanded = (id: string) => expanded.includes(id);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Primary navigation */}
-      <nav className="flex-1 min-h-0 py-4" aria-label="Primary navigation">
-        {sections.map((section) => (
-          <div key={section.id} className="mb-1">
-            {section.isAccordion ? (
-              /* Accordion section */
-              <div>
-                <button
-                  type="button"
-                  onClick={() => toggle(section.id)}
-                  className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-black/[0.03] transition-colors"
-                  style={labelStyle}
-                >
-                  <span style={{ color: "#1a1a1a" }}>{section.label}</span>
-                  <span style={{ color: "#9a9a8e" }}>
-                    <Chevron expanded={expanded.has(section.id)} />
-                  </span>
-                </button>
-                {expanded.has(section.id) && (
-                  <div className="py-1">
-                    {section.items.map((item) => {
-                      const itemId = `${section.id}-${item.toLowerCase()}`;
-                      const isActive = activeItem === itemId;
-                      return (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => setActiveItem(itemId)}
-                          className="w-full text-left px-8 py-2 transition-colors relative"
-                          style={{
-                            fontSize: "var(--text-sm)",
-                            color: isActive ? "#1a1a1a" : "#6b6b5f",
-                            fontWeight: isActive ? 500 : 400,
-                          }}
-                        >
-                          {isActive && (
-                            <span
-                              className="absolute left-4 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full"
-                              style={{ backgroundColor: "#22c55e" }}
-                            />
-                          )}
-                          {item}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Fixed section - Home */
-              <button
-                type="button"
-                onClick={() => setActiveItem(section.id)}
-                className="w-full text-left px-4 py-2.5 transition-colors relative"
+    <nav aria-label="Primary navigation" style={{ paddingTop: "8px", paddingBottom: "8px" }}>
+      {navSections.map((section) => {
+        const hasItems = section.items && section.items.length > 0;
+        const isActive = activeItem === section.id;
+        const expandedState = isExpanded(section.id);
+
+        return (
+          <div key={section.id}>
+            {/* Section header — Lambda style nav item */}
+            <button
+              onClick={() => {
+                if (hasItems) {
+                  toggleSection(section.id);
+                }
+                setActiveItem(section.id);
+              }}
+              className={`w-full flex items-center gap-3 relative ${isActive ? "active" : ""}`}
+              style={{
+                height: "48px",
+                padding: "0 16px",
+                color: "var(--fgColor-default)",
+                backgroundColor: isActive ? "var(--bgColor-default)" : "transparent",
+                fontWeight: 400,
+              }}
+            >
+              {/* Hover/Active indicator - 2px left border */}
+              <span
                 style={{
-                  ...labelStyle,
-                  color: activeItem === section.id ? "#1a1a1a" : "#1a1a1a",
-                  fontWeight: activeItem === section.id ? 600 : 500,
+                  position: "absolute",
+                  left: 0,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: "2px",
+                  height: "28px",
+                  backgroundColor: isActive ? "var(--fgColor-default)" : "transparent",
+                  borderRadius: "1px",
+                  transition: "background-color 0.15s ease",
+                }}
+              />
+              <span className="shrink-0">
+                <NavIcon type={section.id} size={24} />
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "var(--text-base)",
+                  fontWeight: 400,
+                  textTransform: "uppercase",
+                  letterSpacing: "var(--tracking-label)",
                 }}
               >
-                {activeItem === section.id && (
-                  <span
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5"
-                    style={{ backgroundColor: "#22c55e" }}
-                  />
-                )}
                 {section.label}
-              </button>
+              </span>
+            </button>
+
+            {/* Sub-items */}
+            {hasItems && expandedState && (
+              <div>
+                {section.items!.map((item) => {
+                  const isSubActive = activeItem === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveItem(item.id)}
+                      className={`w-full text-left relative ${isSubActive ? "active" : ""}`}
+                      style={{
+                        height: "44px",
+                        padding: "0 16px 0 52px",
+                        fontSize: "var(--text-sm)",
+                        fontWeight: isSubActive ? 500 : 400,
+                        color: isSubActive ? "var(--fgColor-default)" : "var(--fgColor-muted)",
+                        backgroundColor: isSubActive ? "var(--bgColor-default)" : "transparent",
+                        fontFamily: "var(--font-sans)",
+                      }}
+                    >
+                      {/* Sub-item active indicator */}
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: "20px",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          width: isSubActive ? "5px" : "0",
+                          height: isSubActive ? "5px" : "0",
+                          backgroundColor: isSubActive ? "var(--fgColor-default)" : "transparent",
+                          borderRadius: "50%",
+                          transition: "all 0.15s ease",
+                        }}
+                      />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
-        ))}
-      </nav>
-
-      {/* Bottom group - no divider per current design */}
-      <div className="shrink-0 min-h-[140px]" aria-hidden />
-    </div>
+        );
+      })}
+    </nav>
   );
 }

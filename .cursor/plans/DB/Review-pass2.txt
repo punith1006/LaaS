@@ -1,0 +1,418 @@
+I'll review all the documents systematically to understand the full project context and then critically analyze the database schema. Let me start by reading all the reference materials in parallel.
+
+Let me read the database design plan in chunks since it's a large file:
+
+Let me also check if there are extracted versions of the PDFs and review the current Prisma schema more closely:
+
+Now I have a comprehensive understanding of the project. Let me provide a detailed critical analysis of the database schema design.
+
+---
+
+# 🔍 Database Schema Critique: LaaS Enterprise Database Design
+
+## Executive Summary
+
+The database design in `laas_enterprise_database_design_1560fd47.plan.md` is **architecturally solid and comprehensive** for a 60+ table enterprise system. However, I've identified **critical gaps**, **inconsistencies with the project spec**, and **technical concerns** that need addressing before implementation.
+
+---
+
+## 🚨 CRITICAL ISSUES (Must Fix)
+
+### 1. **Storage Quota Mismatch — 5GB vs 15GB**
+
+| Location | Value | Issue |
+|----------|-------|-------|
+| `user_storage_volumes.quota_bytes` | `16106127360` (≈15 GiB) | ✅ Correct |
+| Current Prisma `users.storageUid` docs | `5GB` (5GiB = 5368709120) | ❌ **SPEC MISMATCH** |
+| `org_resource_quotas.max_storage_per_user_mb` | `15360` (15GB) | ✅ Correct |
+
+**Action Required**: Update documentation and ensure storage provisioning service uses 15GB (16106127360 bytes), not 5GB.
+
+---
+
+### 2. **Missing GPU Isolation Fields in Sessions**
+
+The spec explicitly requires **dual-layer VRAM enforcement** (HAMi-core + CUDA MPS), but the `sessions` table lacks:
+
+```prisma
+// MISSING - Required for GPU session management
+gpu_fraction_sm_percent      Int?    // HAMi SM allocation (e.g., 25 for 25%)
+mps_active_percent           Int?    // CUDA MPS compute limit
+hami_container_name          String? // HAMi container for VRAM tracking
+gpu_utilization_snapshot     JSONB?  // Periodic GPU stats from nvidia-smi
+vram_snapshot_bytes          BIGINT? // VRAM used at snapshot time
+```
+
+**Impact**: No way to track GPU resource consumption, verify HAMi enforcement, or generate GPU billing reports.
+
+---
+
+### 3. **Public Users Can Access Stateful Sessions**
+
+The `compute_config_access` table design is correct, but there's **no enforcement at the booking layer**:
+
+- `bookings` table allows any user to create a booking
+- No check preventing `public_user` role from booking `stateful_desktop` configs
+- Need a **DB-level constraint or application guard** that validates:
+  ```sql
+  -- Pseudo-code for required check
+  IF user_role = 'public_user' AND session_type = 'stateful_desktop'
+    THEN REJECT booking
+  ```
+
+---
+
+### 4. **Session Booking Conflict Detection Missing**
+
+The spec requires **concurrent sessions per node** based on resource availability, but:
+
+| Missing Element | Purpose |
+|-----------------|---------|
+| `node_id` in `bookings` | Which node the slot reserves |
+| Resource validation on booking | Check `allocated_vcpu + booking_vcpu <= total_vcpu` |
+| No `booking_locks` table | Prevent double-booking same slot |
+| No waitlist mechanism | When resources are exhausted |
+
+**The `bookings` table needs `node_id` and validation logic before Phase 1 launch.**
+
+---
+
+### 5. **No Wallet Balance Check Before Session Launch**
+
+The spec requires **pre-authorization** before launching a session:
+
+```prisma
+// MISSING - Required for billing protection
+booking_preauth_transaction_id UUID? // Wallet hold at booking time
+minimum_balance_required_cents BIGINT? // Calculated at booking
+```
+
+Without this, users can book sessions and drain their wallet mid-session.
+
+---
+
+## ⚠️ SIGNIFICANT CONCERNS (Should Fix)
+
+### 6. **Race Condition: Concurrent OTP Verification**
+
+The current `otp_verifications` pattern in the auth service:
+```typescript
+// Line 100-106: Race condition window exists
+const record = await this.prisma.otpVerification.findFirst({...});
+// Another request could use the same OTP here
+if (!record || record.expiresAt < new Date()) {...}
+```
+
+**Fix**: Use `UPDATE ... WHERE attempts < 5` with `RETURNING *` or row-level locking:
+```typescript
+const record = await this.prisma.$queryRaw`
+  SELECT * FROM otp_verifications 
+  WHERE email = ${email} AND used_at IS NULL 
+  ORDER BY created_at DESC LIMIT 1 FOR UPDATE
+`;
+```
+
+---
+
+### 7. **Soft Delete Not Applied Consistently**
+
+The plan specifies soft delete on 40+ tables, but it's **NOT applied to critical operational tables**:
+
+| Table | Has Soft Delete | Should Have? |
+|-------|----------------|--------------|
+| `sessions` | ❌ No | ❌ No (append-only makes sense) |
+| `bookings` | ❌ No | ⚠️ Debatable |
+| `wallet_transactions` | ❌ No | ✅ Correct (append-only) |
+| `billing_charges` | ❌ No | ✅ Correct (append-only) |
+| `nodes` | ❌ No | ⚠️ **YES** - Need to preserve historical node data |
+
+**`nodes` should have `deleted_at`** to preserve:
+- Historical session data referencing the node
+- Audit trail of node lifecycle
+- GPU utilization history even after decommissioning
+
+---
+
+### 8. **Missing Ephemeral vs Stateful Storage Differentiation**
+
+The spec distinguishes storage behavior:
+
+| User Type | Session Type | Storage Behavior |
+|-----------|--------------|------------------|
+| University member | Stateful | 15GB persistent ZFS volume |
+| University member | Ephemeral | Wiped after session, notebooks saved via `user_files` |
+| Public user | Ephemeral | **ONLY ephemeral** - notebooks saved to `user_files` |
+
+**Missing**: `sessions.is_storage_persistent` flag to differentiate:
+```prisma
+is_storage_persistent  BOOLEAN DEFAULT false  -- True for stateful, false for ephemeral
+storage_mount_type      VARCHAR(32)             -- 'nfs_persistent' | 'tmpfs_ephemeral'
+```
+
+---
+
+### 9. **No Session Reconnection Tracking**
+
+The spec requires **session reconnection**:
+> "If browser closes mid-session: container continues running... Reconnect button → WebRTC reconnects"
+
+**Missing in `sessions` table**:
+```prisma
+reconnect_count          INT DEFAULT 0         -- Number of reconnections
+last_reconnected_at      TIMESTAMPTZ?           -- Last reconnect time
+webtrc_session_token     String?                -- For re-authenticating reconnects
+```
+
+**Missing table**: `session_connections` for detailed connection history:
+```prisma
+model session_connections {
+  id            UUID PK
+  session_id    UUID FK
+  user_id       UUID FK
+  client_ip     INET
+  user_agent    TEXT
+  connected_at  TIMESTAMPTZ
+  disconnected_at TIMESTAMPTZ
+  disconnect_reason VARCHAR(32)  -- 'user_close' | 'network' | 'timeout'
+}
+```
+
+---
+
+### 10. **WebRTC Quality Metrics Not Properly Modeled**
+
+The spec requires **periodic WebRTC quality snapshots**:
+> "Real-time Grafana dashboards: per-user, per-node, GPU health"
+
+**MongoDB collection exists** (`webrtc_snapshots`), but there's no PostgreSQL table for:
+- **Session quality summaries** (aggregated at session end)
+- **Anomaly detection** (packet loss spikes, RTT spikes)
+
+**Add to `sessions`**:
+```prisma
+avg_packet_loss_ratio   DECIMAL(5,4)  -- Average packet loss
+avg_rtt_ms              INT           -- Average round-trip time
+avg_bitrate_bps          BIGINT        -- Average encoding bitrate
+quality_score            INT?          -- Computed quality score (0-100)
+```
+
+---
+
+## 📋 DETAILED ISSUE LIST
+
+### 11. **Inconsistent Auth Type Naming**
+
+| Location | Value | Issue |
+|----------|-------|-------|
+| `laas_enterprise_database_design` | `'university_sso'` | ✅ |
+| Current Prisma schema | `'university_sso'` | ✅ |
+| Auth service | `'public_local'` / `'public_oauth'` | ⚠️ **Missing from plan** |
+| Keycloak docs | `'institution_sso'` | ⚠️ **Inconsistency** |
+
+**Action**: Standardize auth types across all documents:
+```typescript
+enum AuthType {
+  university_sso   // Via Keycloak federation
+  public_local    // Email/password for public users
+  public_oauth     // Google/GitHub for public users
+}
+```
+
+---
+
+### 12. **Missing User Deprovisioning Workflow**
+
+The spec requires account deletion capabilities, but there's **no deprovisioning logic**:
+
+| Missing Component | Purpose |
+|-------------------|---------|
+| `user_deletion_requests` table | Track pending deletions |
+| `user_deletion_schedules` table | Schedule deletions (GDPR 30-day grace) |
+| Storage deallocation trigger | Call provision service to destroy ZFS dataset |
+| NFS export cleanup | Remove from `/etc/exports` |
+| Keycloak user deletion | Sync with IdP |
+
+---
+
+### 13. **No Resource Utilization Tracking Table**
+
+The spec requires **audit logging of resource usage**:
+> "Resource utilization: CPU%, RAM%, GPU%, VRAM peak, disk written, network transferred"
+
+**The `sessions.resource_snapshot` JSONB is insufficient** for:
+- Historical analysis (capacity planning)
+- Billing disputes
+- Performance optimization
+
+**Add table**:
+```prisma
+model session_resource_samples {
+  id            UUID PK
+  session_id    UUID FK
+  sampled_at    TIMESTAMPTZ NOT NULL
+  cpu_percent   DECIMAL(5,2)
+  memory_used_mb INT
+  gpu_util_percent DECIMAL(5,2)
+  vram_used_mb  INT
+  disk_io_bytes BIGINT
+  network_bytes BIGINT
+  container_cpu_seconds DECIMAL(10,2)  -- For billing calculation
+}
+-- Partition by session_id with TTL of 90 days
+-- Hot data in MongoDB, summarized to sessions.resource_snapshot at end
+```
+
+---
+
+### 14. **Academic: Missing Lab Environment Snapshot**
+
+The spec requires **consistent lab environments**, but:
+- `labs.base_image_id` only stores the base image
+- No tracking of **environment variables**, **software versions**, **dataset versions** at submission time
+
+**Add**:
+```prisma
+lab_submissions {
+  ...
+  environment_snapshot JSONB  -- Docker image SHA, env vars, installed packages
+  dataset_versions     JSONB -- Versions of preloaded datasets used
+}
+```
+
+---
+
+### 15. **Billing: Missing Prorated Calculations**
+
+`billing_charges` stores final amounts, but there's **no detailed calculation table**:
+
+**Add**:
+```prisma
+model billing_charge_calculations {
+  id              UUID PK
+  billing_charge_id UUID FK
+  session_id      UUID FK
+  compute_config_id UUID FK
+  
+  -- Time breakdown
+  start_time      TIMESTAMPTZ
+  end_time         TIMESTAMPTZ
+  duration_seconds INT
+  
+  -- Resource breakdown
+  base_rate_cents INT
+  gpu_surcharge_cents INT  -- GPU adds to hourly rate
+  
+  -- Effective rates
+  effective_rate_cents INT
+  
+  -- Final amount
+  subtotal_cents  INT
+  discount_cents  INT DEFAULT 0
+  tax_cents        INT
+  total_cents      INT
+}
+```
+
+---
+
+### 16. **Mentorship: Missing Session Recording/Notes**
+
+The spec mentions **mentor sessions** but there's **no notes capability**:
+
+**Add**:
+```prisma
+mentor_session_notes {
+  id              UUID PK
+  mentor_booking_id UUID FK
+  content         TEXT
+  action_items    JSONB  -- Follow-up tasks
+  shared_with_student BOOLEAN DEFAULT false
+  created_at      TIMESTAMPTZ
+}
+```
+
+---
+
+## ✅ WHAT'S WELL DESIGNED
+
+### 17. **RBAC and Multi-Tenancy ✅**
+- `user_org_roles` junction table correctly handles multi-org roles
+- `role_permissions` pattern is extensible
+- `organization_id` on relevant tables for RLS
+
+### 18. **Audit Logging ✅**
+- `audit_log` design is comprehensive
+- `old_data`/`new_data` JSONB for change tracking
+- `request_id` for distributed tracing
+- Correctly excludes append-only tables
+
+### 19. **Storage Lifecycle ✅**
+- `user_storage_volumes` with status tracking (`provisioning` → `active` → `wiping` → `wiped`)
+- `os_switch_history` with consent tracking (`confirmation_text`)
+- Separate `storageUid` for NFS path construction
+
+### 20. **Notifications ✅**
+- Template-based system with `notification_templates`
+- `data` JSONB for dynamic content
+- Status tracking (`pending` → `sent` → `delivered` → `read`)
+
+### 21. **Phased Implementation ✅**
+- Phase 1 focuses on MVP (31 tables)
+- Phases 2-3 handle complexity creep
+- MongoDB for high-volume telemetry is correct architectural choice
+
+---
+
+## 🔧 RECOMMENDED ACTIONS (Priority Order)
+
+### Phase 1 P0 Fixes (Before Any Session Launch):
+
+1. **Fix storage quota** to 15GB everywhere
+2. **Add GPU isolation fields** to `sessions` table
+3. **Add `node_id` to `bookings`** with resource validation
+4. **Implement booking access guards** to block public users from stateful sessions
+5. **Add wallet pre-authorization** before session launch
+
+### Phase 1 P1 Fixes (Before Beta):
+
+6. **Add `is_storage_persistent` to sessions**
+7. **Add `session_connections` table** for reconnection tracking
+8. **Fix OTP race condition** with row-level locking
+9. **Add `deleted_at` to `nodes`**
+10. **Add session quality summaries** to `sessions`
+
+### Phase 2 Fixes:
+
+11. **Add `session_resource_samples`** table
+12. **Implement user deprovisioning workflow**
+13. **Add billing calculation details**
+14. **Add lab environment snapshots**
+
+---
+
+## 📊 Schema Health Score
+
+| Category | Score | Notes |
+|----------|-------|-------|
+| Core Entities | 9/10 | Well-structured, good relations |
+| Auth/Security | 7/10 | Missing SSO session tracking |
+| Storage | 8/10 | Good, quota mismatch needs fix |
+| Sessions | 6/10 | Missing GPU fields, reconnection |
+| Billing | 7/10 | Missing calculations table |
+| Academic | 7/10 | Missing environment snapshots |
+| Multi-Tenancy | 9/10 | Solid RBAC design |
+| Audit | 9/10 | Comprehensive |
+| **Overall** | **7.8/10** | **Solid foundation, needs ~10 critical fixes** |
+
+---
+
+## Final Thoughts
+
+The schema is **enterprise-grade and thoughtfully designed**. The major gaps are:
+
+1. **GPU resource tracking** — essential for your billing model
+2. **Public user restrictions** — critical for business model compliance  
+3. **Booking conflict prevention** — essential for multi-user concurrency
+4. **Storage quota alignment** — quick fix, critical compliance
+
+I'd recommend **implementing Phase 1 MVP tables first**, then adding Phase 2 tables incrementally as features are developed. The phased approach in the plan is correct.

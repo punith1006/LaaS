@@ -6,37 +6,75 @@
   --font-sans: ui-sans-serif, system-ui, sans-serif, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-/* App shell — Utilitarian minimalism (Design\template.txt) */
+/* App shell — Lambda's exact CSS system (from Lambda.ai) */
 :root {
-  --shell-bg: #e8e8e0;
-  --shell-border: #9a9a8e;
-  --shell-header-height: 56px;
-  --shell-sidebar-width: 220px;
-  --shell-logo-size: 56px;
+  /* Lambda Color Tokens */
+  --bgColor-default: #F0EFE2;
+  --bgColor-mild: #E7E6D9;
+  --bgColor-muted: #D7D6CE;
+  --fgColor-default: #0B0B0B;
+  --fgColor-mild: #2E2E2E;
+  --fgColor-muted: #636363;
+  --borderColor-default: #BFBEB4;
 
-  /* Typography — Geist/Inter style utilitarian minimalism */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 13px;
-  --text-lg: 16px;
-  --text-xl: 20px;
-  --tracking-wide: 0.08em;
-  --tracking-wider: 0.12em;
-  --tracking-label: 0.14em;
-}
-.dark {
-  --shell-bg: #0a0a0a;
-  --shell-border: #333333;
+  /* Shell */
+  --shell-bg: var(--bgColor-default);
+  --shell-border: var(--borderColor-default);
+  --shell-header-height: 72px;  /* Scaled up header */
+  --shell-sidebar-width: 256px;  /* Lambda's sidebar width */
+
+  /* Font Sizes - scaled up */
+  --text-xs: 0.75rem;     /* 12px - micro labels */
+  --text-sm: 0.875rem;    /* 14px - table headers */
+  --text-base: 1rem;      /* 16px - body text */
+  --text-lg: 1.25rem;     /* 20px - subheadings */
+  --text-xl: 1.75rem;     /* 28px - page titles */
+  --text-2xl: 2.25rem;    /* 36px - h1 */
+
+  /* Letter Spacing */
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;
+  --tracking-label: 0.06em;  /* Uppercase labels */
 }
 
 body {
-  background: var(--color-background);
-  color: var(--color-foreground);
+  background: var(--bgColor-default);
+  color: var(--fgColor-default);
   font-family: var(--font-sans);
   font-size: var(--text-base);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark mode toggle class - applies to root/html */
+.dark body,
+.dark {
+  --shell-bg: #0B0B0B;
+  --shell-border: #2E2E2E;
+  /* Dark mode tokens */
+  --bgColor-default: #0B0B0B;
+  --bgColor-mild: #161616;
+  --bgColor-muted: #2E2E2E;
+  --fgColor-default: #F0EFE2;
+  --fgColor-mild: #BFBEB4;
+  --fgColor-muted: #818178;
+  --borderColor-default: #2E2E2E;
+}
+
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease;
+}
+
+/* Header nav link hover effect - Lambda style */
+header button:hover {
+  opacity: 0.8;
+}
+
+/* Status indicator hover */
+header > div:hover {
+  opacity: 0.8;
 }
 
 /* Utilitarian minimalism: uppercase labels with wide letter-spacing */
@@ -54,7 +92,7 @@ body {
 }
 
 .auth-flow {
-  font-family: var(--font-urbanist), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Policy modal rich text */

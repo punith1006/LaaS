@@ -1,68 +1,210 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { SidebarNav } from "./sidebar-nav";
 
 /**
  * Base screen template — Utilitarian minimalism (Design\template.txt).
  * Pixel-perfect structure matching the reference:
- * - Logo box: small bordered square in top-left corner
+ * - Logo box: fills header height with padding
  * - Header: extends right from logo, bottom border only
  * - Sidebar: extends below logo, right border only
  * - Main content: the remaining area
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Load dark mode preference from localStorage on mount
+  useEffect(() => {
+    const savedMode = localStorage.getItem("darkMode");
+    if (savedMode === "true") {
+      setIsDarkMode(true);
+      document.documentElement.classList.add("dark");
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    const newMode = !isDarkMode;
+    setIsDarkMode(newMode);
+    document.documentElement.classList.toggle("dark");
+    localStorage.setItem("darkMode", String(newMode));
+  };
+
   return (
     <div
       className="min-h-screen w-full"
       style={{
-        backgroundColor: "var(--shell-bg)",
-        fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
+        backgroundColor: "var(--bgColor-default)",
+        fontFamily: "var(--font-sans), ui-sans-serif, system-ui, sans-serif",
       }}
     >
       {/* Top row: Logo box + Header */}
       <div className="flex" style={{ height: "var(--shell-header-height)" }}>
-        {/* Logo box: bordered square with LaaS */}
+        {/* Logo box — Lambda style: fills header height with padding */}
         <div
-          className="flex items-center justify-center shrink-0"
+          className="flex items-center shrink-0"
           style={{
-            width: "var(--shell-logo-size)",
             height: "var(--shell-header-height)",
-            borderRight: "1px solid var(--shell-border)",
-            borderBottom: "1px solid var(--shell-border)",
+            padding: "0 32px",
+            borderRight: "1px solid var(--borderColor-default)",
+            borderBottom: "1px solid var(--borderColor-default)",
+            backgroundColor: "var(--bgColor-mild)",
           }}
         >
           <span
             className="select-none"
             style={{
-              fontSize: "18px",
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              color: "#1a1a1a",
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-lg)",
+              fontWeight: 700,
+              letterSpacing: "var(--tracking-label)",
+              textTransform: "uppercase",
+              color: "var(--fgColor-default)",
             }}
           >
             LaaS
           </span>
         </div>
 
-        {/* Header: bottom border only, fills remaining width */}
+        {/* Header right section — Lambda style nav links */}
         <header
-          className="flex-1"
+          className="flex-1 flex items-center justify-end"
           style={{
             height: "var(--shell-header-height)",
-            borderBottom: "1px solid var(--shell-border)",
+            borderBottom: "1px solid var(--borderColor-default)",
+            backgroundColor: "var(--bgColor-mild)",
+            gap: "16px",
+            paddingRight: "24px",
           }}
           aria-label="Header"
-        />
+        >
+          {/* Status indicator */}
+          <div
+            className="flex items-center"
+            style={{
+              fontFamily: "ui-monospace, monospace",
+              fontSize: "1rem",
+              fontWeight: 500,
+              lineHeight: "1.375rem",
+              textTransform: "uppercase",
+              color: "var(--fgColor-mild)",
+              padding: "8px",
+              gap: "8px",
+            }}
+          >
+            Status
+            <span
+              style={{
+                width: "10px",
+                height: "10px",
+                borderRadius: "50%",
+                backgroundColor: "#22c55e",
+              }}
+            />
+          </div>
+
+          {/* Mode toggle */}
+          <button
+            onClick={toggleDarkMode}
+            className="flex items-center cursor-pointer"
+            style={{
+              fontFamily: "ui-monospace, monospace",
+              fontSize: "1rem",
+              fontWeight: 500,
+              lineHeight: "1.375rem",
+              textTransform: "uppercase",
+              color: "var(--fgColor-mild)",
+              background: "transparent",
+              border: "none",
+              padding: "8px",
+              gap: "8px",
+            }}
+          >
+            {/* Sun icon */}
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ display: isDarkMode ? "none" : "block" }}
+            >
+              <circle cx="12" cy="12" r="5" />
+              <line x1="12" y1="1" x2="12" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="23" />
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+              <line x1="1" y1="12" x2="3" y2="12" />
+              <line x1="21" y1="12" x2="23" y2="12" />
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
+            {/* Moon icon */}
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ display: isDarkMode ? "block" : "none" }}
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            Mode
+          </button>
+
+          {/* Sign out */}
+          <button
+            className="flex items-center cursor-pointer"
+            style={{
+              fontFamily: "ui-monospace, monospace",
+              fontSize: "1rem",
+              fontWeight: 500,
+              lineHeight: "1.375rem",
+              textTransform: "uppercase",
+              color: "var(--fgColor-mild)",
+              background: "transparent",
+              border: "none",
+              padding: "8px",
+              gap: "8px",
+            }}
+          >
+            Sign out
+            {/* Log-out icon - Lucide style */}
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m16 17 5-5-5-5" />
+              <path d="M21 12H9" />
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            </svg>
+          </button>
+        </header>
       </div>
 
       {/* Bottom row: Sidebar + Main content */}
       <div className="flex" style={{ height: "calc(100vh - var(--shell-header-height))" }}>
-        {/* Sidebar: right border only */}
+        {/* Sidebar: slightly darker than main content */}
         <aside
           className="flex flex-col shrink-0"
           style={{
             width: "var(--shell-sidebar-width)",
-            borderRight: "1px solid var(--shell-border)",
+            borderRight: "1px solid var(--borderColor-default)",
+            backgroundColor: "var(--bgColor-mild)",
+            fontSize: "14px",
           }}
           aria-label="Navigation"
         >
@@ -70,18 +212,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1 min-h-0 overflow-y-auto">
             <SidebarNav />
           </div>
-          {/* Bottom area for user profile/settings */}
+          {/* Bottom area for user profile/settings — matches sidebar */}
           <div
-            className="shrink-0 min-h-[80px]"
+            className="shrink-0 min-h-[72px]"
             style={{
-              borderTop: "1px solid var(--shell-border)",
+              borderTop: "1px solid var(--borderColor-default)",
+              backgroundColor: "var(--bgColor-mild)",
             }}
             aria-hidden
           />
         </aside>
 
-        {/* Main content area */}
-        <main className="flex-1 min-h-0 min-w-0 overflow-auto">
+        {/* Main content area — lighter than sidebar/header */}
+        <main
+          className="flex-1 min-h-0 min-w-0 overflow-auto"
+          style={{
+            backgroundColor: "var(--bgColor-default)",
+            padding: "24px 32px",
+          }}
+        >
           {children}
         </main>
       </div>

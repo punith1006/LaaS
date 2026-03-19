@@ -46,7 +46,7 @@ export default function DashboardPage() {
     isInstitution && user?.storageProvisioningStatus === "provisioned";
 
   return (
-    <div className="p-8">
+    <div>
       <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
       <p className="mt-2 text-neutral-600">
         {user ? "You are signed in." : "Loading…"}
