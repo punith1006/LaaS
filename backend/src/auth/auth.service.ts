@@ -301,22 +301,33 @@ export class AuthService {
 
     const normalised = userInfo.email.toLowerCase();
 
+    // First, try to find user by keycloakSub (most specific match)
     let user = await this.prisma.user.findFirst({
       where: {
-        OR: [{ keycloakSub: userInfo.sub }, { email: normalised }],
+        keycloakSub: userInfo.sub,
         deletedAt: null,
       },
     });
 
-    if (user) {
-      // Update keycloakSub if missing
-      if (!user.keycloakSub) {
+    // If not found by keycloakSub, try by email
+    if (!user) {
+      user = await this.prisma.user.findFirst({
+        where: {
+          email: normalised,
+          deletedAt: null,
+        },
+      });
+
+      // If found by email but no keycloakSub, link them
+      if (user && !user.keycloakSub) {
         user = await this.prisma.user.update({
           where: { id: user.id },
           data: { keycloakSub: userInfo.sub },
         });
       }
-      
+    }
+
+    if (user) {
       // Always update name fields from Keycloak if available
       const firstName = userInfo.given_name || userInfo.name?.split(' ')[0] || user.firstName;
       const lastName = userInfo.family_name || userInfo.name?.split(' ').slice(1).join(' ') || user.lastName;

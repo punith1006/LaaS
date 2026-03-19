@@ -66,7 +66,7 @@ export function NameStepForm() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="firstName">First Name</Label>
+          <Label htmlFor="firstName" className="text-neutral-900">First Name</Label>
           <Input
             id="firstName"
             placeholder="Enter your first name"
@@ -80,7 +80,7 @@ export function NameStepForm() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="lastName">Last Name</Label>
+          <Label htmlFor="lastName" className="text-neutral-900">Last Name</Label>
           <Input
             id="lastName"
             placeholder="Enter your last name"

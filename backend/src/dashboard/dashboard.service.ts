@@ -51,6 +51,15 @@ export interface BillingData {
     description: string;
   } | null;
   billingHistory: BillingHistoryItem[];
+  // Lambda.ai style billing fields
+  creditBalance: number;
+  spendRate: number;
+  spendLimit: number;
+  dailySpend: number;
+  currentSpendRate: number;
+  gpus: number;
+  vcpus: number;
+  endpoints: number;
 }
 
 export interface BillingHistoryItem {
@@ -210,6 +219,15 @@ export class DashboardService {
           }
         : null,
       billingHistory: [], // Placeholder for future billing history
+      // Lambda.ai style billing fields (mock data for now)
+      creditBalance: 0,
+      spendRate: 0,
+      spendLimit: 80,
+      dailySpend: 0,
+      currentSpendRate: 0,
+      gpus: 0,
+      vcpus: 0,
+      endpoints: 0,
     };
   }
 }

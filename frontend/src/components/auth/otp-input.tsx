@@ -82,7 +82,7 @@ export function OtpInput({
           disabled={disabled}
           aria-label={`Digit ${i + 1} of ${length}`}
           className={cn(
-            "h-12 w-12 rounded-md border border-neutral-300 text-center text-lg font-semibold",
+            "h-12 w-12 rounded-md border border-neutral-300 text-center text-lg font-semibold text-neutral-900",
             "focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2",
             "disabled:opacity-50 disabled:cursor-not-allowed",
             digits[i] ? "border-neutral-900" : ""

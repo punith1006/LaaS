@@ -19,6 +19,7 @@ function getOAuthUrl(provider: "google" | "github"): string {
       response_type: "code",
       scope: "openid email profile",
       kc_idp_hint: provider,
+      prompt: "login", // Force Keycloak to show login page instead of using existing session
     });
     return `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth?${params.toString()}`;
   }

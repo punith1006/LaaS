@@ -104,15 +104,20 @@ export default function HomePage() {
     const fetchUser = async () => {
       try {
         const u = await getMe();
+        if (!u) {
+          // User is not authenticated, redirect to sign-in
+          router.replace("/signin");
+          return;
+        }
         setUser(u);
         setLoading(false);
       } catch {
-        setUser(null);
-        setLoading(false);
+        // Error fetching user, redirect to sign-in
+        router.replace("/signin");
       }
     };
     fetchUser();
-  }, []);
+  }, [router]);
 
   const handleTabChange = (tab: Tab) => {
     // Update URL with new tab parameter

@@ -34,6 +34,7 @@ function getSsoUrl(institution: Institution): string {
       response_type: "code",
       scope: "openid email profile",
       kc_idp_hint: institution.idpAlias || institution.id,
+      prompt: "login", // Force Keycloak to show login page instead of using existing session
     });
     return `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth?${params.toString()}`;
   }

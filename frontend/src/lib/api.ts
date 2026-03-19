@@ -252,6 +252,15 @@ export interface BillingData {
     description: string;
   } | null;
   billingHistory: BillingHistoryItem[];
+  // Lambda.ai style billing fields
+  creditBalance: number;
+  spendRate: number;
+  spendLimit: number;
+  dailySpend: number;
+  currentSpendRate: number;
+  gpus: number;
+  vcpus: number;
+  endpoints: number;
 }
 
 export interface BillingHistoryItem {
