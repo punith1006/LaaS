@@ -59,17 +59,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   /**
    * Perform graceful sign-out
-   * Clears all session data and redirects to sign-in
+   * Clears ALL session data, cache, and user info
    */
   const performSignOut = () => {
     // Clear authentication tokens
     clearTokens();
 
-    // Clear any app-specific localStorage items
-    localStorage.removeItem("darkMode");
-    localStorage.removeItem("userPreferences");
+    // Store dark mode preference temporarily
+    const darkMode = localStorage.getItem("darkMode");
     
-    // Clear sessionStorage
+    // Clear ALL localStorage
+    localStorage.clear();
+    
+    // Restore dark mode preference (optional - remove if you want complete reset)
+    if (darkMode) {
+      localStorage.setItem("darkMode", darkMode);
+    }
+
+    // Clear ALL sessionStorage
     sessionStorage.clear();
 
     // Close the modal
@@ -278,7 +285,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="flex-1 min-h-0 min-w-0 overflow-auto"
           style={{
             backgroundColor: "var(--bgColor-default)",
-            padding: "24px 32px",
           }}
         >
           {children}

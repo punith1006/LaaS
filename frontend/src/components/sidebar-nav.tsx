@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 
 const styles = `
   .nav-item {
@@ -32,11 +33,12 @@ const styles = `
 interface NavSection {
   id: string;
   label: string;
-  items?: { id: string; label: string }[];
+  href?: string;
+  items?: { id: string; label: string; href?: string }[];
 }
 
 const navSections: NavSection[] = [
-  { id: "home", label: "HOME" },
+  { id: "home", label: "HOME", href: "/home" },
   {
     id: "hub",
     label: "THE HUB",
@@ -64,7 +66,7 @@ const navSections: NavSection[] = [
       { id: "profile", label: "Profile" },
       { id: "ssh-keys", label: "SSH Keys" },
       { id: "api-keys", label: "API Keys" },
-      { id: "billing", label: "Billing" },
+      { id: "billing", label: "Billing", href: "/home?tab=billing" },
     ],
   },
 ];
@@ -124,8 +126,18 @@ export function SidebarNav() {
 }
 
 function NavContent() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [expanded, setExpanded] = useState<string[]>(["hub"]);
-  const [activeItem, setActiveItem] = useState<string>("home");
+
+  // Determine active item based on current pathname
+  const getActiveItem = () => {
+    if (pathname === "/home" || pathname.startsWith("/home")) return "home";
+    // Add more route matching as needed
+    return "home";
+  };
+
+  const [activeItem, setActiveItem] = useState<string>(getActiveItem());
 
   const toggleSection = (id: string) => {
     setExpanded((prev) =>
@@ -134,6 +146,23 @@ function NavContent() {
   };
 
   const isExpanded = (id: string) => expanded.includes(id);
+
+  const handleNavClick = (section: NavSection) => {
+    if (section.href) {
+      router.push(section.href);
+    }
+    setActiveItem(section.id);
+    if (section.items && section.items.length > 0) {
+      toggleSection(section.id);
+    }
+  };
+
+  const handleSubItemClick = (item: { id: string; label: string; href?: string }) => {
+    if (item.href) {
+      router.push(item.href);
+    }
+    setActiveItem(item.id);
+  };
 
   return (
     <nav aria-label="Primary navigation" style={{ paddingTop: "8px", paddingBottom: "8px" }}>
@@ -146,12 +175,7 @@ function NavContent() {
           <div key={section.id}>
             {/* Section header — Lambda style nav item */}
             <button
-              onClick={() => {
-                if (hasItems) {
-                  toggleSection(section.id);
-                }
-                setActiveItem(section.id);
-              }}
+              onClick={() => handleNavClick(section)}
               className={`w-full flex items-center gap-3 relative ${isActive ? "active" : ""}`}
               style={{
                 height: "48px",
@@ -199,7 +223,7 @@ function NavContent() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveItem(item.id)}
+                      onClick={() => handleSubItemClick(item)}
                       className={`w-full text-left relative ${isSubActive ? "active" : ""}`}
                       style={{
                         height: "44px",

@@ -155,8 +155,13 @@ export async function getMe(): Promise<User | null> {
   if (!token) return null;
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
+    // Add cache-busting timestamp to prevent stale user data
+    const res = await fetch(`${API_BASE}/api/auth/me?t=${Date.now()}`, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
     });
     if (!res.ok) return null;
     return res.json();
@@ -194,4 +199,94 @@ export async function retryStorageProvisioning(): Promise<{
     throw new Error(msg || "Storage retry failed");
   }
   return res.json();
+}
+
+// Dashboard API Types
+export interface HomeDashboardData {
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    authType: string;
+    storageQuotaGb: number;
+    storageProvisioningStatus: string | null;
+    storageProvisioningError: string | null;
+  };
+  storage: {
+    quotaGb: number;
+    usedGb: number;
+    status: string;
+  };
+  quickStats: {
+    totalSessions: number;
+    activeSessions: number;
+    totalDatasets: number;
+    totalNotebooks: number;
+  };
+  recentActivity: ActivityItem[];
+}
+
+export interface ActivityItem {
+  id: string;
+  type: 'session' | 'dataset' | 'notebook' | 'storage';
+  action: string;
+  description: string;
+  timestamp: string;
+}
+
+export interface BillingData {
+  plan: {
+    type: string;
+    name: string;
+    description: string;
+  };
+  usage: {
+    storageQuotaGb: number;
+    storageUsedGb: number;
+    computeHoursUsed: number;
+    billingCycle: string;
+  };
+  paymentMethod: {
+    type: string;
+    description: string;
+  } | null;
+  billingHistory: BillingHistoryItem[];
+}
+
+export interface BillingHistoryItem {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  status: string;
+}
+
+// Dashboard API Functions
+export async function getHomeDashboardData(): Promise<HomeDashboardData | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/dashboard/home`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+  return null;
+}
+
+export async function getBillingData(): Promise<BillingData | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/dashboard/billing`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+  return null;
 }

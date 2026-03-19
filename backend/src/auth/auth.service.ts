@@ -308,11 +308,25 @@ export class AuthService {
       },
     });
 
-    if (user && !user.keycloakSub) {
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { keycloakSub: userInfo.sub },
-      });
+    if (user) {
+      // Update keycloakSub if missing
+      if (!user.keycloakSub) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { keycloakSub: userInfo.sub },
+        });
+      }
+      
+      // Always update name fields from Keycloak if available
+      const firstName = userInfo.given_name || userInfo.name?.split(' ')[0] || user.firstName;
+      const lastName = userInfo.family_name || userInfo.name?.split(' ').slice(1).join(' ') || user.lastName;
+      
+      if (firstName !== user.firstName || lastName !== user.lastName) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { firstName, lastName },
+        });
+      }
     }
 
     if (!user) {

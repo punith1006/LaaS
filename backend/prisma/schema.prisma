@@ -156,6 +156,7 @@ model User {
 
   // Domain 4: Storage and OS Lifecycle
   storageVolumes    UserStorageVolume[]
+  storageExtensions StorageExtension[]  @relation("StorageExtensionUser")
   osSwitchHistories OsSwitchHistory[]
   userFiles         UserFile[]
 
@@ -603,7 +604,8 @@ model UserStorageVolume {
   nfsExportPath      String?             @map("nfs_export_path")
   containerMountPath String?             @map("container_mount_path")
   osChoice           String              @map("os_choice") @db.VarChar(32)
-  quotaBytes         BigInt              @default(16106127360) @map("quota_bytes")
+  quotaBytes         BigInt              @map("quota_bytes")
+  allocationType     String              @map("allocation_type") // 'sso_default' / 'purchased' / 'admin_granted'
   usedBytes          BigInt              @default(0) @map("used_bytes")
   usedBytesUpdatedAt DateTime?           @map("used_bytes_updated_at")
   status             StorageVolumeStatus
@@ -617,13 +619,43 @@ model UserStorageVolume {
   updatedBy          String?             @map("updated_by") @db.Uuid
 
   // Relations
-  user                 User              @relation(fields: [userId], references: [id], onDelete: Restrict)
-  osSwitchHistoriesOld OsSwitchHistory[] @relation("OsSwitchOldVolume")
-  osSwitchHistoriesNew OsSwitchHistory[] @relation("OsSwitchNewVolume")
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  storageExtensions    StorageExtension[]
+  osSwitchHistoriesOld OsSwitchHistory[]  @relation("OsSwitchOldVolume")
+  osSwitchHistoriesNew OsSwitchHistory[]  @relation("OsSwitchNewVolume")
 
   @@index([userId, status])
   @@index([createdAt])
   @@map("user_storage_volumes")
+}
+
+// ─── Domain 4: Storage Extension History ───
+model StorageExtension {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @map("user_id") @db.Uuid
+  storageVolumeId      String   @map("storage_volume_id") @db.Uuid
+  extensionType        String   @map("extension_type") // 'sso_initial' / 'purchase' / 'admin_granted' / 'bonus'
+  previousQuotaBytes   BigInt   @map("previous_quota_bytes") // quota before this extension
+  newQuotaBytes        BigInt   @map("new_quota_bytes") // quota after this extension
+  extensionBytes       BigInt   @map("extension_bytes") // how much was added
+  amountCents          Int      @default(0) @map("amount_cents") // price paid (0 for free SSO/bonus)
+  currency             String   @default("INR")
+  paymentTransactionId String?  @map("payment_transaction_id") @db.Uuid // FK -> PaymentTransaction (if purchased)
+  walletTransactionId  String?  @map("wallet_transaction_id") @db.Uuid // FK -> WalletTransaction (if wallet debit)
+  notes                String? // admin notes or purchase description
+  createdAt            DateTime @default(now()) @map("created_at")
+  createdBy            String?  @map("created_by") @db.Uuid
+
+  // Relations
+  user               User                @relation("StorageExtensionUser", fields: [userId], references: [id], onDelete: Restrict)
+  storageVolume      UserStorageVolume   @relation(fields: [storageVolumeId], references: [id], onDelete: Restrict)
+  paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id], onDelete: SetNull)
+  walletTransaction  WalletTransaction?  @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([storageVolumeId])
+  @@index([createdAt])
+  @@map("storage_extensions")
 }
 
 model OsSwitchHistory {
@@ -1016,6 +1048,9 @@ model WalletTransaction {
   user           User            @relation(fields: [userId], references: [id], onDelete: Restrict)
   billingCharges BillingCharge[]
 
+  // Domain 4: Storage Extensions
+  storageExtensions StorageExtension[]
+
   @@index([walletId, createdAt])
   @@index([userId, createdAt])
   @@map("wallet_transactions")
@@ -1163,6 +1198,9 @@ model PaymentTransaction {
   // Relations
   user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
   subscriptions Subscription[]
+
+  // Domain 4: Storage Extensions
+  storageExtensions StorageExtension[]
 
   // Domain 10: Mentorship
   mentorBookings MentorBooking[]

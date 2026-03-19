@@ -17,6 +17,11 @@
   --fgColor-muted: #636363;
   --borderColor-default: #BFBEB4;
 
+  /* Info/Alert colors */
+  --bgColor-info: #cedeff;
+  --fgColor-info: #3a73ff;
+  --borderColor-info: #3a73ff;
+
   /* Shell */
   --shell-bg: var(--bgColor-default);
   --shell-border: var(--borderColor-default);
@@ -60,6 +65,11 @@ body {
   --fgColor-mild: #BFBEB4;
   --fgColor-muted: #818178;
   --borderColor-default: #2E2E2E;
+
+  /* Info/Alert colors - dark theme */
+  --bgColor-info: #00094a;
+  --fgColor-info: #6c9aff;
+  --borderColor-info: #6c9aff;
 }
 
 /* Smooth theme transitions */

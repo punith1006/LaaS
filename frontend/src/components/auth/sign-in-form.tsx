@@ -25,6 +25,7 @@ export function SignInForm() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -36,7 +37,7 @@ export function SignInForm() {
     try {
       await signIn(data.email, data.password);
       toast.success("Signed in successfully");
-      router.push("/dashboard");
+      router.push("/home");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Sign in failed");
     } finally {

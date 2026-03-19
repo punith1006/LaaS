@@ -57,7 +57,7 @@ export default function OAuthCallbackPage() {
         const tokens = await res.json();
         saveTokens(tokens);
         toast.success("Signed in successfully");
-        router.replace("/dashboard");
+        router.replace("/home");
       } catch (e) {
         toast.error(
           e instanceof Error ? e.message : "Authentication failed",
