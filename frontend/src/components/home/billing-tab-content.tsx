@@ -305,10 +305,20 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
   const vcpus = billingData?.vcpus ?? 0;
   const endpoints = billingData?.endpoints ?? 0;
 
-  // Generate chart data
+  // Generate chart data from hourly data
   const chartData = useMemo(() => {
+    // Use hourly data from API if available
+    if (billingData?.hourlyData && billingData.hourlyData.length > 0) {
+      return billingData.hourlyData.map((item) => ({
+        time: item.hour,
+        rollingAvg: item.cumulativeSpend, // Cumulative spend up to this hour (blue line)
+        hourSpend: item.hourlyRate, // Actual hourly rate (orange line)
+      }));
+    }
+    
+    // Fallback to mock hourly data if no hourly data
     return generateHourlyData(dailySpend, currentSpendRate);
-  }, [dailySpend, currentSpendRate]);
+  }, [billingData?.hourlyData, dailySpend, currentSpendRate]);
 
   const themeColors = isDark ? COLORS.dark : COLORS.light;
 
@@ -389,8 +399,8 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                 <path d="M12 6v6l4 2" />
               </svg>
             }
-            label="Spend rate"
-            value={`₹${spendRate.toFixed(2)}/hr`}
+            label="Current rate"
+            value={`₹${currentSpendRate.toFixed(2)}/hr`}
           />
           <MetricCard
             icon={
@@ -667,11 +677,11 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                 <Tooltip
                   content={<CustomTooltip isDark={isDark} />}
                 />
-                {/* Day spend area (blue) */}
+                {/* Rolling average area (blue) */}
                 <Area
                   yAxisId="left"
                   type="monotone"
-                  dataKey="daySpend"
+                  dataKey="rollingAvg"
                   name="Rolling avg"
                   stroke={themeColors.daySpend}
                   strokeWidth={2}

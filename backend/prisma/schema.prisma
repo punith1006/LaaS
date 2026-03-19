@@ -989,6 +989,9 @@ model Wallet {
   lifetimeCreditsCents     BigInt   @default(0) @map("lifetime_credits_cents")
   lifetimeSpentCents       BigInt   @default(0) @map("lifetime_spent_cents")
   lowBalanceThresholdCents Int      @default(10000) @map("low_balance_threshold_cents")
+  spendLimitCents          Int?     @map("spend_limit_cents") // Max spend allowed per period (null = no limit)
+  spendLimitPeriod         String?  @map("spend_limit_period") // 'daily' / 'weekly' / 'monthly' (null if no limit set)
+  spendLimitEnabled        Boolean  @default(false) @map("spend_limit_enabled") // Whether spend limit is active
   isFrozen                 Boolean  @default(false) @map("is_frozen")
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @updatedAt @map("updated_at")

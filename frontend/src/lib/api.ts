@@ -261,6 +261,13 @@ export interface BillingData {
   gpus: number;
   vcpus: number;
   endpoints: number;
+  hourlyData: HourlySpendData[];
+}
+
+export interface HourlySpendData {
+  hour: string;
+  cumulativeSpend: number;
+  hourlyRate: number;
 }
 
 export interface BillingHistoryItem {
