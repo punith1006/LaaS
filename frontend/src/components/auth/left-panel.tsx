@@ -4,11 +4,11 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { LaasLogo } from "@/components/icons/laas-logo";
-import { AUTH_IMAGES, TAGLINE } from "@/config/constants";
+import { AUTH_IMAGES, TAGLINE, type AuthImagePath } from "@/config/constants";
 import { cn } from "@/lib/utils";
 
 export function LeftPanel() {
-  const [imagePath, setImagePath] = useState(AUTH_IMAGES[0]);
+  const [imagePath, setImagePath] = useState<AuthImagePath>(AUTH_IMAGES[0]);
 
   useEffect(() => {
     setImagePath(AUTH_IMAGES[Math.floor(Math.random() * AUTH_IMAGES.length)]);

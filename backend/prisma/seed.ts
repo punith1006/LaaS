@@ -32,7 +32,7 @@ async function main() {
     create: {
       name: 'Public',
       slug: 'public',
-      orgType: 'public',
+      orgType: 'public_',
       isActive: true,
     },
     update: {},

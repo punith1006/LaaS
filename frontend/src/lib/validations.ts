@@ -40,6 +40,8 @@ export const PASSWORD_RULE_LABELS: Record<keyof ReturnType<typeof getPasswordRul
   allowedCharsOnly: "Use only allowed characters",
 };
 
+export type PasswordRuleKey = keyof ReturnType<typeof getPasswordRuleResults>;
+
 export const nameSchema = z.object({
   firstName: z.string().min(1, "Required").max(100, "Too long"),
   lastName: z.string().min(1, "Required").max(100, "Too long"),

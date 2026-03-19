@@ -35,6 +35,7 @@ isProject: false
 | created_by | UUID FK -> users                   | Nullable (system actions) |
 | updated_by | UUID FK -> users                   | Nullable                  |
 
+All tables marked with `+ audit` MUST include all four columns above. `created_by` and `updated_by` are nullable (system actions may not have a user actor). Implement via NestJS middleware that auto-populates from JWT context.
 
 ### Soft delete
 
@@ -46,6 +47,22 @@ isProject: false
 
 Applied to: users, organizations, universities, departments, user_groups, courses, labs, etc.
 NOT applied to: append-only tables (audit_log, billing_charges, wallet_transactions, login_history).
+
+### CHECK constraints
+
+Applied to critical tables for data integrity:
+
+| Constraint | Table | Rule |
+|---|---|---|
+| chk_wallet_balance | wallets | balance_cents >= 0 |
+| chk_hold_amount | wallet_holds | amount_cents > 0 |
+| chk_charge_amount | billing_charges | amount_cents >= 0 |
+| chk_charge_duration | billing_charges | duration_seconds > 0 |
+| chk_otp_attempts | otp_verifications | attempts >= 0 AND attempts <= 10 |
+| chk_token_version | users | token_version >= 0 |
+| chk_vcpu | compute_configs | vcpu > 0 |
+| chk_memory | compute_configs | memory_mb > 0 |
+| chk_price | compute_configs | base_price_per_hour_cents > 0 |
 
 ### Naming
 
@@ -188,6 +205,11 @@ Logical groupings: semester, batch, course section, research group.
 | two_factor_enabled      | BOOLEAN DEFAULT false              |                                                    |
 | last_login_at           | TIMESTAMPTZ                        |                                                    |
 | last_login_ip           | INET                               |                                                    |
+| locked_at               | TIMESTAMPTZ                        | NULL = unlocked; security lockout (distinct from is_active) |
+| lock_reason             | VARCHAR(64)                        | 'brute_force' / 'admin_action' / 'suspicious_activity' |
+| lock_expires_at         | TIMESTAMPTZ                        | NULL = permanent lock until admin unlocks          |
+| pending_email           | VARCHAR(255)                       | Holds new email during email-change verification   |
+| keycloak_last_sync_at   | TIMESTAMPTZ                        | When Keycloak profile data was last synced         |
 | onboarding_completed_at | TIMESTAMPTZ                        | NULL = still onboarding                            |
 | is_active               | BOOLEAN DEFAULT true               |                                                    |
 | + audit + soft_delete   |                                    |                                                    |
@@ -319,6 +341,7 @@ UNIQUE: (user_id, user_group_id)
 | token_hash  | VARCHAR(255) NOT NULL     |                           |
 | device_info | JSONB                     | {user_agent, os, browser} |
 | ip_address  | INET                      |                           |
+| token_version | INT NOT NULL DEFAULT 0  | Must match users.token_version to be valid |
 | expires_at  | TIMESTAMPTZ NOT NULL      |                           |
 | revoked_at  | TIMESTAMPTZ               |                           |
 | created_at  | TIMESTAMPTZ               |                           |
@@ -333,7 +356,7 @@ UNIQUE: (user_id, user_group_id)
 | user_id    | UUID FK -> users      | NULL if pre-registration                               |
 | email      | VARCHAR(255) NOT NULL |                                                        |
 | code_hash  | VARCHAR(255) NOT NULL |                                                        |
-| purpose    | VARCHAR(32) NOT NULL  | 'email_verification' / 'password_reset' / 'two_factor' |
+| purpose    | VARCHAR(32) NOT NULL  | 'email_verification' / 'password_reset' / 'two_factor' / 'email_change' |
 | attempts   | INT DEFAULT 0         | Rate limit: max 5                                      |
 | expires_at | TIMESTAMPTZ NOT NULL  |                                                        |
 | used_at    | TIMESTAMPTZ           |                                                        |
@@ -397,6 +420,7 @@ One active volume per user. OS switch creates a new row and marks old as 'wiped'
 | provisioned_at        | TIMESTAMPTZ                |                                                          |
 | wiped_at              | TIMESTAMPTZ                |                                                          |
 | wipe_reason           | VARCHAR(64)                | 'os_switch' / 'account_deletion' / 'admin_action'        |
+| quota_warning_sent_at | TIMESTAMPTZ                | When 80%/90% quota warning was last sent (prevents spam) |
 | + audit               |                            |                                                          |
 
 
@@ -433,6 +457,9 @@ Public user notebook/file persistence (Colab model). Also used for assignment su
 | file_type             | VARCHAR(32)               | 'notebook' / 'script' / 'data' / 'submission' / 'other' |
 | session_id            | UUID FK -> sessions       | Which session produced this                             |
 | is_pinned             | BOOLEAN DEFAULT false     |                                                         |
+| storage_backend       | VARCHAR(32)               | 'nfs' / 'object_store' — public users use object storage |
+| retention_days        | INT                       | NULL = permanent; ephemeral files get auto-delete schedule |
+| scheduled_deletion_at | TIMESTAMPTZ               | Computed from retention_days on creation                 |
 | + audit + soft_delete |                           |                                                         |
 
 
@@ -481,9 +508,27 @@ Docker images deployed across the fleet.
 | size_bytes        | BIGINT                       |                                                         |
 | software_manifest | JSONB                        | {"matlab":"R2025a","python":"3.11","blender":"4.1",...} |
 | is_default        | BOOLEAN DEFAULT false        | Current default for new sessions                        |
-| pulled_on_nodes   | UUID[]                       | Node IDs where image is confirmed pulled                |
 | + audit           |                              |                                                         |
 
+Note: Image pull status per node is tracked in `node_base_images` join table (see below).
+
+
+### node_base_images
+
+Tracks image pull status per node. Replaces the previous `pulled_on_nodes UUID[]` field on base_images.
+
+
+| Column        | Type                             | Notes                                    |
+| ------------- | -------------------------------- | ---------------------------------------- |
+| node_id       | UUID FK -> nodes NOT NULL        | Composite PK                             |
+| base_image_id | UUID FK -> base_images NOT NULL  | Composite PK                             |
+| status        | VARCHAR(32) NOT NULL             | 'pulling' / 'ready' / 'failed' / 'outdated' |
+| pulled_at     | TIMESTAMPTZ                      |                                          |
+| error_message | TEXT                             |                                          |
+| + audit       |                                  |                                          |
+
+
+PK: (node_id, base_image_id)
 
 ---
 
@@ -545,6 +590,10 @@ Scheduled reservation of a compute slot.
 | user_id             | UUID FK -> users NOT NULL           |                                                                              |
 | organization_id     | UUID FK -> organizations            | For billing/quota context                                                    |
 | compute_config_id   | UUID FK -> compute_configs NOT NULL |                                                                              |
+| node_id             | UUID FK -> nodes                    | Nullable. Set for Full Machine to prevent double-booking exclusive resources |
+| required_vcpu       | INT                                 | Snapshot of compute_config.vcpu at booking time                              |
+| required_memory_mb  | INT                                 | Snapshot of compute_config.memory_mb                                         |
+| required_gpu_vram_mb | INT                                 | Snapshot of compute_config.gpu_vram_mb                                       |
 | scheduled_start_at  | TIMESTAMPTZ NOT NULL                |                                                                              |
 | scheduled_end_at    | TIMESTAMPTZ NOT NULL                |                                                                              |
 | status              | VARCHAR(32) NOT NULL                | 'scheduled' / 'launched' / 'completed' / 'cancelled' / 'no_show' / 'expired' |
@@ -580,6 +629,14 @@ One row per container lifecycle.
 | scheduled_end_at   | TIMESTAMPTZ                         |                                                                                                                                  |
 | last_activity_at   | TIMESTAMPTZ                         | For idle detection                                                                                                               |
 | nfs_mount_path     | VARCHAR(512)                        |                                                                                                                                  |
+| base_image_id      | UUID FK -> base_images              | Image version used for this session                                                                                              |
+| actual_gpu_vram_mb | INT                                 | Actual VRAM allocated at launch (may differ from compute_config)                                                                 |
+| actual_hami_sm_percent | INT                             | Actual SM% enforced at runtime                                                                                                   |
+| reconnect_count    | INT DEFAULT 0                       | Number of browser reconnections during session                                                                                   |
+| last_reconnect_at  | TIMESTAMPTZ                         | Most recent reconnect timestamp                                                                                                  |
+| auto_preserve_files | BOOLEAN DEFAULT false              | Auto-save notebooks/files to user_files on session end (ephemeral)                                                               |
+| avg_rtt_ms         | INT                                 | WebRTC quality rollup from MongoDB webrtc_snapshots at session end                                                               |
+| avg_packet_loss_ratio | DECIMAL(5,4)                     | WebRTC quality rollup                                                                                                            |
 | termination_reason | VARCHAR(64)                         | 'user_requested' / 'scheduled_end' / 'idle_timeout' / 'overuse' / 'admin_terminated' / 'node_failure' / 'gpu_fault'              |
 | resource_snapshot  | JSONB                               | Peak CPU%, RAM%, GPU%, VRAM, disk written, net transferred                                                                       |
 | + audit            |                                     |                                                                                                                                  |
@@ -620,6 +677,30 @@ Every user has one wallet.
 | low_balance_threshold_cents | INT DEFAULT 10000                | ₹100 -- triggers notification |
 | is_frozen                   | BOOLEAN DEFAULT false            | Admin freeze                  |
 | + audit                     |                                  |                               |
+
+
+### wallet_holds
+
+Pre-authorization holds to prevent wallet overdraw. Created at booking time, captured at session end.
+
+**Workflow:** Book → hold created (status='active') → session launches → session ends → hold captured (actual charge applied) → wallet_transaction created. If cancelled or expired → hold released.
+
+
+| Column          | Type                        | Notes                                                   |
+| --------------- | --------------------------- | ------------------------------------------------------- |
+| id              | UUID PK                     |                                                         |
+| wallet_id       | UUID FK -> wallets NOT NULL |                                                         |
+| user_id         | UUID FK -> users NOT NULL   | Denormalized for fast query                             |
+| amount_cents    | BIGINT NOT NULL             | Amount held (pre-authorized)                            |
+| hold_reason     | VARCHAR(64)                 | 'session_booking' / 'admin_hold'                        |
+| booking_id      | UUID FK -> bookings         |                                                         |
+| session_id      | UUID FK -> sessions         | Set when session launches                               |
+| status          | VARCHAR(32) NOT NULL        | 'active' / 'captured' / 'released' / 'expired'         |
+| expires_at      | TIMESTAMPTZ                 | Auto-release if no session launches within this window  |
+| released_at     | TIMESTAMPTZ                 |                                                         |
+| release_reason  | VARCHAR(64)                 | 'session_completed' / 'cancelled' / 'expired'           |
+| captured_amount | BIGINT                      | Actual charge amount (may differ from hold)             |
+| created_at      | TIMESTAMPTZ NOT NULL        |                                                         |
 
 
 ### wallet_transactions (append-only)
@@ -699,6 +780,9 @@ User's active subscription.
 | gpu_hours_remaining       | DECIMAL(10,2)                          |                                                 |
 | mentor_sessions_remaining | INT                                    |                                                 |
 | auto_renew                | BOOLEAN DEFAULT true                   |                                                 |
+| cancellation_requested_at | TIMESTAMPTZ                            | When user initiated cancel (vs actual end date) |
+| cancel_at_period_end      | BOOLEAN DEFAULT false                  | Cancel at billing period end vs immediate       |
+| grace_period_until        | TIMESTAMPTZ                            | Payment failure grace period before access revocation |
 | payment_transaction_id    | UUID FK -> payment_transactions        |                                                 |
 | + audit                   |                                        |                                                 |
 
@@ -731,7 +815,9 @@ University/partner-college contract with the platform.
 | ------------------------- | ---------------------------------------- | -------------------- |
 | id                        | UUID PK                                  |                      |
 | organization_id           | UUID FK -> organizations UNIQUE NOT NULL |                      |
-| max_concurrent_sessions   | INT                                      |                      |
+| max_concurrent_sessions_per_org   | INT                            | Total org-wide limit (replaces max_concurrent_sessions) |
+| max_concurrent_stateful_per_user  | INT DEFAULT 1                  | Enforces "one user, one stateful machine" rule |
+| max_concurrent_ephemeral_per_user | INT DEFAULT 3                  | Per-user ephemeral session limit |
 | max_registered_users      | INT                                      |                      |
 | max_storage_per_user_mb   | INT DEFAULT 15360                        |                      |
 | allowed_session_types     | TEXT[]                                   |                      |
@@ -1179,6 +1265,9 @@ UNIQUE: (user_id, achievement_id)
 | status      | VARCHAR(32)                       | 'pending' / 'sent' / 'delivered' / 'read' / 'failed' |
 | sent_at     | TIMESTAMPTZ                       |                                                      |
 | read_at     | TIMESTAMPTZ                       |                                                      |
+| delivery_attempts      | INT DEFAULT 0             | Retry count for this notification                    |
+| last_delivery_error    | VARCHAR(512)              | Error from last failed delivery attempt              |
+| delivery_confirmed_at  | TIMESTAMPTZ               | When notification was confirmed received/viewed      |
 | created_at  | TIMESTAMPTZ                       |                                                      |
 
 
@@ -1202,11 +1291,37 @@ UNIQUE: (user_id, achievement_id)
 | new_data      | JSONB                    | After snapshot                                                |
 | client_ip     | INET                     |                                                               |
 | user_agent    | TEXT                     |                                                               |
+| action_reason | TEXT                     | Why the action was performed (especially for admin actions)   |
 | request_id    | VARCHAR(64)              | Trace ID for distributed tracing                              |
 | created_at    | TIMESTAMPTZ NOT NULL     |                                                               |
 
 
 Partition by created_at (monthly). REVOKE UPDATE, DELETE on this table.
+
+---
+
+## DOMAIN 13b: User Lifecycle
+
+### user_deletion_requests
+
+Tracks account deletion with grace period for recovery and GDPR compliance.
+
+
+| Column                | Type                      | Notes                                                        |
+| --------------------- | ------------------------- | ------------------------------------------------------------ |
+| id                    | UUID PK                   |                                                              |
+| user_id               | UUID FK -> users NOT NULL |                                                              |
+| requested_at          | TIMESTAMPTZ NOT NULL      |                                                              |
+| requested_by          | UUID FK -> users          | Admin or self                                                |
+| reason                | TEXT                      |                                                              |
+| grace_period_days     | INT DEFAULT 30            |                                                              |
+| scheduled_deletion_at | TIMESTAMPTZ NOT NULL      | requested_at + grace_period_days                             |
+| status                | VARCHAR(32) NOT NULL      | 'pending' / 'cancelled' / 'processing' / 'completed' / 'failed' |
+| cancelled_at          | TIMESTAMPTZ               |                                                              |
+| completed_at          | TIMESTAMPTZ               |                                                              |
+| completion_details    | JSONB                     | What was deleted: ZFS dataset, NFS exports, user_files, etc. |
+| + audit               |                           |                                                              |
+
 
 ---
 
@@ -1259,6 +1374,71 @@ Platform-wide or org-scoped announcements.
 
 ---
 
+## DOMAIN 15: Support and Feedback
+
+### support_tickets
+
+User-facing support requests with assignment and resolution tracking.
+
+
+| Column                | Type                           | Notes                                                        |
+| --------------------- | ------------------------------ | ------------------------------------------------------------ |
+| id                    | UUID PK                        |                                                              |
+| user_id               | UUID FK -> users NOT NULL      |                                                              |
+| organization_id       | UUID FK -> organizations       |                                                              |
+| subject               | VARCHAR(255) NOT NULL          |                                                              |
+| description           | TEXT NOT NULL                  |                                                              |
+| category              | VARCHAR(64) NOT NULL           | 'billing' / 'technical' / 'account' / 'session_issue' / 'feature_request' / 'other' |
+| priority              | VARCHAR(32) DEFAULT 'medium'   | 'low' / 'medium' / 'high' / 'critical'                      |
+| status                | VARCHAR(32) NOT NULL           | 'open' / 'in_progress' / 'waiting_on_user' / 'resolved' / 'closed' |
+| assigned_to           | UUID FK -> users               | Admin/support staff handling this ticket                     |
+| related_session_id    | UUID FK -> sessions            | If ticket is about a specific session                        |
+| related_billing_id    | UUID FK -> billing_charges     | If ticket is about a billing charge                          |
+| resolved_at           | TIMESTAMPTZ                    |                                                              |
+| resolution_notes      | TEXT                           |                                                              |
+| satisfaction_rating   | INT                            | 1-5, filled by user after resolution                         |
+| + audit + soft_delete |                                |                                                              |
+
+
+### ticket_messages
+
+Threaded conversation on a support ticket. Both user and admin can post.
+
+
+| Column      | Type                                | Notes                                          |
+| ----------- | ----------------------------------- | ---------------------------------------------- |
+| id          | UUID PK                             |                                                |
+| ticket_id   | UUID FK -> support_tickets NOT NULL |                                                |
+| sender_id   | UUID FK -> users NOT NULL           |                                                |
+| body        | TEXT NOT NULL                       |                                                |
+| is_internal | BOOLEAN DEFAULT false               | Admin-only notes not visible to user           |
+| attachments | JSONB                               | [{url, filename, size_bytes, mime_type}]       |
+| created_at  | TIMESTAMPTZ NOT NULL                |                                                |
+
+
+### user_feedback
+
+Proactive feedback, session ratings, feature requests. Separate from reactive support tickets.
+
+
+| Column        | Type                      | Notes                                                                              |
+| ------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+| id            | UUID PK                   |                                                                                    |
+| user_id       | UUID FK -> users NOT NULL |                                                                                    |
+| session_id    | UUID FK -> sessions       | Optional: feedback about a specific session                                        |
+| feedback_type | VARCHAR(64) NOT NULL      | 'session_quality' / 'platform_rating' / 'bug_report' / 'feature_request' / 'general' |
+| rating        | INT                       | 1-5 (optional, for quality/rating types)                                           |
+| subject       | VARCHAR(255)              |                                                                                    |
+| body          | TEXT                      |                                                                                    |
+| status        | VARCHAR(32) DEFAULT 'submitted' | 'submitted' / 'acknowledged' / 'in_review' / 'actioned' / 'wont_fix'         |
+| admin_response | TEXT                      | Admin reply visible to user                                                        |
+| responded_by  | UUID FK -> users          | Which admin responded                                                              |
+| responded_at  | TIMESTAMPTZ               |                                                                                    |
+| + audit       |                           |                                                                                    |
+
+
+---
+
 ## Entity Relationship Diagram (key relationships)
 
 ```mermaid
@@ -1301,6 +1481,13 @@ erDiagram
   discussions ||--o{ discussion_replies : has
   users ||--o{ notifications : receives
   users ||--o{ user_achievements : earns
+  wallets ||--o{ wallet_holds : reserves
+  users ||--o{ support_tickets : creates
+  support_tickets ||--o{ ticket_messages : has
+  users ||--o{ user_feedback : submits
+  users ||--o{ user_deletion_requests : requests
+  nodes ||--o{ node_base_images : has
+  base_images ||--o{ node_base_images : deployed_on
 ```
 
 
@@ -1316,6 +1503,54 @@ erDiagram
 - **Audit**: `audit_log` read-only for super_admin and org_admin (filtered by org_id).
 
 Implementation: Set `app.current_user_id` and `app.current_org_id` via `SET LOCAL` in the NestJS transaction middleware before every query.
+
+---
+
+## Performance Indexes
+
+Non-unique indexes for production query performance. Applied in addition to unique constraints and PK indexes.
+
+```sql
+-- Sessions (most queried table at runtime)
+CREATE INDEX idx_sessions_user_status ON sessions (user_id, status);
+CREATE INDEX idx_sessions_node_status ON sessions (node_id, status);
+CREATE INDEX idx_sessions_started_at ON sessions (started_at);
+CREATE INDEX idx_sessions_compute_config ON sessions (compute_config_id);
+
+-- Bookings
+CREATE INDEX idx_bookings_user_status ON bookings (user_id, status, scheduled_start_at);
+CREATE INDEX idx_bookings_node_time ON bookings (node_id, scheduled_start_at, scheduled_end_at)
+  WHERE node_id IS NOT NULL;
+
+-- Billing / Financial
+CREATE INDEX idx_wallet_txn_wallet_time ON wallet_transactions (wallet_id, created_at);
+CREATE INDEX idx_wallet_txn_user_time ON wallet_transactions (user_id, created_at);
+CREATE INDEX idx_billing_charges_user ON billing_charges (user_id, created_at);
+CREATE INDEX idx_billing_charges_session ON billing_charges (session_id);
+CREATE INDEX idx_wallet_holds_wallet_status ON wallet_holds (wallet_id, status);
+
+-- Auth / Security
+CREATE INDEX idx_login_history_user ON login_history (user_id, created_at);
+CREATE INDEX idx_otp_email_expires ON otp_verifications (email, expires_at);
+CREATE INDEX idx_refresh_tokens_user ON refresh_tokens (user_id);
+
+-- Notifications
+CREATE INDEX idx_notifications_user_status ON notifications (user_id, status, created_at);
+
+-- User Org Roles
+CREATE INDEX idx_uor_org ON user_org_roles (organization_id);
+CREATE INDEX idx_uor_role ON user_org_roles (role_id);
+
+-- User Storage
+CREATE INDEX idx_usv_user_status ON user_storage_volumes (user_id, status);
+
+-- Support
+CREATE INDEX idx_tickets_user_status ON support_tickets (user_id, status, created_at);
+CREATE INDEX idx_tickets_assigned ON support_tickets (assigned_to, status);
+CREATE INDEX idx_tickets_org ON support_tickets (organization_id, status);
+CREATE INDEX idx_ticket_messages_thread ON ticket_messages (ticket_id, created_at);
+CREATE INDEX idx_feedback_user ON user_feedback (user_id, created_at);
+```
 
 ---
 
@@ -1360,7 +1595,7 @@ TTL index: 30 days. Aggregated into `sessions.resource_snapshot` JSONB at sessio
 
 ---
 
-## Complete table inventory: 63 PostgreSQL tables
+## Complete table inventory: 67 PostgreSQL tables
 
 
 | Domain                           | Tables                                                                                                                                                                                    | Count      |
@@ -1369,26 +1604,28 @@ TTL index: 30 days. Aggregated into `sessions.resource_snapshot` JSONB at sessio
 | Users and RBAC                   | users, user_profiles, roles, permissions, role_permissions, user_org_roles, user_departments, user_group_members                                                                          | 8          |
 | Auth and Security                | refresh_tokens, otp_verifications, login_history, user_policy_consents                                                                                                                    | 4          |
 | Storage and OS Lifecycle         | user_storage_volumes, os_switch_history, user_files                                                                                                                                       | 3          |
-| Infrastructure                   | nodes, base_images                                                                                                                                                                        | 2          |
+| Infrastructure                   | nodes, base_images, node_base_images                                                                                                                                                      | 3          |
 | Compute Configs                  | compute_configs, compute_config_access                                                                                                                                                    | 2          |
 | Sessions and Bookings            | bookings, sessions, session_events                                                                                                                                                        | 3          |
-| Billing / Wallet / Subscriptions | wallets, wallet_transactions, credit_packages, subscription_plans, subscriptions, org_contracts, org_resource_quotas, payment_transactions, billing_charges, invoices, invoice_line_items | 11         |
+| Billing / Wallet / Subscriptions | wallets, wallet_holds, wallet_transactions, credit_packages, subscription_plans, subscriptions, org_contracts, org_resource_quotas, payment_transactions, billing_charges, invoices, invoice_line_items | 12         |
 | Academic / LMS                   | courses, course_enrollments, labs, lab_group_assignments, lab_assignments, lab_submissions, lab_grades, coursework_content                                                                | 8          |
 | Mentorship                       | mentor_profiles, mentor_availability_slots, mentor_bookings, mentor_reviews                                                                                                               | 4          |
 | Community / Gamification         | discussions, discussion_replies, project_showcases, achievements, user_achievements                                                                                                       | 5          |
 | Notifications                    | notification_templates, notifications                                                                                                                                                     | 2          |
 | Audit                            | audit_log                                                                                                                                                                                 | 1          |
 | Utility / Config                 | system_settings, feature_flags, announcements                                                                                                                                             | 3          |
+| User Lifecycle                   | user_deletion_requests                                                                                                                                                                    | 1          |
+| Support and Feedback             | support_tickets, ticket_messages, user_feedback                                                                                                                                           | 3          |
 | **MongoDB**                      | session_events_mongo, webrtc_snapshots                                                                                                                                                    | 2          |
-| **Total**                        |                                                                                                                                                                                           | **63 + 2** |
+| **Total**                        |                                                                                                                                                                                           | **67 + 2** |
 
 
 ---
 
 ## Implementation phases
 
-**Phase 1 (MVP -- Sign-up/Sign-in + Sessions):** universities, university_idp_configs, organizations, departments, user_groups, users, user_profiles, roles, permissions, role_permissions, user_org_roles, user_departments, user_group_members, refresh_tokens, otp_verifications, user_policy_consents, user_storage_volumes, os_switch_history, nodes, base_images, compute_configs, compute_config_access, bookings, sessions, wallets, wallet_transactions, billing_charges, audit_log, system_settings, notification_templates, notifications (31 tables)
+**Phase 1 (MVP -- Sign-up/Sign-in + Sessions):** universities, university_idp_configs, organizations, departments, user_groups, users, user_profiles, roles, permissions, role_permissions, user_org_roles, user_departments, user_group_members, refresh_tokens, otp_verifications, user_policy_consents, user_storage_volumes, os_switch_history, nodes, base_images, node_base_images, compute_configs, compute_config_access, bookings, sessions, wallets, wallet_holds, wallet_transactions, billing_charges, audit_log, system_settings, notification_templates, notifications, user_deletion_requests (34 tables)
 
-**Phase 2 (Billing + Academic):** payment_transactions, credit_packages, subscription_plans, subscriptions, org_contracts, org_resource_quotas, invoices, invoice_line_items, courses, course_enrollments, labs, lab_group_assignments, lab_assignments, lab_submissions, lab_grades, coursework_content, login_history, session_events, user_files, feature_flags, announcements (21 tables)
+**Phase 2 (Billing + Academic):** payment_transactions, credit_packages, subscription_plans, subscriptions, org_contracts, org_resource_quotas, invoices, invoice_line_items, courses, course_enrollments, labs, lab_group_assignments, lab_assignments, lab_submissions, lab_grades, coursework_content, login_history, session_events, user_files, feature_flags, announcements, support_tickets, ticket_messages (23 tables)
 
-**Phase 3 (Mentorship + Community):** mentor_profiles, mentor_availability_slots, mentor_bookings, mentor_reviews, discussions, discussion_replies, project_showcases, achievements, user_achievements (9 tables) + MongoDB collections (2)
+**Phase 3 (Mentorship + Community):** mentor_profiles, mentor_availability_slots, mentor_bookings, mentor_reviews, discussions, discussion_replies, project_showcases, achievements, user_achievements, user_feedback (10 tables) + MongoDB collections (2)

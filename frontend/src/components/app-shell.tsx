@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { SidebarNav } from "./sidebar-nav";
+import { SignOutModal } from "./sign-out-modal";
+import { clearTokens } from "@/lib/token";
 
 /**
  * Base screen template — Utilitarian minimalism (Design\template.txt).
@@ -12,7 +15,10 @@ import { SidebarNav } from "./sidebar-nav";
  * - Main content: the remaining area
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
+  const [hasActiveInstances, setHasActiveInstances] = useState(false);
 
   // Load dark mode preference from localStorage on mount
   useEffect(() => {
@@ -28,6 +34,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setIsDarkMode(newMode);
     document.documentElement.classList.toggle("dark");
     localStorage.setItem("darkMode", String(newMode));
+  };
+
+  /**
+   * Check for active instances before sign-out
+   * This is a placeholder - in production, query the actual instance API
+   */
+  const checkActiveInstances = async (): Promise<boolean> => {
+    // TODO: Replace with actual API call to check active instances
+    // Example: const response = await fetch('/api/instances/active');
+    // For now, return false (no active instances)
+    return false;
+  };
+
+  /**
+   * Handle sign-out button click
+   * Checks for active instances and shows appropriate modal
+   */
+  const handleSignOutClick = async () => {
+    const hasActive = await checkActiveInstances();
+    setHasActiveInstances(hasActive);
+    setIsSignOutModalOpen(true);
+  };
+
+  /**
+   * Perform graceful sign-out
+   * Clears all session data and redirects to sign-in
+   */
+  const performSignOut = () => {
+    // Clear authentication tokens
+    clearTokens();
+
+    // Clear any app-specific localStorage items
+    localStorage.removeItem("darkMode");
+    localStorage.removeItem("userPreferences");
+    
+    // Clear sessionStorage
+    sessionStorage.clear();
+
+    // Close the modal
+    setIsSignOutModalOpen(false);
+
+    // Redirect to sign-in page
+    router.push("/signin");
   };
 
   return (
@@ -161,6 +210,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Sign out */}
           <button
+            onClick={handleSignOutClick}
             className="flex items-center cursor-pointer"
             style={{
               fontFamily: "ui-monospace, monospace",
@@ -234,6 +284,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      {/* Sign-out confirmation modal */}
+      <SignOutModal
+        isOpen={isSignOutModalOpen}
+        onClose={() => setIsSignOutModalOpen(false)}
+        onConfirm={performSignOut}
+        hasActiveInstances={hasActiveInstances}
+      />
     </div>
   );
 }
