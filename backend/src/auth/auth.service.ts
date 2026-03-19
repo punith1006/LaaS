@@ -294,6 +294,9 @@ export class AuthService {
 
     const kcTokens = await this.keycloak.exchangeCode(code, redirectUri);
     const userInfo = await this.keycloak.getUserInfo(kcTokens.access_token);
+    
+    // Store ID token for Keycloak logout
+    const idToken = kcTokens.id_token;
 
     if (!userInfo.email) {
       throw new BadRequestException('Email not provided by OAuth provider');
@@ -457,7 +460,11 @@ export class AuthService {
       },
     });
 
-    return this.issueTokens(user);
+    const tokens = await this.issueTokens(user);
+    return {
+      ...tokens,
+      idToken, // Include ID token for Keycloak logout
+    };
   }
 
   async forgotPassword(email: string): Promise<void> {

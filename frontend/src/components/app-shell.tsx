@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutModal } from "./sign-out-modal";
-import { clearTokens } from "@/lib/token";
+import { clearTokens, getIdToken } from "@/lib/token";
 
 /**
  * Base screen template — Utilitarian minimalism (Design\template.txt).
@@ -60,15 +60,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   /**
    * Perform graceful sign-out
    * Clears ALL session data, cache, and user info
+   * Also logs out from Keycloak to prevent session conflicts
    */
   const performSignOut = () => {
-    // Clear authentication tokens
-    clearTokens();
+    // Get ID token before clearing
+    const idToken = getIdToken();
 
     // Store dark mode preference temporarily
     const darkMode = localStorage.getItem("darkMode");
     
-    // Clear ALL localStorage
+    // Clear ALL localStorage (including tokens)
     localStorage.clear();
     
     // Restore dark mode preference (optional - remove if you want complete reset)
@@ -82,8 +83,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Close the modal
     setIsSignOutModalOpen(false);
 
-    // Redirect to sign-in page
-    router.push("/signin");
+    // Redirect to Keycloak logout to clear SSO session
+    const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+    const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
+    
+    if (keycloakUrl && keycloakRealm && idToken) {
+      // Use Keycloak's logout endpoint with id_token_hint (no redirect - Keycloak will show logout page)
+      const logoutUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/logout?id_token_hint=${encodeURIComponent(idToken)}`;
+      window.location.href = logoutUrl;
+    } else {
+      // Fallback: just redirect to sign-in page
+      router.push("/signin");
+    }
   };
 
   return (

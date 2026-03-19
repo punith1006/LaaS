@@ -21,6 +21,8 @@ function getOAuthUrl(provider: "google" | "github"): string {
       kc_idp_hint: provider,
       prompt: "login", // Force Keycloak to show login page instead of using existing session
     });
+    // Add a cache-busting parameter to prevent browser caching
+    params.append("_", Date.now().toString());
     return `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth?${params.toString()}`;
   }
 
