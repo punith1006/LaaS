@@ -455,6 +455,135 @@ export async function getStorageFiles(path?: string): Promise<FileItem[]> {
   return [];
 }
 
+// Create folder in storage
+export async function createStorageFolder(
+  path: string,
+  folderName: string,
+): Promise<{ success: boolean }> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/storage/files/mkdir`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ path, folderName }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || 'Failed to create folder');
+    }
+
+    return res.json();
+  }
+
+  return { success: true };
+}
+
+// Upload files to storage
+// NOTE: Do NOT set Content-Type header - browser auto-sets multipart boundary
+export async function uploadStorageFiles(
+  path: string,
+  files: File[],
+): Promise<{ success: boolean; uploaded: string[] }> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  if (API_BASE) {
+    const formData = new FormData();
+    formData.append('path', path);
+    files.forEach((file) => formData.append('files', file));
+
+    const res = await fetch(`${API_BASE}/api/storage/files/upload`, {
+      method: 'POST',
+      headers: {
+        // Do NOT set Content-Type - browser auto-sets with boundary for multipart
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || 'Upload failed');
+    }
+
+    return res.json();
+  }
+
+  return { success: true, uploaded: files.map((f) => f.name) };
+}
+
+// Download file from storage - triggers browser download
+export async function downloadStorageFile(filePath: string): Promise<void> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  if (API_BASE) {
+    const res = await fetch(
+      `${API_BASE}/api/storage/files/download?file=${encodeURIComponent(filePath)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || 'Download failed');
+    }
+
+    // Create download link from blob
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filePath.split('/').pop() || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Delete file or folder from storage
+export async function deleteStorageFile(
+  filePath: string,
+): Promise<{ success: boolean }> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  if (API_BASE) {
+    const res = await fetch(
+      `${API_BASE}/api/storage/files?file=${encodeURIComponent(filePath)}`,
+      {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || 'Delete failed');
+    }
+
+    return res.json();
+  }
+
+  return { success: true };
+}
+
 // Payment API Types
 export interface CreateOrderResponse {
   orderId: string;

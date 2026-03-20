@@ -8,12 +8,14 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from typing import Optional
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 log = logging.getLogger("werkzeug")
@@ -445,6 +447,266 @@ def list_files(storage_uid: str):
     files.sort(key=lambda x: (0 if x["type"] == "folder" else 1, x["name"].lower()))
 
     return jsonify(files), 200
+
+
+@app.route("/files/<storage_uid>/mkdir", methods=["POST"])
+def create_folder(storage_uid: str):
+    """
+    Create a new folder in the user's storage directory.
+    Requires X-Provision-Secret header.
+    Body: { "path": "/", "folderName": "my-folder" }
+
+    Response:
+      { "success": true, "path": "/path/to/created/folder" }
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+
+    path = data.get("path", "/").strip()
+    folder_name = data.get("folderName", "").strip()
+
+    if not folder_name:
+        return jsonify(error="folderName is required"), 400
+
+    # Sanitize: reject ".." in path and folderName
+    if ".." in path or ".." in folder_name:
+        return jsonify(error="Invalid path: directory traversal not allowed"), 400
+
+    # Build full path
+    base_path = f"/datapool/users/{storage_uid}"
+    path = path.lstrip("/")
+    if path:
+        target_dir = os.path.join(base_path, path, folder_name)
+    else:
+        target_dir = os.path.join(base_path, folder_name)
+
+    # Normalize and verify the path is within the user's storage
+    target_dir = os.path.normpath(target_dir)
+    if not target_dir.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    try:
+        os.makedirs(target_dir, exist_ok=False)
+        relative_path = target_dir.replace(base_path, "") or "/"
+        return jsonify(success=True, path=relative_path), 201
+    except FileExistsError:
+        return jsonify(error="Folder already exists"), 409
+    except PermissionError:
+        return jsonify(error="Permission denied"), 403
+    except OSError as e:
+        return jsonify(error=str(e)), 500
+
+
+@app.route("/files/<storage_uid>/upload", methods=["POST"])
+def upload_file(storage_uid: str):
+    """
+    Upload files to the user's storage directory.
+    Requires X-Provision-Secret header.
+    Multipart form data: 'files' (file field), 'path' (text field, default "/")
+
+    Response:
+      { "success": true, "uploaded": ["file1.txt", "file2.txt"] }
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Get path from form data
+    path = request.form.get("path", "/").strip()
+
+    # Sanitize path
+    if ".." in path:
+        return jsonify(error="Invalid path: directory traversal not allowed"), 400
+
+    # Build target directory
+    base_path = f"/datapool/users/{storage_uid}"
+    path = path.lstrip("/")
+    if path:
+        target_dir = os.path.join(base_path, path)
+    else:
+        target_dir = base_path
+
+    # Normalize and verify the path is within the user's storage
+    target_dir = os.path.normpath(target_dir)
+    if not target_dir.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    # Check if target directory exists
+    if not os.path.exists(target_dir):
+        return jsonify(error="Target directory does not exist"), 404
+
+    if not os.path.isdir(target_dir):
+        return jsonify(error="Target path is not a directory"), 400
+
+    # Get files from request
+    files = request.files.getlist("files")
+    if not files or len(files) == 0:
+        return jsonify(error="No files provided"), 400
+
+    uploaded = []
+    for file in files:
+        if file.filename:
+            # Use secure_filename to sanitize the filename
+            filename = secure_filename(file.filename)
+            if not filename:
+                continue
+
+            # Check for directory traversal in filename
+            if ".." in filename:
+                continue
+
+            file_path = os.path.join(target_dir, filename)
+
+            # Double-check path is within user storage
+            file_path = os.path.normpath(file_path)
+            if not file_path.startswith(base_path):
+                continue
+
+            try:
+                file.save(file_path)
+                uploaded.append(filename)
+            except IOError as e:
+                # Could be quota exceeded or disk full
+                return jsonify(error=f"Failed to save {filename}: {str(e)}"), 500
+
+    if not uploaded:
+        return jsonify(error="No valid files were uploaded"), 400
+
+    return jsonify(success=True, uploaded=uploaded), 200
+
+
+@app.route("/files/<storage_uid>/download", methods=["GET"])
+def download_file(storage_uid: str):
+    """
+    Download a file from the user's storage directory.
+    Requires X-Provision-Secret header.
+    Query param: ?file=relative/path/to/file.txt
+
+    Returns: Binary file stream
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Get file path from query params
+    file_path = request.args.get("file", "").strip()
+    if not file_path:
+        return jsonify(error="file parameter is required"), 400
+
+    # Sanitize: reject ".."
+    if ".." in file_path:
+        return jsonify(error="Invalid path: directory traversal not allowed"), 400
+
+    # Build full path
+    base_path = f"/datapool/users/{storage_uid}"
+    file_path = file_path.lstrip("/")
+    full_path = os.path.join(base_path, file_path)
+
+    # Normalize and verify the path is within the user's storage
+    full_path = os.path.normpath(full_path)
+    if not full_path.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    # Check if file exists
+    if not os.path.exists(full_path):
+        return jsonify(error="File not found"), 404
+
+    if os.path.isdir(full_path):
+        return jsonify(error="Cannot download a directory"), 400
+
+    # Get just the filename for the download
+    filename = os.path.basename(full_path)
+
+    try:
+        return send_file(full_path, as_attachment=True, download_name=filename)
+    except PermissionError:
+        return jsonify(error="Permission denied"), 403
+    except OSError as e:
+        return jsonify(error=str(e)), 500
+
+
+@app.route("/files/<storage_uid>/delete", methods=["DELETE"])
+def delete_file(storage_uid: str):
+    """
+    Delete a file or folder from the user's storage directory.
+    Requires X-Provision-Secret header.
+    Query param: ?file=relative/path/to/file.txt
+
+    Response:
+      { "success": true }
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Get file path from query params
+    file_path = request.args.get("file", "").strip()
+    if not file_path:
+        return jsonify(error="file parameter is required"), 400
+
+    # Sanitize: reject ".."
+    if ".." in file_path:
+        return jsonify(error="Invalid path: directory traversal not allowed"), 400
+
+    # Build full path
+    base_path = f"/datapool/users/{storage_uid}"
+    file_path = file_path.lstrip("/")
+    full_path = os.path.join(base_path, file_path)
+
+    # Normalize and verify the path is within the user's storage
+    full_path = os.path.normpath(full_path)
+    if not full_path.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    # Prevent deleting the root storage directory
+    if full_path == base_path:
+        return jsonify(error="Cannot delete root storage directory"), 400
+
+    # Check if file/folder exists
+    if not os.path.exists(full_path):
+        return jsonify(error="File or folder not found"), 404
+
+    try:
+        if os.path.isdir(full_path):
+            shutil.rmtree(full_path)
+        else:
+            os.remove(full_path)
+        return jsonify(success=True), 200
+    except PermissionError:
+        return jsonify(error="Permission denied"), 403
+    except OSError as e:
+        return jsonify(error=str(e)), 500
 
 
 if __name__ == "__main__":

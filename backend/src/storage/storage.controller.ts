@@ -8,11 +8,13 @@ import {
   Query,
   UseGuards,
   Req,
+  Res,
   HttpCode,
   HttpStatus,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { FastifyRequest, FastifyReply } from 'fastify';
 import { StorageService } from './storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -45,6 +47,24 @@ export class StorageController {
     private readonly storageService: StorageService,
     private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * Helper method to get user's active storage UID
+   */
+  private async getUserStorageUid(userId: string): Promise<string> {
+    const volumes = await this.prisma.$queryRaw<{ storage_uid: string }[]>`
+      SELECT storage_uid FROM user_storage_volumes
+      WHERE user_id = ${userId}::uuid AND status = 'active'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    if (volumes.length === 0) {
+      throw new NotFoundException('No active storage volume found');
+    }
+
+    return volumes[0].storage_uid;
+  }
 
   /**
    * Get all storage volumes for the authenticated user
@@ -83,20 +103,7 @@ export class StorageController {
     @Req() req: { user: { id: string } },
   ) {
     const userId = req.user.id;
-
-    // Get the user's active storage volume
-    const volumes = await this.prisma.$queryRaw<{ storage_uid: string }[]>`
-      SELECT storage_uid FROM user_storage_volumes
-      WHERE user_id = ${userId}::uuid AND status = 'active'
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-
-    if (volumes.length === 0) {
-      throw new NotFoundException('No active storage volume found');
-    }
-
-    const storageUid = volumes[0].storage_uid;
+    const storageUid = await this.getUserStorageUid(userId);
     const files = await this.storageService.getFiles(storageUid, path || '/');
 
     if (files === null) {
@@ -105,6 +112,143 @@ export class StorageController {
     }
 
     return files;
+  }
+
+  /**
+   * Create a folder in the authenticated user's storage
+   */
+  @Post('files/mkdir')
+  @HttpCode(HttpStatus.CREATED)
+  async createFolder(
+    @Req() req: { user: { id: string } },
+    @Body() body: { path: string; folderName: string },
+  ) {
+    const userId = req.user.id;
+    const storageUid = await this.getUserStorageUid(userId);
+
+    if (!body.folderName || !body.folderName.trim()) {
+      throw new BadRequestException('folderName is required');
+    }
+
+    const result = await this.storageService.createFolder(
+      storageUid,
+      body.path || '/',
+      body.folderName.trim(),
+    );
+
+    if (!result.success) {
+      throw new BadRequestException(result.error || 'Failed to create folder');
+    }
+
+    return result;
+  }
+
+  /**
+   * Upload files to the authenticated user's storage
+   */
+  @Post('files/upload')
+  async uploadFiles(@Req() req: FastifyRequest & { user: { id: string } }) {
+    const userId = req.user.id;
+    const storageUid = await this.getUserStorageUid(userId);
+
+    // Parse multipart from Fastify request
+    const parts = req.parts();
+    let path = '/';
+    const uploaded: string[] = [];
+    const errors: string[] = [];
+
+    for await (const part of parts) {
+      if (part.type === 'field') {
+        if (part.fieldname === 'path' && typeof part.value === 'string') {
+          path = part.value || '/';
+        }
+      } else if (part.type === 'file') {
+        // It's a file
+        const filename = part.filename;
+        if (!filename) continue;
+
+        // Collect file chunks into a buffer
+        const chunks: Buffer[] = [];
+        for await (const chunk of part.file) {
+          chunks.push(chunk);
+        }
+        const fileBuffer = Buffer.concat(chunks);
+
+        const result = await this.storageService.uploadFile(
+          storageUid,
+          path,
+          fileBuffer,
+          filename,
+        );
+
+        if (result.success && result.uploaded) {
+          uploaded.push(...result.uploaded);
+        } else if (result.error) {
+          errors.push(`${filename}: ${result.error}`);
+        }
+      }
+    }
+
+    if (uploaded.length === 0 && errors.length > 0) {
+      throw new BadRequestException(errors.join('; '));
+    }
+
+    return { success: true, uploaded, errors: errors.length > 0 ? errors : undefined };
+  }
+
+  /**
+   * Download a file from the authenticated user's storage
+   */
+  @Get('files/download')
+  async downloadFile(
+    @Req() req: { user: { id: string } },
+    @Query('file') filePath: string,
+    @Res() res: FastifyReply,
+  ) {
+    const userId = req.user.id;
+
+    if (!filePath || !filePath.trim()) {
+      throw new BadRequestException('file parameter is required');
+    }
+
+    const storageUid = await this.getUserStorageUid(userId);
+    const result = await this.storageService.downloadFile(storageUid, filePath.trim());
+
+    if (!result) {
+      throw new NotFoundException('File not found');
+    }
+
+    const { buffer, filename } = result;
+
+    return res
+      .header('Content-Type', 'application/octet-stream')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .header('Content-Length', buffer.length.toString())
+      .send(buffer);
+  }
+
+  /**
+   * Delete a file or folder from the authenticated user's storage
+   */
+  @Delete('files')
+  async deleteFile(
+    @Req() req: { user: { id: string } },
+    @Query('file') filePath: string,
+  ) {
+    const userId = req.user.id;
+
+    if (!filePath || !filePath.trim()) {
+      throw new BadRequestException('file parameter is required');
+    }
+
+    const storageUid = await this.getUserStorageUid(userId);
+    const result = await this.storageService.deleteFile(storageUid, filePath.trim());
+
+    if (!result.success) {
+      throw new BadRequestException(result.error || 'Failed to delete file');
+    }
+
+    return { success: true };
   }
 
   /**

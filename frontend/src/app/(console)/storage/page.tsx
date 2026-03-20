@@ -11,6 +11,10 @@ import {
   getStorageFiles,
   FileItem as ApiFileItem,
   getBillingData,
+  createStorageFolder,
+  uploadStorageFiles,
+  downloadStorageFile,
+  deleteStorageFile,
 } from "@/lib/api";
 
 // Storage types (from API)
@@ -60,6 +64,8 @@ export default function StoragePage() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Folder navigation state - using path strings
   const [currentPath, setCurrentPath] = useState<string>("/");
@@ -158,6 +164,72 @@ export default function StoragePage() {
     };
     fetchFiles();
   }, [hasStorage, currentPath]);
+
+  // Refresh files helper - reusable for mkdir, upload, delete
+  const refreshFiles = async () => {
+    setLoadingFiles(true);
+    try {
+      const apiFiles = await getStorageFiles(currentPath);
+      const uiFiles: FileItem[] = apiFiles.map((f, index) => {
+        const ext = f.name.includes('.') ? f.name.split('.').pop()?.toLowerCase() : undefined;
+        const date = new Date(f.updatedAt);
+        const formattedDate = date.toLocaleString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+        return {
+          id: `${currentPath}/${f.name}-${index}`,
+          name: f.name,
+          type: f.type,
+          fileType: ext,
+          size: f.size,
+          updatedAt: formattedDate,
+          parentPath: currentPath,
+        };
+      });
+      setFiles(uiFiles);
+    } catch (error) {
+      console.error('Failed to refresh files:', error);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  // Refresh live usage stats - call after upload/delete
+  const refreshLiveUsage = async () => {
+    try {
+      const billing = await getBillingData();
+      if (billing) {
+        setLiveUsedGb(billing.storageUsedGb);
+        setLiveUsagePercent(billing.storageUsagePercent);
+      }
+    } catch (error) {
+      console.error('Failed to refresh usage:', error);
+    }
+  };
+
+  // Handle file upload
+  const handleUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+
+    setUploading(true);
+    try {
+      await uploadStorageFiles(currentPath, Array.from(selectedFiles));
+      await refreshFiles();
+      await refreshLiveUsage();
+    } catch (error) {
+      console.error('Upload failed:', error);
+      alert('Upload failed: ' + (error as Error).message);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   // Handle storage creation success
   const handleStorageCreated = (volume: StorageVolume) => {
@@ -687,11 +759,9 @@ export default function StoragePage() {
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             {/* Refresh Button */}
             <button
-              onClick={() => {
-                // Trigger a refresh by toggling the path
-                const temp = currentPath;
-                setCurrentPath('');
-                setTimeout(() => setCurrentPath(temp), 0);
+              onClick={async () => {
+                await refreshFiles();
+                await refreshLiveUsage();
               }}
               disabled={loadingFiles}
               style={{
@@ -763,8 +833,19 @@ export default function StoragePage() {
               New Folder
             </button>
 
+            {/* Hidden file input for uploads */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleUploadFiles}
+            />
+
             {/* Upload Files Button */}
             <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.8125rem",
@@ -775,31 +856,50 @@ export default function StoragePage() {
                 borderRadius: "4px",
                 padding: "0 12px",
                 height: "32px",
-                cursor: "pointer",
+                cursor: uploading ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
                 transition: "opacity 0.15s ease",
+                opacity: uploading ? 0.7 : 1,
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+              onMouseEnter={(e) => !uploading && (e.currentTarget.style.opacity = "0.85")}
+              onMouseLeave={(e) => !uploading && (e.currentTarget.style.opacity = "1")}
             >
-              {/* Minimal upload icon */}
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              Upload Files
+              {uploading ? (
+                <>
+                  <div
+                    style={{
+                      width: "12px",
+                      height: "12px",
+                      border: "2px solid var(--fgColor-inverse)",
+                      borderTopColor: "transparent",
+                      borderRadius: "50%",
+                      animation: "spin 1s linear infinite",
+                    }}
+                  />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  {/* Minimal upload icon */}
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  Upload Files
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -1031,11 +1131,21 @@ export default function StoragePage() {
               <FileRow
                 key={file.id}
                 file={file}
+                currentPath={currentPath}
                 isMenuOpen={openMenuId === file.id}
                 onMenuToggle={() => setOpenMenuId(openMenuId === file.id ? null : file.id)}
-                onDelete={() => {
-                  setFiles(files.filter((f) => f.id !== file.id));
+                onDelete={async () => {
+                  if (!confirm(`Are you sure you want to delete "${file.name}"?`)) return;
                   setOpenMenuId(null);
+                  try {
+                    const filePath = currentPath === '/' ? file.name : `${currentPath}/${file.name}`;
+                    await deleteStorageFile(filePath.replace(/^\//, ''));
+                    await refreshFiles();
+                    await refreshLiveUsage();
+                  } catch (error) {
+                    console.error('Delete failed:', error);
+                    alert('Delete failed: ' + (error as Error).message);
+                  }
                 }}
                 onFolderClick={navigateToFolder}
               />
@@ -1056,12 +1166,15 @@ export default function StoragePage() {
       {showNewFolderModal && (
         <NewFolderModal
           onClose={() => setShowNewFolderModal(false)}
-          onCreate={(name) => {
-            // After creating folder via API, refresh the file list
-            // For now, just close the modal - the folder will appear after refresh
-            setShowNewFolderModal(false);
-            // Trigger a refresh by resetting currentPath (this will re-fetch)
-            setCurrentPath((prev) => prev);
+          onCreate={async (folderName: string) => {
+            try {
+              await createStorageFolder(currentPath, folderName);
+              setShowNewFolderModal(false);
+              await refreshFiles();
+            } catch (error) {
+              console.error('Failed to create folder:', error);
+              alert('Failed to create folder: ' + (error as Error).message);
+            }
           }}
           currentPath={currentPath}
         />
@@ -1075,12 +1188,14 @@ export default function StoragePage() {
 // File Row Component
 function FileRow({
   file,
+  currentPath,
   isMenuOpen,
   onMenuToggle,
   onDelete,
   onFolderClick,
 }: {
   file: FileItem;
+  currentPath: string;
   isMenuOpen: boolean;
   onMenuToggle: () => void;
   onDelete: () => void;
@@ -1117,9 +1232,15 @@ function FileRow({
         }}
       >
         <button
-          onClick={() => {
-            // Download action
+          onClick={async () => {
             onMenuToggle();
+            try {
+              const filePath = currentPath === '/' ? file.name : `${currentPath}/${file.name}`;
+              await downloadStorageFile(filePath.replace(/^\//, ''));
+            } catch (error) {
+              console.error('Download failed:', error);
+              alert('Download failed: ' + (error as Error).message);
+            }
           }}
           style={{
             width: "100%",

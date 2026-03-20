@@ -311,4 +311,218 @@ export class StorageService {
       return null;
     }
   }
+
+  /**
+   * Create a folder in the user's storage.
+   */
+  async createFolder(storageUid: string, path: string, folderName: string): Promise<{ success: boolean; path?: string; error?: string }> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      this.logger.debug('USER_STORAGE_PROVISION_URL not set, skipping folder creation');
+      return { success: false, error: 'Storage service not configured' };
+    }
+
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/files/${encodeURIComponent(storageUid)}/mkdir`;
+    const secret = process.env[SECRET_ENV];
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (secret) {
+      headers['X-Provision-Secret'] = secret;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ path, folderName }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = await res.json() as { success?: boolean; path?: string; error?: string };
+
+      if (!res.ok) {
+        return { success: false, error: data.error || `HTTP ${res.status}` };
+      }
+
+      return { success: true, path: data.path };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Folder creation error for ${storageUid}: ${msg}`);
+      return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Upload a file to the user's storage.
+   */
+  async uploadFile(storageUid: string, path: string, fileBuffer: Buffer, filename: string): Promise<{ success: boolean; uploaded?: string[]; error?: string }> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      this.logger.debug('USER_STORAGE_PROVISION_URL not set, skipping file upload');
+      return { success: false, error: 'Storage service not configured' };
+    }
+
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/files/${encodeURIComponent(storageUid)}/upload`;
+    const secret = process.env[SECRET_ENV];
+    const headers: Record<string, string> = {};
+    if (secret) {
+      headers['X-Provision-Secret'] = secret;
+    }
+
+    // Build multipart form data
+    const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+    headers['Content-Type'] = `multipart/form-data; boundary=${boundary}`;
+
+    // Construct multipart body manually
+    const parts: Buffer[] = [];
+
+    // Add path field
+    parts.push(Buffer.from(`--${boundary}\r\n`));
+    parts.push(Buffer.from(`Content-Disposition: form-data; name="path"\r\n\r\n`));
+    parts.push(Buffer.from(`${path}\r\n`));
+
+    // Add file field
+    parts.push(Buffer.from(`--${boundary}\r\n`));
+    parts.push(Buffer.from(`Content-Disposition: form-data; name="files"; filename="${filename}"\r\n`));
+    parts.push(Buffer.from(`Content-Type: application/octet-stream\r\n\r\n`));
+    parts.push(fileBuffer);
+    parts.push(Buffer.from(`\r\n`));
+
+    // End boundary
+    parts.push(Buffer.from(`--${boundary}--\r\n`));
+
+    const body = Buffer.concat(parts);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout for uploads
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = await res.json() as { success?: boolean; uploaded?: string[]; error?: string };
+
+      if (!res.ok) {
+        return { success: false, error: data.error || `HTTP ${res.status}` };
+      }
+
+      return { success: true, uploaded: data.uploaded };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`File upload error for ${storageUid}: ${msg}`);
+      return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Download a file from the user's storage.
+   */
+  async downloadFile(storageUid: string, filePath: string): Promise<{ buffer: Buffer; filename: string } | null> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      this.logger.debug('USER_STORAGE_PROVISION_URL not set, skipping file download');
+      return null;
+    }
+
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/files/${encodeURIComponent(storageUid)}/download?file=${encodeURIComponent(filePath)}`;
+    const secret = process.env[SECRET_ENV];
+    const headers: Record<string, string> = {};
+    if (secret) {
+      headers['X-Provision-Secret'] = secret;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout for downloads
+
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const text = await res.text();
+        this.logger.warn(`File download failed for ${storageUid}/${filePath}: ${text}`);
+        return null;
+      }
+
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Extract filename from Content-Disposition header or use path
+      const contentDisposition = res.headers.get('Content-Disposition');
+      let filename = filePath.split('/').pop() || 'download';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (match) {
+          filename = match[1];
+        }
+      }
+
+      return { buffer, filename };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`File download error for ${storageUid}/${filePath}: ${msg}`);
+      return null;
+    }
+  }
+
+  /**
+   * Delete a file or folder from the user's storage.
+   */
+  async deleteFile(storageUid: string, filePath: string): Promise<{ success: boolean; error?: string }> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      this.logger.debug('USER_STORAGE_PROVISION_URL not set, skipping file deletion');
+      return { success: false, error: 'Storage service not configured' };
+    }
+
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/files/${encodeURIComponent(storageUid)}/delete?file=${encodeURIComponent(filePath)}`;
+    const secret = process.env[SECRET_ENV];
+    const headers: Record<string, string> = {};
+    if (secret) {
+      headers['X-Provision-Secret'] = secret;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = await res.json() as { success?: boolean; error?: string };
+
+      if (!res.ok) {
+        return { success: false, error: data.error || `HTTP ${res.status}` };
+      }
+
+      return { success: true };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`File deletion error for ${storageUid}/${filePath}: ${msg}`);
+      return { success: false, error: msg };
+    }
+  }
 }

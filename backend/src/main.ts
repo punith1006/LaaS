@@ -4,6 +4,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import multipart from '@fastify/multipart';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/http-exception.filter';
 
@@ -12,6 +13,9 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  // Register multipart for file uploads (500MB limit)
+  await app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024 } });
 
   app.useGlobalPipes(
     new ValidationPipe({
