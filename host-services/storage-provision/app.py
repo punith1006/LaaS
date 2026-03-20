@@ -268,6 +268,185 @@ def provision():
     return jsonify(error=output or f"Storage system error (exit {code})"), 500
 
 
+def _parse_zfs_size(value: str) -> int:
+    """
+    Parse a ZFS size string like '24K', '5.23G', '1234567890' into bytes as integer.
+    """
+    value = value.strip()
+    if not value:
+        return 0
+    # Try plain integer (bytes)
+    try:
+        return int(value)
+    except ValueError:
+        pass
+
+    match = re.match(r"^([\d.]+)([BKMGTPE])$", value.upper())
+    if not match:
+        return 0
+
+    number = float(match.group(1))
+    unit = match.group(2)
+    multipliers = {
+        "B": 1,
+        "K": 1024,
+        "M": 1024 ** 2,
+        "G": 1024 ** 3,
+        "T": 1024 ** 4,
+        "P": 1024 ** 5,
+        "E": 1024 ** 6,
+    }
+    return int(number * multipliers.get(unit, 1))
+
+
+@app.route("/storage/usage/<storage_uid>", methods=["GET"])
+def get_storage_usage(storage_uid: str):
+    """
+    Return live ZFS used/quota bytes for the given storageUid.
+    Requires X-Provision-Secret header.
+
+    Response:
+      {
+        "storageUid": "u_...",
+        "usedBytes": 24576000,
+        "quotaBytes": 5368709120,
+        "usedGb": 0.02,
+        "quotaGb": 5.0,
+        "usagePercent": 0.46,
+        "zfsDataset": "datapool/users/u_..."
+      }
+    On error (dataset not found / not provisioned): 404
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Get used bytes
+    ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", dataset])
+    if not ok_used or not used_str.strip():
+        return jsonify(error=f"Dataset not found or inaccessible: {dataset}"), 404
+    used_str = used_str.strip()
+
+    # Parse used bytes (zfs returns e.g. "24K", "5.23G", or bytes as integer)
+    used_bytes = _parse_zfs_size(used_str)
+
+    # Get quota bytes
+    ok_quota, quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+    if not ok_quota or not quota_str.strip():
+        return jsonify(error=f"Could not get quota for {dataset}"), 404
+    quota_str = quota_str.strip()
+
+    # Parse quota — "none" means no quota set, treat as 0
+    if quota_str.lower() == "none":
+        quota_bytes = 0
+    else:
+        quota_bytes = _parse_zfs_size(quota_str)
+
+    # Calculate derived values
+    used_gb = round(used_bytes / (1024 ** 3), 4)
+    quota_gb = round(quota_bytes / (1024 ** 3), 4) if quota_bytes > 0 else 0.0
+    usage_percent = round((used_bytes / quota_bytes) * 100, 2) if quota_bytes > 0 else 0.0
+
+    return jsonify({
+        "storageUid": storage_uid,
+        "usedBytes": used_bytes,
+        "quotaBytes": quota_bytes,
+        "usedGb": used_gb,
+        "quotaGb": quota_gb,
+        "usagePercent": usage_percent,
+        "zfsDataset": dataset,
+    }), 200
+
+
+@app.route("/files/<storage_uid>", methods=["GET"])
+def list_files(storage_uid: str):
+    """
+    List files in the user's storage directory.
+    Requires X-Provision-Secret header.
+    Optional query param: ?path= for subdirectory navigation.
+
+    Response:
+      [
+        { "name": "file.txt", "type": "file", "size": 1234, "updatedAt": "2026-03-20T10:30:00Z" },
+        { "name": "folder", "type": "folder", "size": null, "updatedAt": "2026-03-20T10:30:00Z" },
+        ...
+      ]
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Build the base path
+    base_path = f"/datapool/users/{storage_uid}"
+    
+    # Get optional subdirectory path
+    subpath = request.args.get("path", "/").strip()
+    if subpath and subpath != "/":
+        # Sanitize path to prevent directory traversal
+        subpath = subpath.lstrip("/")
+        # Reject any path with .. or absolute paths
+        if ".." in subpath or subpath.startswith("/"):
+            return jsonify(error="Invalid path"), 400
+        target_path = os.path.join(base_path, subpath)
+    else:
+        target_path = base_path
+
+    # Normalize and verify the path is within the user's storage
+    target_path = os.path.normpath(target_path)
+    if not target_path.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    # Check if path exists
+    if not os.path.exists(target_path):
+        return jsonify(error=f"Path not found: {target_path}"), 404
+    
+    if not os.path.isdir(target_path):
+        return jsonify(error="Path is not a directory"), 400
+
+    # List files
+    files = []
+    try:
+        for entry_name in os.listdir(target_path):
+            entry_path = os.path.join(target_path, entry_name)
+            try:
+                stat_info = os.stat(entry_path)
+                is_dir = os.path.isdir(entry_path)
+                updated_at = datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc).isoformat()
+                
+                files.append({
+                    "name": entry_name,
+                    "type": "folder" if is_dir else "file",
+                    "size": None if is_dir else stat_info.st_size,
+                    "updatedAt": updated_at,
+                })
+            except OSError:
+                # Skip files we can't stat
+                continue
+    except PermissionError:
+        return jsonify(error="Permission denied"), 403
+    except OSError as e:
+        return jsonify(error=str(e)), 500
+
+    # Sort: folders first, then files, alphabetically
+    files.sort(key=lambda x: (0 if x["type"] == "folder" else 1, x["name"].lower()))
+
+    return jsonify(files), 200
+
+
 if __name__ == "__main__":
     if not PROVISION_SECRET:
         print("PROVISION_SECRET is not set; service will return 500 on provision.", file=sys.stderr)

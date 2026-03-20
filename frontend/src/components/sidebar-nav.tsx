@@ -61,7 +61,7 @@ const navSections: NavSection[] = [
       { id: "profile", label: "Profile" },
       { id: "ssh-keys", label: "SSH Keys" },
       { id: "api-keys", label: "API Keys" },
-      { id: "billing", label: "Billing", href: "/home?tab=billing" },
+      { id: "billing", label: "Billing", href: "/billing" },
     ],
   },
 ];
@@ -128,6 +128,8 @@ function NavContent() {
   // Determine active item based on current pathname
   const getActiveItem = () => {
     if (pathname === "/home" || pathname.startsWith("/home")) return "home";
+    if (pathname === "/billing" || pathname.startsWith("/billing")) return "billing";
+    if (pathname === "/storage" || pathname.startsWith("/storage")) return "storage";
     // Add more route matching as needed
     return "home";
   };

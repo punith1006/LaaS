@@ -2,60 +2,40 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import {
+  StorageVolume as ApiStorageVolume,
+  getStorageVolumes,
+  checkStorageName,
+  createStorageVolume,
+  deleteStorageVolume,
+  getStorageFiles,
+  FileItem as ApiFileItem,
+  getBillingData,
+} from "@/lib/api";
 
-// Storage types
+// Storage types (from API)
 interface StorageVolume {
   id: string;
   name: string;
-  sizeGb: number;
+  storageUid: string;
+  quotaGb: number;
   usedGb: number;
-  status: "active" | "available" | "allocated";
+  status: string;
+  allocationType: string;
+  provisionedAt: string | null;
   createdAt: string;
-  zfsDatasetPath: string;
 }
 
-// File types
+// File types - extend API type with UI-specific fields
 interface FileItem {
   id: string;
   name: string;
   type: "folder" | "file";
   fileType?: string;
-  size?: number;
+  size?: number | null;
   updatedAt: string;
-  parentId?: string | null;
+  parentPath?: string;
 }
-
-// Mock data - will be replaced with API data
-const mockStorages: StorageVolume[] = [
-  {
-    id: "1",
-    name: "project-data",
-    sizeGb: 5,
-    usedGb: 2.3,
-    status: "active",
-    createdAt: "2026-03-10",
-    zfsDatasetPath: "pool01/user_volumes/user_123/project-data",
-  },
-];
-
-// Mock file data
-const mockFiles: FileItem[] = [
-  { id: "1", name: "datasets", type: "folder", updatedAt: "03/20/2026 10:30:00", parentId: null },
-  { id: "2", name: "models", type: "folder", updatedAt: "03/19/2026 14:22:00", parentId: null },
-  { id: "3", name: "tailscale-setup-1.94.2.exe", type: "file", fileType: "exe", size: 1402678, updatedAt: "03/20/2026 10:56:14", parentId: null },
-  { id: "4", name: "training-data.csv", type: "file", fileType: "csv", size: 2456789, updatedAt: "03/18/2026 09:15:00", parentId: null },
-  { id: "5", name: "notebook.ipynb", type: "file", fileType: "ipynb", size: 45632, updatedAt: "03/17/2026 16:45:00", parentId: null },
-  // Nested content for datasets folder
-  { id: "6", name: "images", type: "folder", updatedAt: "03/20/2026 10:25:00", parentId: "1" },
-  { id: "7", name: "raw-data.csv", type: "file", fileType: "csv", size: 567890, updatedAt: "03/20/2026 10:20:00", parentId: "1" },
-  // Nested content for models folder
-  { id: "8", name: "v1", type: "folder", updatedAt: "03/19/2026 14:00:00", parentId: "2" },
-  { id: "9", name: "model-config.json", type: "file", fileType: "json", size: 1234, updatedAt: "03/19/2026 13:50:00", parentId: "2" },
-  // Nested content for datasets/images folder
-  { id: "10", name: "sample.jpg", type: "file", fileType: "jpg", size: 234567, updatedAt: "03/20/2026 10:24:00", parentId: "6" },
-  // Nested content for models/v1 folder
-  { id: "11", name: "weights.bin", type: "file", fileType: "bin", size: 12345678, updatedAt: "03/19/2026 13:55:00", parentId: "8" },
-];
 
 // Tab types
 type FilterTab = "all" | "images" | "videos" | "files";
@@ -72,15 +52,18 @@ export default function StoragePage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [showDeleteNote, setShowDeleteNote] = useState(false);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
-  const [storages] = useState<StorageVolume[]>(mockStorages);
+  const [storages, setStorages] = useState<StorageVolume[]>([]);
+  const [loadingStorages, setLoadingStorages] = useState(true);
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [files, setFiles] = useState<FileItem[]>(mockFiles);
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   
-  // Folder navigation state
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [pathHistory, setPathHistory] = useState<{ id: string; name: string }[]>([]);
+  // Folder navigation state - using path strings
+  const [currentPath, setCurrentPath] = useState<string>("/");
+  const [pathHistory, setPathHistory] = useState<{ path: string; name: string }[]>([]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -96,17 +79,107 @@ export default function StoragePage() {
   // One user has only one storage allocation
   const hasStorage = storages.length > 0;
 
-  // Calculate totals
-  const totalAllocated = storages.reduce((sum, s) => sum + s.sizeGb, 0);
-  const totalUsed = storages.reduce((sum, s) => sum + s.usedGb, 0);
-  const usagePercent = totalAllocated > 0 ? (totalUsed / totalAllocated) * 100 : 0;
+  // Live storage usage from ZFS (fetched via billing endpoint)
+  const [liveUsedGb, setLiveUsedGb] = useState<number | null>(null);
+  const [liveUsagePercent, setLiveUsagePercent] = useState<number | null>(null);
 
-  // Filter files based on tab, search, and current folder
-  const filteredFiles = files.filter((file) => {
-    // Folder navigation filter
-    if (file.parentId !== currentFolderId) {
-      return false;
+  // Calculate totals - prefer live ZFS data over DB-cached values
+  const totalAllocated = storages.reduce((sum, s) => sum + s.quotaGb, 0);
+  const totalUsed = liveUsedGb ?? storages.reduce((sum, s) => sum + s.usedGb, 0);
+  const usagePercent = liveUsagePercent ?? (totalAllocated > 0 ? (totalUsed / totalAllocated) * 100 : 0);
+
+  // Fetch storage volumes and live usage on mount
+  useEffect(() => {
+    const fetchStorages = async () => {
+      try {
+        const data = await getStorageVolumes();
+        setStorages(data);
+      } catch (error) {
+        console.error("Failed to fetch storages:", error);
+      } finally {
+        setLoadingStorages(false);
+      }
+    };
+    const fetchLiveUsage = async () => {
+      try {
+        const billing = await getBillingData();
+        if (billing) {
+          setLiveUsedGb(billing.storageUsedGb);
+          setLiveUsagePercent(billing.storageUsagePercent);
+        }
+      } catch (error) {
+        console.error("Failed to fetch live storage usage:", error);
+      }
+    };
+    fetchStorages();
+    fetchLiveUsage();
+  }, []);
+
+  // Fetch files when path changes or storage becomes available
+  useEffect(() => {
+    if (!hasStorage) return;
+    
+    const fetchFiles = async () => {
+      setLoadingFiles(true);
+      try {
+        const apiFiles = await getStorageFiles(currentPath);
+        // Transform API response to UI FileItem format
+        const uiFiles: FileItem[] = apiFiles.map((f, index) => {
+          // Extract file extension for fileType
+          const ext = f.name.includes('.') ? f.name.split('.').pop()?.toLowerCase() : undefined;
+          // Format the date for display
+          const date = new Date(f.updatedAt);
+          const formattedDate = date.toLocaleString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+          
+          return {
+            id: `${currentPath}/${f.name}-${index}`,
+            name: f.name,
+            type: f.type,
+            fileType: ext,
+            size: f.size,
+            updatedAt: formattedDate,
+            parentPath: currentPath,
+          };
+        });
+        setFiles(uiFiles);
+      } catch (error) {
+        console.error("Failed to fetch files:", error);
+        setFiles([]);
+      } finally {
+        setLoadingFiles(false);
+      }
+    };
+    fetchFiles();
+  }, [hasStorage, currentPath]);
+
+  // Handle storage creation success
+  const handleStorageCreated = (volume: StorageVolume) => {
+    setStorages((prev) => [volume, ...prev]);
+  };
+
+  // Handle storage deletion
+  const handleDeleteStorage = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await deleteStorageVolume(id);
+      setStorages((prev) => prev.filter((s) => s.id !== id));
+      setShowDeleteNote(false);
+    } catch (error) {
+      console.error("Failed to delete storage:", error);
+    } finally {
+      setDeletingId(null);
     }
+  };
+
+  // Filter files based on tab and search (files are already filtered by current path from API)
+  const filteredFiles = files.filter((file) => {
     // Search filter
     if (searchQuery && !file.name.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false;
@@ -130,10 +203,11 @@ export default function StoragePage() {
     return true;
   });
 
-  // Navigation functions
-  const navigateToFolder = (folderId: string, folderName: string) => {
-    setCurrentFolderId(folderId);
-    setPathHistory([...pathHistory, { id: folderId, name: folderName }]);
+  // Navigation functions - path based
+  const navigateToFolder = (folderName: string) => {
+    const newPath = currentPath === "/" ? `/${folderName}` : `${currentPath}/${folderName}`;
+    setCurrentPath(newPath);
+    setPathHistory([...pathHistory, { path: newPath, name: folderName }]);
     setOpenMenuId(null);
   };
 
@@ -143,18 +217,18 @@ export default function StoragePage() {
       newHistory.pop();
       const previousFolder = newHistory[newHistory.length - 1];
       setPathHistory(newHistory);
-      setCurrentFolderId(previousFolder ? previousFolder.id : null);
+      setCurrentPath(previousFolder ? previousFolder.path : "/");
     }
   };
 
   const navigateToBreadcrumb = (index: number) => {
     if (index === -1) {
-      setCurrentFolderId(null);
+      setCurrentPath("/");
       setPathHistory([]);
     } else {
       const newHistory = pathHistory.slice(0, index + 1);
       setPathHistory(newHistory);
-      setCurrentFolderId(newHistory[newHistory.length - 1].id);
+      setCurrentPath(newHistory[newHistory.length - 1].path);
     }
   };
 
@@ -311,6 +385,12 @@ export default function StoragePage() {
                 Cancel
               </button>
               <button
+                onClick={() => {
+                  if (storages.length > 0) {
+                    handleDeleteStorage(storages[0].id);
+                  }
+                }}
+                disabled={deletingId !== null}
                 style={{
                   fontFamily: "var(--font-sans)",
                   fontSize: "0.8125rem",
@@ -321,10 +401,30 @@ export default function StoragePage() {
                   borderRadius: "4px",
                   padding: "0 16px",
                   height: "32px",
-                  cursor: "pointer",
+                  cursor: deletingId ? "not-allowed" : "pointer",
+                  opacity: deletingId ? 0.6 : 1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
                 }}
               >
-                Delete Existing
+                {deletingId ? (
+                  <>
+                    <div
+                      style={{
+                        width: "12px",
+                        height: "12px",
+                        border: "2px solid #ffffff",
+                        borderTopColor: "transparent",
+                        borderRadius: "50%",
+                        animation: "spin 1s linear infinite",
+                      }}
+                    />
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete Existing"
+                )}
               </button>
             </div>
           </div>
@@ -355,7 +455,80 @@ export default function StoragePage() {
         </div>
       )}
 
-      {/* Storage Usage Card */}
+      {/* Show "No filesystems" state when storage is not provisioned */}
+      {!loadingStorages && !hasStorage && (
+        <div
+          style={{
+            backgroundColor: "var(--bgColor-mild)",
+            border: "1px solid var(--borderColor-default)",
+            borderRadius: "4px",
+            padding: "64px 24px",
+            textAlign: "center",
+          }}
+        >
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--fgColor-muted)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ margin: "0 auto 16px", opacity: 0.6 }}
+          >
+            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-9l-2-3H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z" />
+          </svg>
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "1rem",
+              fontWeight: 600,
+              color: "var(--fgColor-default)",
+              margin: "0 0 8px 0",
+            }}
+          >
+            No filesystems
+          </p>
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "0.875rem",
+              color: "var(--fgColor-muted)",
+              margin: "0 0 24px 0",
+              maxWidth: "400px",
+              marginLeft: "auto",
+              marginRight: "auto",
+            }}
+          >
+            Filesystems offer fast, nearly infinite storage that can be mounted to your instance(s).
+          </p>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+              color: "var(--fgColor-inverse)",
+              backgroundColor: "var(--fgColor-default)",
+              border: "1px solid var(--fgColor-default)",
+              borderRadius: "4px",
+              padding: "0 20px",
+              height: "40px",
+              cursor: "pointer",
+              transition: "opacity 0.15s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            Create a filesystem
+          </button>
+        </div>
+      )}
+
+      {/* Storage Usage Card and Files Section - only show when storage exists */}
+      {hasStorage && (
+      <>
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
@@ -514,7 +687,13 @@ export default function StoragePage() {
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             {/* Refresh Button */}
             <button
-              onClick={() => {/* Refresh files */}}
+              onClick={() => {
+                // Trigger a refresh by toggling the path
+                const temp = currentPath;
+                setCurrentPath('');
+                setTimeout(() => setCurrentPath(temp), 0);
+              }}
+              disabled={loadingFiles}
               style={{
                 width: "32px",
                 height: "32px",
@@ -704,7 +883,7 @@ export default function StoragePage() {
 
               {/* Path Segments */}
               {pathHistory.map((folder, index) => (
-                <div key={folder.id} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <div key={folder.path} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   <svg
                     width="14"
                     height="14"
@@ -867,26 +1046,27 @@ export default function StoragePage() {
 
       {/* Create Storage Modal */}
       {isCreateModalOpen && (
-        <CreateStorageModal onClose={() => setIsCreateModalOpen(false)} />
+        <CreateStorageModal
+          onClose={() => setIsCreateModalOpen(false)}
+          onSuccess={handleStorageCreated}
+        />
       )}
 
       {/* New Folder Modal */}
       {showNewFolderModal && (
         <NewFolderModal
           onClose={() => setShowNewFolderModal(false)}
-          onCreate={(name, parentId) => {
-            const newFolder: FileItem = {
-              id: Date.now().toString(),
-              name,
-              type: "folder",
-              updatedAt: new Date().toLocaleString(),
-              parentId: parentId,
-            };
-            setFiles([newFolder, ...files]);
+          onCreate={(name) => {
+            // After creating folder via API, refresh the file list
+            // For now, just close the modal - the folder will appear after refresh
             setShowNewFolderModal(false);
+            // Trigger a refresh by resetting currentPath (this will re-fetch)
+            setCurrentPath((prev) => prev);
           }}
-          currentFolderId={currentFolderId}
+          currentPath={currentPath}
         />
+      )}
+      </>
       )}
     </div>
   );
@@ -904,7 +1084,7 @@ function FileRow({
   isMenuOpen: boolean;
   onMenuToggle: () => void;
   onDelete: () => void;
-  onFolderClick: (folderId: string, folderName: string) => void;
+  onFolderClick: (folderName: string) => void;
 }) {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
@@ -1046,7 +1226,7 @@ function FileRow({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onFolderClick(file.id, file.name);
+                onFolderClick(file.name);
               }}
               style={{
                 width: "32px",
@@ -1096,7 +1276,7 @@ function FileRow({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onFolderClick(file.id, file.name);
+              onFolderClick(file.name);
             }}
             style={{
               display: "flex",
@@ -1233,11 +1413,11 @@ function FileRow({
 function NewFolderModal({
   onClose,
   onCreate,
-  currentFolderId,
+  currentPath,
 }: {
   onClose: () => void;
-  onCreate: (name: string, parentId: string | null) => void;
-  currentFolderId: string | null;
+  onCreate: (name: string) => void;
+  currentPath: string;
 }) {
   const [folderName, setFolderName] = useState("");
 
@@ -1357,7 +1537,7 @@ function NewFolderModal({
           <button
             onClick={() => {
               if (folderName.trim()) {
-                onCreate(folderName.trim(), currentFolderId);
+                onCreate(folderName.trim());
               }
             }}
             style={{
@@ -1385,22 +1565,108 @@ function NewFolderModal({
 }
 
 // Create Storage Modal Component
-function CreateStorageModal({ onClose }: { onClose: () => void }) {
+function CreateStorageModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: (volume: StorageVolume) => void;
+}) {
   const [name, setName] = useState("");
   const [sizeGb, setSizeGb] = useState(5);
   const [isDragging, setIsDragging] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameChecking, setNameChecking] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Debounced name validation
+  const nameCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleNameChange = (newName: string) => {
+    setName(newName);
+    setNameError(null);
+
+    // Clear previous timeout
+    if (nameCheckTimeoutRef.current) {
+      clearTimeout(nameCheckTimeoutRef.current);
+    }
+
+    // Validate format first (client-side)
+    if (!newName.trim()) {
+      setNameError(null);
+      return;
+    }
+
+    const nameRegex = /^[a-zA-Z0-9][a-zA-Z0-9-_]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/;
+    if (!nameRegex.test(newName)) {
+      setNameError('Name can only contain letters, numbers, hyphens, and underscores');
+      return;
+    }
+
+    // Debounced API check
+    setNameChecking(true);
+    nameCheckTimeoutRef.current = setTimeout(async () => {
+      try {
+        const result = await checkStorageName(newName);
+        if (!result.available) {
+          setNameError(result.error || 'This name is already taken');
+        } else {
+          setNameError(null);
+        }
+      } catch {
+        // Silently fail - let server handle validation on submit
+        setNameError(null);
+      } finally {
+        setNameChecking(false);
+      }
+    }, 500);
+  };
 
   const handleSizeChange = (newSize: number) => {
-    setSizeGb(Math.max(1, Math.min(10, newSize)));
+    // Enforce minimum of 5GB
+    setSizeGb(Math.max(5, Math.min(10, newSize)));
   };
 
   const handleMouseDown = () => setIsDragging(true);
   const handleMouseUp = () => setIsDragging(false);
 
   const formatSize = (gb: number) => {
-    if (gb === 1) return "1 GB";
     return `${gb} GB`;
   };
+
+  const isValid =
+    name.trim().length > 0 &&
+    !nameError &&
+    !nameChecking &&
+    sizeGb >= 5 &&
+    sizeGb <= 10;
+
+  const handleSubmit = async () => {
+    if (!isValid || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const volume = await createStorageVolume(name.trim(), sizeGb);
+      onSuccess(volume);
+      onClose();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to create storage');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (nameCheckTimeoutRef.current) {
+        clearTimeout(nameCheckTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <>
@@ -1537,25 +1803,62 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
             >
               Name
             </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Enter file store name"
-              style={{
-                width: "100%",
-                fontFamily: "var(--font-sans)",
-                fontSize: "0.875rem",
-                color: "var(--fgColor-default)",
-                backgroundColor: "transparent",
-                border: "1px solid var(--borderColor-default)",
-                borderRadius: "4px",
-                padding: "0 12px",
-                height: "40px",
-                outline: "none",
-                boxSizing: "border-box",
-              }}
-            />
+            <div style={{ position: "relative" }}>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                placeholder="Enter file store name"
+                style={{
+                  width: "100%",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.875rem",
+                  color: "var(--fgColor-default)",
+                  backgroundColor: "transparent",
+                  border: `1px solid ${
+                    nameError
+                      ? "var(--fgColor-critical)"
+                      : nameChecking
+                      ? "var(--borderColor-default)"
+                      : "var(--borderColor-default)"
+                  }`,
+                  borderRadius: "4px",
+                  padding: "0 12px",
+                  height: "40px",
+                  outline: "none",
+                  boxSizing: "border-box",
+                  opacity: nameChecking ? 0.7 : 1,
+                }}
+              />
+              {nameChecking && (
+                <div
+                  style={{
+                    position: "absolute",
+                    right: "12px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: "16px",
+                    height: "16px",
+                    border: "2px solid var(--borderColor-default)",
+                    borderTopColor: "var(--fgColor-info)",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
+              )}
+            </div>
+            {nameError && (
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  color: "var(--fgColor-critical)",
+                  margin: "4px 0 0 0",
+                }}
+              >
+                {nameError}
+              </p>
+            )}
           </div>
 
           <div style={{ marginBottom: "24px" }}>
@@ -1569,7 +1872,7 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
                 marginBottom: "8px",
               }}
             >
-              Size
+              Size (5 GB - 10 GB)
             </label>
             
             <div
@@ -1596,7 +1899,8 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const percent = Math.max(0, Math.min(1, x / rect.width));
-                handleSizeChange(Math.round(percent * 10));
+                // Map to 5-10 range instead of 1-10
+                handleSizeChange(Math.round(percent * 5) + 5);
               }}
             >
               <div
@@ -1605,7 +1909,7 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
                   left: 0,
                   top: 0,
                   bottom: 0,
-                  width: `${(sizeGb / 10) * 100}%`,
+                  width: `${((sizeGb - 5) / 5) * 100}%`,
                   backgroundColor: "var(--fgColor-info)",
                   borderRadius: "4px",
                   transition: isDragging ? "none" : "width 0.1s ease",
@@ -1616,7 +1920,7 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
                 style={{
                   position: "absolute",
                   top: "50%",
-                  left: `${(sizeGb / 10) * 100}%`,
+                  left: `${((sizeGb - 5) / 5) * 100}%`,
                   transform: "translate(-50%, -50%)",
                   width: "20px",
                   height: "20px",
@@ -1638,7 +1942,8 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
                   const rect = slider.getBoundingClientRect();
                   const x = e.clientX - rect.left;
                   const percent = Math.max(0, Math.min(1, x / rect.width));
-                  handleSizeChange(Math.round(percent * 10));
+                  // Map to 5-10 range instead of 1-10
+                  handleSizeChange(Math.round(percent * 5) + 5);
                 }}
               />
 
@@ -1656,7 +1961,7 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
                   pointerEvents: "none",
                 }}
               >
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                {[5, 6, 7, 8, 9, 10].map((n) => (
                   <div
                     key={n}
                     style={{
@@ -1684,7 +1989,7 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
                   color: "var(--fgColor-muted)",
                 }}
               >
-                1 GB
+                5 GB
               </span>
               <span
                 style={{
@@ -1698,9 +2003,33 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
+          {submitError && (
+            <div
+              style={{
+                backgroundColor: "var(--bgColor-critical-section)",
+                border: "1px solid var(--fgColor-critical)",
+                borderRadius: "4px",
+                padding: "12px",
+                marginBottom: "16px",
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.8125rem",
+                  color: "var(--fgColor-critical)",
+                  margin: 0,
+                }}
+              >
+                {submitError}
+              </p>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
             <button
               onClick={onClose}
+              disabled={isSubmitting}
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
@@ -1711,33 +2040,64 @@ function CreateStorageModal({ onClose }: { onClose: () => void }) {
                 borderRadius: "4px",
                 padding: "0 20px",
                 height: "40px",
-                cursor: "pointer",
+                cursor: isSubmitting ? "not-allowed" : "pointer",
+                opacity: isSubmitting ? 0.6 : 1,
               }}
             >
               Cancel
             </button>
             <button
+              onClick={handleSubmit}
+              disabled={!isValid || isSubmitting}
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: 500,
                 color: "var(--fgColor-inverse)",
-                backgroundColor: "var(--fgColor-default)",
-                border: "1px solid var(--fgColor-default)",
+                backgroundColor: isValid && !isSubmitting
+                  ? "var(--fgColor-default)"
+                  : "var(--fgColor-muted)",
+                border: `1px solid ${isValid && !isSubmitting
+                  ? "var(--fgColor-default)"
+                  : "var(--fgColor-muted)"}`,
                 borderRadius: "4px",
                 padding: "0 20px",
                 height: "40px",
-                cursor: "pointer",
+                cursor: isValid && !isSubmitting ? "pointer" : "not-allowed",
                 transition: "opacity 0.15s ease",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
             >
-              Create File Store
+              {isSubmitting && (
+                <div
+                  style={{
+                    width: "14px",
+                    height: "14px",
+                    border: "2px solid var(--fgColor-inverse)",
+                    borderTopColor: "transparent",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
+              )}
+              {isSubmitting ? "Creating..." : "Create File Store"}
             </button>
           </div>
         </div>
       </div>
+
+      <style jsx global>{`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </>
   );
 }

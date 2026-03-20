@@ -73,11 +73,12 @@ function generateHistoricalSampleData() {
     });
   }
 
-  // Add "Now" as the last point with 0 values
+  // "Now" point carries forward the last cumulative value
+  const lastCumulative = data.length > 0 ? data[data.length - 1].daySpend : 0;
   data.push({
     time: "Now",
-    daySpend: 0,
-    rollingAvg: 0,
+    daySpend: lastCumulative,
+    rollingAvg: lastCumulative,
     hourSpend: 0,
   });
 
@@ -246,7 +247,7 @@ function CustomTooltip({
   isDark,
 }: {
   active?: boolean;
-  payload?: Array<{ color: string; value: number; name: string }>;
+  payload?: Array<{ color: string; value: number; name: string; dataKey: string }>;
   label?: string;
   isDark: boolean;
 }) {
@@ -271,35 +272,42 @@ function CustomTooltip({
         >
           {label}
         </div>
-        {payload.map((entry, index) => (
-          <div
-            key={index}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              marginBottom: "4px",
-            }}
-          >
+        {payload.map((entry, index) => {
+          // Format based on data type: cumulative vs hourly
+          const isHourly = entry.dataKey === "hourSpend";
+          const formattedLabel = isHourly
+            ? `rate ₹${entry.value.toFixed(2)} / hr`
+            : `avg ₹${entry.value.toFixed(2)} / day`;
+          return (
             <div
+              key={index}
               style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                backgroundColor: entry.color,
-              }}
-            />
-            <span
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: "var(--text-sm)",
-                color: "var(--fgColor-default)",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: "4px",
               }}
             >
-              {entry.name}: ₹{entry.value.toFixed(2)}
-            </span>
-          </div>
-        ))}
+              <div
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  backgroundColor: entry.color,
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "var(--text-sm)",
+                  color: "var(--fgColor-default)",
+                }}
+              >
+                {formattedLabel}
+              </span>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -415,11 +423,12 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
       data = generateHourlyData(dailySpend, currentSpendRate);
     }
     
-    // Always set "Now" point to 0 if burn rate is 0 (demo mode)
+    // When no active session, the "Now" point should have hourSpend=0
+    // but cumulative spend carries forward from previous hours
     if (currentSpendRate === 0) {
       const nowIndex = data.findIndex((d) => d.time === "Now");
       if (nowIndex >= 0) {
-        data[nowIndex] = { ...data[nowIndex], daySpend: 0, rollingAvg: 0, hourSpend: 0 };
+        data[nowIndex] = { ...data[nowIndex], hourSpend: 0 };
       }
     }
     
@@ -427,6 +436,26 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
   }, [billingData?.hourlyData, dailySpend, currentSpendRate]);
 
   const themeColors = isDark ? COLORS.dark : COLORS.light;
+
+  // Calculate proportional Y-axis domains
+  const { leftAxisMax, rightAxisMax } = useMemo(() => {
+    if (!chartData || chartData.length === 0) {
+      return { leftAxisMax: 10, rightAxisMax: 1 };
+    }
+    const maxCumulative = Math.max(...chartData.map((d) => d.rollingAvg), 1);
+    const maxHourly = Math.max(...chartData.map((d) => d.hourSpend), 0.01);
+
+    // Use spendRate (7-day rolling avg) as reference for proportional scaling
+    const rollingAvgDaily = billingData?.spendRate ?? maxCumulative;
+    const estimatedHourlyFromDaily = rollingAvgDaily / 24;
+    const rightMax = Math.max(maxHourly, estimatedHourlyFromDaily) * 1.3; // 30% padding
+    const leftMax = Math.max(maxCumulative, rollingAvgDaily) * 1.2; // 20% padding
+
+    return {
+      leftAxisMax: leftMax > 0 ? leftMax : 10,
+      rightAxisMax: rightMax > 0 ? rightMax : 1,
+    };
+  }, [chartData, billingData?.spendRate]);
 
   return (
     <div>
@@ -647,7 +676,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                   color: "var(--fgColor-default)",
                 }}
               >
-                ₹{dailySpend.toFixed(2)}
+                ₹{(billingData?.spendRate ?? 0).toFixed(2)}
                 <span
                   style={{
                     fontSize: "var(--text-sm)",
@@ -756,14 +785,15 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                     fontSize: 10,
                     fontFamily: "var(--font-sans)",
                   }}
-                  interval="preserveStartEnd"
+                  interval={Math.max(0, Math.floor(chartData.length / 6) - 1)}
                 />
                 <YAxis
                   yAxisId="left"
+                  domain={[0, leftAxisMax]}
                   axisLine={false}
                   tickLine={false}
                   tick={{
-                    fill: "var(--fgColor-muted)",
+                    fill: themeColors.daySpend,
                     fontSize: 10,
                     fontFamily: "var(--font-sans)",
                   }}
@@ -772,10 +802,11 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                 <YAxis
                   yAxisId="right"
                   orientation="right"
+                  domain={[0, rightAxisMax]}
                   axisLine={false}
                   tickLine={false}
                   tick={{
-                    fill: "var(--fgColor-muted)",
+                    fill: themeColors.hourSpend,
                     fontSize: 10,
                     fontFamily: "var(--font-sans)",
                   }}

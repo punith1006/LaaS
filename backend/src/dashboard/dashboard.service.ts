@@ -331,31 +331,45 @@ export class DashboardService {
     }, 0);
     const rollingAverageDaily = weeklySpendCents / 7 / 100; // rupees/day (monthly timescale)
 
-    // Group charges by hour (0-11, representing "12h ago" to "now")
-    const chargesByRelativeHour = new Map<number, number>();
-    recentCharges12h.forEach(charge => {
-      const chargeTime = new Date(charge.createdAt).getTime();
-      const hoursAgo = Math.round((Date.now() - chargeTime) / (1000 * 60 * 60));
-      // Bucket into 0-11 (11 = 11h ago, 0 = current hour)
-      const bucket = Math.min(11, Math.max(0, hoursAgo));
-      chargesByRelativeHour.set(
-        bucket,
-        (chargesByRelativeHour.get(bucket) ?? 0) + Number(charge.amountCents)
+    // Get current time info for today's chart
+    const now = new Date();
+    const currentHour = now.getHours();
+
+    // Start from midnight today
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Get all charges from today (midnight to now)
+    const todayCharges = await this.prisma.billingCharge.findMany({
+      where: {
+        userId,
+        createdAt: { gte: todayStart },
+      },
+    });
+
+    // Group by hour of day
+    const chargesByHour = new Map<number, number>();
+    todayCharges.forEach((charge) => {
+      const chargeHour = new Date(charge.createdAt).getHours();
+      chargesByHour.set(
+        chargeHour,
+        (chargesByHour.get(chargeHour) ?? 0) + Number(charge.amountCents),
       );
     });
 
-    // Chart intervals: from "12h ago" to "Now" in 1-hour buckets
+    // Build hourly data from 00:00 to current hour
     const hourlyData: HourlySpendData[] = [];
     let cumulativeSpend = 0;
 
-    for (let i = 11; i >= 0; i--) {
-      const spendThisHour = chargesByRelativeHour.get(i) ?? 0;
+    for (let h = 0; h <= currentHour; h++) {
+      const spendThisHour = chargesByHour.get(h) ?? 0;
       cumulativeSpend += spendThisHour;
-      const hoursLabel = i === 0 ? 'Now' : `-${i}h`;
+
+      const label = h === currentHour ? 'Now' : `${h.toString().padStart(2, '0')}:00`;
       hourlyData.push({
-        hour: hoursLabel,
-        cumulativeSpend: cumulativeSpend / 100,
-        hourlyRate: spendThisHour / 100,
+        hour: label,
+        cumulativeSpend: cumulativeSpend / 100, // ₹
+        hourlyRate: spendThisHour / 100,        // ₹
       });
     }
 

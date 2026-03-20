@@ -315,3 +315,351 @@ export async function getBillingData(): Promise<BillingData | null> {
   }
   return null;
 }
+
+// Storage API Types
+export interface StorageVolume {
+  id: string;
+  name: string;
+  storageUid: string;
+  quotaGb: number;
+  usedGb: number;
+  status: string;
+  allocationType: string;
+  provisionedAt: string | null;
+  createdAt: string;
+}
+
+export interface NameCheckResult {
+  available: boolean;
+  error?: string;
+}
+
+// Storage API Functions
+async function storageFetch(endpoint: string, options: RequestInit = {}) {
+  const token = getAccessToken();
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...options.headers,
+    },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+    throw new Error(msg || `Request failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function getStorageVolumes(): Promise<StorageVolume[]> {
+  if (API_BASE) {
+    return storageFetch('/api/storage/volumes');
+  }
+  // Mock data for development
+  return [];
+}
+
+export async function checkStorageName(name: string): Promise<NameCheckResult> {
+  if (API_BASE) {
+    const res = await fetch(
+      `${API_BASE}/api/storage/volumes/check-name/${encodeURIComponent(name)}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${getAccessToken()}`,
+        },
+      },
+    );
+    if (!res.ok) {
+      return { available: false, error: 'Failed to check name availability' };
+    }
+    return res.json();
+  }
+  // Mock for development - always available
+  return { available: true };
+}
+
+export async function createStorageVolume(
+  name: string,
+  quotaGb: number,
+): Promise<StorageVolume> {
+  if (API_BASE) {
+    return storageFetch('/api/storage/volumes', {
+      method: 'POST',
+      body: JSON.stringify({ name, quotaGb }),
+    });
+  }
+  // Mock for development
+  return {
+    id: `mock-${Date.now()}`,
+    name,
+    storageUid: `u_${Date.now().toString(16)}`,
+    quotaGb,
+    usedGb: 0,
+    status: 'active',
+    allocationType: 'user_created',
+    provisionedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export async function deleteStorageVolume(id: string): Promise<void> {
+  if (API_BASE) {
+    await storageFetch(`/api/storage/volumes/${id}`, {
+      method: 'DELETE',
+    });
+  }
+  // Mock for development
+}
+
+// File listing types
+export interface FileItem {
+  name: string;
+  type: 'file' | 'folder';
+  size: number | null;
+  updatedAt: string;
+}
+
+export async function getStorageFiles(path?: string): Promise<FileItem[]> {
+  const token = getAccessToken();
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  if (API_BASE) {
+    const queryParam = path && path !== '/' ? `?path=${encodeURIComponent(path)}` : '';
+    const res = await fetch(`${API_BASE}/api/storage/files${queryParam}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || 'Failed to fetch files');
+    }
+
+    return res.json();
+  }
+
+  // Mock for development - return empty array
+  return [];
+}
+
+// Payment API Types
+export interface CreateOrderResponse {
+  orderId: string;
+  amount: number;       // in paise
+  currency: string;
+  keyId: string;
+  transactionId: string;
+}
+
+export interface VerifyPaymentRequest {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+
+export interface VerifyPaymentResponse {
+  success: boolean;
+  newBalance: number;
+}
+
+export interface PaymentTransactionItem {
+  id: string;
+  gateway: string;
+  gatewayTxnId: string | null;
+  gatewayOrderId: string | null;
+  amountCents: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  description?: string | null;
+  invoice?: {
+    id: string;
+    invoiceNumber: string;
+    totalCents: number;
+    status: string;
+    paidAt: string | null;
+    description?: string | null;
+  } | null;
+}
+
+// Alias for backward compatibility
+export type PaymentTransaction = PaymentTransactionItem;
+
+export interface PaginatedTransactions {
+  data: PaymentTransactionItem[];
+  transactions: PaymentTransactionItem[];  // Alias for backward compat
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+  // Direct access for convenience
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface TransactionDetail extends PaymentTransactionItem {
+  gatewayResponse: any;
+  completedAt?: string | null;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    periodStart: string;
+    periodEnd: string;
+    subtotalCents: number;
+    taxCents: number;
+    totalCents: number;
+    currency: string;
+    status: string;
+    issuedAt: string | null;
+    paidAt: string | null;
+    description?: string | null;
+    invoiceLineItems: {
+      id: string;
+      description: string;
+      quantity: number;
+      unitPriceCents: number;
+      totalCents: number;
+    }[];
+  } | null;
+}
+
+// Payment API Functions
+export async function createPaymentOrder(amountInRupees: number): Promise<CreateOrderResponse> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE}/api/payment/create-order`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ amountInRupees }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+    throw new Error(msg || 'Failed to create payment order');
+  }
+
+  return res.json();
+}
+
+export async function verifyPayment(data: VerifyPaymentRequest): Promise<VerifyPaymentResponse> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE}/api/payment/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+    throw new Error(msg || 'Payment verification failed');
+  }
+
+  return res.json();
+}
+
+export async function getPaymentTransactions(page = 1, limit = 10): Promise<PaginatedTransactions> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/payment/transactions?page=${page}&limit=${limit}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || 'Failed to fetch transactions');
+    }
+
+    return res.json();
+  }
+
+  // Mock data for development
+  return {
+    data: [],
+    transactions: [],
+    meta: { total: 0, page: 1, limit: 10, totalPages: 0 },
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 0,
+  };
+}
+
+export async function getTransactionDetail(id: string): Promise<TransactionDetail> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/payment/transactions/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || 'Failed to fetch transaction details');
+    }
+
+    return res.json();
+  }
+
+  throw new Error('No API configured');
+}
+
+export async function downloadInvoice(transactionId: string): Promise<Blob> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/payment/invoice/${transactionId}/download`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || 'Failed to download invoice');
+    }
+
+    return res.blob();
+  }
+
+  throw new Error('No API configured');
+}

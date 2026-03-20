@@ -6,7 +6,7 @@ import { spawn } from 'child_process';
 const SCRIPT_ENV = 'USER_STORAGE_PROVISION_SCRIPT';
 const URL_ENV = 'USER_STORAGE_PROVISION_URL';
 const SECRET_ENV = 'USER_STORAGE_PROVISION_SECRET';
-const QUOTA_GB = 5;
+const DEFAULT_QUOTA_GB = 5;
 const PROVISION_TIMEOUT_MS = 15000;
 const MAX_ERROR_LENGTH = 500;
 
@@ -16,12 +16,12 @@ export interface ProvisionResult {
 }
 
 /**
- * Provisions 5GB ZFS quota for institution members (university_sso) at user creation only.
- * After successful host-level provisioning, creates a UserStorageVolume record in the DB.
+ * Provisions ZFS quota for users.
+ * After successful host-level provisioning, the caller is responsible for creating the UserStorageVolume record.
  * Checks available space (when using script) and returns a result so the app can persist status.
  * Supports two backends:
- * - USER_STORAGE_PROVISION_SCRIPT: path to script; called with storageUid as first argument.
- * - USER_STORAGE_PROVISION_URL: HTTP POST { "storageUid": "u_xxx" } to this URL.
+ * - USER_STORAGE_PROVISION_SCRIPT: path to script; called with storageUid and quotaGb as arguments.
+ * - USER_STORAGE_PROVISION_URL: HTTP POST { "storageUid": "u_xxx", "quotaGb": 5 } to this URL.
  * If neither is set, returns ok: false with error message (provisioning skipped).
  */
 @Injectable()
@@ -30,12 +30,19 @@ export class StorageService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async provisionUserQuota(storageUid: string, userId: string): Promise<ProvisionResult> {
+  async provisionUserQuota(
+    storageUid: string,
+    userId: string,
+    quotaGb: number = DEFAULT_QUOTA_GB,
+  ): Promise<ProvisionResult> {
     if (!storageUid || !storageUid.startsWith('u_')) {
       const msg = `Invalid storageUid for provisioning: ${storageUid}`;
       this.logger.warn(msg);
       return { ok: false, error: msg };
     }
+
+    // Validate quota is within reasonable bounds
+    const validQuota = Math.max(1, Math.min(50, quotaGb));
 
     const scriptPath = process.env[SCRIPT_ENV];
     const provisionUrl = process.env[URL_ENV];
@@ -43,50 +50,25 @@ export class StorageService {
     let result: ProvisionResult;
 
     if (scriptPath) {
-      result = await this.runScript(scriptPath, storageUid);
+      result = await this.runScript(scriptPath, storageUid, validQuota);
     } else if (provisionUrl) {
-      result = await this.callProvisionUrl(provisionUrl, storageUid);
+      result = await this.callProvisionUrl(provisionUrl, storageUid, validQuota);
     } else {
       const msg = `Storage provisioning skipped (set ${SCRIPT_ENV} or ${URL_ENV} to enable).`;
       this.logger.debug(`${msg} storageUid=${storageUid}`);
       return { ok: false, error: msg };
     }
 
-    // After host-level provisioning, persist the UserStorageVolume record in DB
     if (result.ok) {
-      try {
-        // Use raw SQL to bypass stale Prisma client types (allocationType field added after last generate)
-        await this.prisma.$executeRaw`
-          INSERT INTO user_storage_volumes (id, user_id, storage_uid, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at)
-          VALUES (
-            gen_random_uuid()::uuid,
-            ${userId}::uuid,
-            ${storageUid},
-            'ubuntu22',
-            ${BigInt(QUOTA_GB) * BigInt(1024) ** BigInt(3)},
-            0,
-            'sso_default',
-            'active',
-            NOW(),
-            NOW(),
-            NOW()
-          )
-          ON CONFLICT (user_id) DO NOTHING
-        `;
-        this.logger.log(`UserStorageVolume created for userId=${userId} quota=${QUOTA_GB}GB`);
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Failed to create UserStorageVolume for userId=${userId}: ${errMsg}`);
-        // Don't fail the overall result — host provisioning succeeded, DB record is secondary
-      }
+      this.logger.log(`Storage provisioned for userId=${userId} storageUid=${storageUid} quota=${validQuota}GB`);
     }
 
     return result;
   }
 
-  private runScript(scriptPath: string, storageUid: string): Promise<ProvisionResult> {
+  private runScript(scriptPath: string, storageUid: string, quotaGb: number): Promise<ProvisionResult> {
     return new Promise((resolve) => {
-      const child = spawn(scriptPath, [storageUid], {
+      const child = spawn(scriptPath, [storageUid, quotaGb.toString()], {
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: false,
       });
@@ -134,6 +116,7 @@ export class StorageService {
   private async callProvisionUrl(
     url: string,
     storageUid: string,
+    quotaGb: number,
   ): Promise<ProvisionResult> {
     const requestId = randomUUID();
     const secret = process.env[SECRET_ENV];
@@ -155,7 +138,7 @@ export class StorageService {
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ storageUid, quotaGb: QUOTA_GB }),
+        body: JSON.stringify({ storageUid, quotaGb }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -214,13 +197,21 @@ export class StorageService {
       return null;
     }
 
-    const url = `${provisionUrl}/storage/usage/${encodeURIComponent(storageUid)}`;
+    // Strip /provision suffix to get base URL
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/storage/usage/${encodeURIComponent(storageUid)}`;
+    const secret = process.env[SECRET_ENV];
+    const headers: Record<string, string> = {};
+    if (secret) {
+      headers['X-Provision-Secret'] = secret;
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     try {
       const res = await fetch(url, {
         method: 'GET',
+        headers,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -255,6 +246,68 @@ export class StorageService {
       clearTimeout(timeoutId);
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Storage usage fetch error for ${storageUid}: ${msg}`);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch file listing from the Python service.
+   * Returns null if the service is not configured or the path is not found.
+   */
+  async getFiles(storageUid: string, path = '/'): Promise<{
+    name: string;
+    type: 'file' | 'folder';
+    size: number | null;
+    updatedAt: string;
+  }[] | null> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      this.logger.debug('USER_STORAGE_PROVISION_URL not set, skipping file listing');
+      return null;
+    }
+
+    // Strip /provision suffix to get base URL
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/files/${encodeURIComponent(storageUid)}?path=${encodeURIComponent(path)}`;
+    const secret = process.env[SECRET_ENV];
+    const headers: Record<string, string> = {};
+    if (secret) {
+      headers['X-Provision-Secret'] = secret;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.status === 404) {
+        // Path not found
+        return null;
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        this.logger.warn(`File listing fetch failed for ${storageUid}: ${text}`);
+        return null;
+      }
+
+      const data = await res.json() as {
+        name: string;
+        type: 'file' | 'folder';
+        size: number | null;
+        updatedAt: string;
+      }[];
+
+      return data;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`File listing fetch error for ${storageUid}: ${msg}`);
       return null;
     }
   }

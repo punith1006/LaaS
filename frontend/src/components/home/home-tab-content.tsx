@@ -63,14 +63,26 @@ function QuickStatCard({
               fontFamily: "var(--font-sans)",
               fontSize: "var(--text-xs)",
               fontWeight: 600,
-              color: statusColor ?? "var(--fgColor-success)",
-              padding: "2px 8px",
-              borderRadius: "9999px",
-              backgroundColor: "var(--bgColor-overlay, rgba(255,255,255,0.06))",
-              border: "1px solid currentColor",
-              opacity: 0.85,
+              color: "var(--bgColor-default)",
+              padding: "4px 12px",
+              borderRadius: "4px",
+              backgroundColor: "var(--fgColor-default)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
             }}
           >
+            <span
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: statusColor ?? "#3fb950",
+                flexShrink: 0,
+              }}
+            />
             {status}
           </div>
         )}
@@ -150,13 +162,13 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
   const getStorageStatusDisplay = () => {
     switch (storageStatus) {
       case "provisioned":
-        return { text: "Ready", color: "var(--fgColor-success)" };
+        return { text: "Live", color: "#3fb950" };
       case "pending":
-        return { text: "Pending", color: "var(--fgColor-warning)" };
+        return { text: "Provisioning", color: "#d29922" };
       case "failed":
-        return { text: "Failed", color: "var(--fgColor-critical)" };
+        return { text: "Error", color: "#f85149" };
       default:
-        return { text: "N/A", color: "var(--fgColor-muted)" };
+        return { text: "Inactive", color: "#8b949e" };
     }
   };
 
@@ -235,14 +247,14 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
         <QuickStatCard
           title="Storage"
           value={`${usedGb} / ${quotaGb} GB`}
-          subtitle={isInstitution ? "Institution allocated" : "Default allocation"}
+          subtitle={isInstitution ? "Included with your plan" : "Default allocation"}
           status={storageDisplay.text}
           statusColor={storageDisplay.color}
         />
         <QuickStatCard
-          title="Active Sessions"
+          title="Compute Sessions"
           value={String(quickStats.activeSessions)}
-          subtitle={`${quickStats.totalSessions} total sessions`}
+          subtitle={quickStats.activeSessions > 0 ? "Currently running" : "No active workloads"}
         />
         <QuickStatCard
           title="Resources"

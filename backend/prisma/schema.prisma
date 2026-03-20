@@ -599,13 +599,14 @@ model UserGroupMember {
 model UserStorageVolume {
   id                 String              @id @default(uuid()) @db.Uuid
   userId             String              @map("user_id") @db.Uuid
+  name               String              @map("name") @db.VarChar(128)
   storageUid         String              @map("storage_uid") @db.VarChar(64)
   zfsDatasetPath     String?             @map("zfs_dataset_path")
   nfsExportPath      String?             @map("nfs_export_path")
   containerMountPath String?             @map("container_mount_path")
   osChoice           String              @map("os_choice") @db.VarChar(32)
   quotaBytes         BigInt              @map("quota_bytes")
-  allocationType     String              @map("allocation_type") // 'sso_default' / 'purchased' / 'admin_granted'
+  allocationType     String              @map("allocation_type") // 'sso_default' / 'purchased' / 'admin_granted' / 'user_created'
   usedBytes          BigInt              @default(0) @map("used_bytes")
   usedBytesUpdatedAt DateTime?           @map("used_bytes_updated_at")
   status             StorageVolumeStatus
@@ -626,6 +627,7 @@ model UserStorageVolume {
 
   @@index([userId, status])
   @@index([createdAt])
+  @@unique([userId, name])
   @@map("user_storage_volumes")
 }
 
