@@ -36,6 +36,54 @@ const COLORS = {
   },
 };
 
+// Generate historical sample data for demo purposes
+// This creates past usage data while keeping current values at 0
+function generateHistoricalSampleData() {
+  const data = [];
+  
+  // Generate data for the past 7 days (simplified to last 24 hours for chart)
+  const now = new Date();
+  const currentHour = now.getHours();
+  
+  // Past usage - simulate a week of activity
+  const pastDays = [
+    { day: "Mon", avgSpend: 45.50, peakRate: 8.20 },
+    { day: "Tue", avgSpend: 52.30, peakRate: 9.10 },
+    { day: "Wed", avgSpend: 38.70, peakRate: 6.50 },
+    { day: "Thu", avgSpend: 61.20, peakRate: 11.30 },
+    { day: "Fri", avgSpend: 55.80, peakRate: 10.20 },
+    { day: "Sat", avgSpend: 28.40, peakRate: 4.80 },
+    { day: "Sun", avgSpend: 22.60, peakRate: 3.90 },
+  ];
+
+  // Convert to hourly cumulative data (showing today's equivalent hours)
+  for (let i = 0; i <= currentHour; i++) {
+    const hour = i.toString().padStart(2, "0") + ":00";
+    // Simulate realistic spend curve - lower at night, higher during day
+    const hourMultiplier = i < 8 ? 0.3 : i < 18 ? 1.2 : 0.8;
+    const baseRate = 5.50; // Historical average hourly rate
+    const hourlyRate = baseRate * hourMultiplier;
+    const cumulativeSpend = baseRate * (i / 24) * hourMultiplier;
+
+    data.push({
+      time: hour,
+      daySpend: Math.max(0, cumulativeSpend),
+      rollingAvg: Math.max(0, cumulativeSpend),
+      hourSpend: Math.max(0, hourlyRate),
+    });
+  }
+
+  // Add "Now" as the last point with 0 values
+  data.push({
+    time: "Now",
+    daySpend: 0,
+    rollingAvg: 0,
+    hourSpend: 0,
+  });
+
+  return data;
+}
+
 // Generate mock hourly data for the chart
 function generateHourlyData(dailySpend: number, currentRate: number) {
   const data = [];
@@ -347,18 +395,35 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
 
   // Generate chart data from hourly data
   const chartData = useMemo(() => {
+    let data;
+    
     // Use hourly data from API if available
     if (billingData?.hourlyData && billingData.hourlyData.length > 0) {
-      return billingData.hourlyData.map((item) => ({
+      data = billingData.hourlyData.map((item) => ({
         time: item.hour,
         rollingAvg: item.cumulativeSpend, // Cumulative spend up to this hour (blue line)
         hourSpend: item.hourlyRate, // Actual hourly rate (orange line)
         daySpend: item.cumulativeSpend, // alias for type compat
       }));
     }
-    
+    // If current values are 0, show historical sample data for demo
+    else if (currentSpendRate === 0 && dailySpend === 0) {
+      data = generateHistoricalSampleData();
+    }
     // Fallback to mock hourly data if no hourly data
-    return generateHourlyData(dailySpend, currentSpendRate);
+    else {
+      data = generateHourlyData(dailySpend, currentSpendRate);
+    }
+    
+    // Always set "Now" point to 0 if burn rate is 0 (demo mode)
+    if (currentSpendRate === 0) {
+      const nowIndex = data.findIndex((d) => d.time === "Now");
+      if (nowIndex >= 0) {
+        data[nowIndex] = { ...data[nowIndex], daySpend: 0, rollingAvg: 0, hourSpend: 0 };
+      }
+    }
+    
+    return data;
   }, [billingData?.hourlyData, dailySpend, currentSpendRate]);
 
   const themeColors = isDark ? COLORS.dark : COLORS.light;

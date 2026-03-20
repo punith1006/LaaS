@@ -310,15 +310,79 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1 min-h-0 overflow-y-auto">
             <SidebarNav />
           </div>
-          {/* Bottom area for user profile/settings — matches sidebar */}
+          {/* Sidebar footer — Support, Company, Settings nav items + copyright */}
           <div
-            className="shrink-0 min-h-[72px]"
+            className="shrink-0"
             style={{
               borderTop: "1px solid var(--borderColor-default)",
               backgroundColor: "var(--bgColor-mild)",
+              paddingTop: "8px",
+              paddingBottom: "12px",
             }}
-            aria-hidden
-          />
+          >
+            {[
+              {
+                label: "SUPPORT",
+                icon: (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                ),
+              },
+              {
+                label: "COMPANY",
+                icon: (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
+                ),
+              },
+            ].map(({ label, icon }) => (
+              <button
+                key={label}
+                disabled
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  height: "48px",
+                  padding: "0 16px",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "default",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "var(--text-base)",
+                  fontWeight: 400,
+                  textTransform: "uppercase",
+                  letterSpacing: "var(--tracking-label)",
+                  color: "var(--fgColor-default)",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ flexShrink: 0 }}>{icon}</span>
+                {label}
+              </button>
+            ))}
+
+            {/* Copyright */}
+            <div
+              style={{
+                padding: "8px 16px 0",
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.6875rem",
+                color: "var(--fgColor-muted)",
+                lineHeight: 1.4,
+              }}
+            >
+              © Copyright LaaS 2026
+            </div>
+          </div>
         </aside>
 
         {/* Main content area — lighter than sidebar/header */}

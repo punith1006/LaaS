@@ -51,7 +51,7 @@ const navSections: NavSection[] = [
     label: "MANAGE",
     items: [
       { id: "instances", label: "Instances" },
-      { id: "storage", label: "Storage" },
+      { id: "storage", label: "Storage", href: "/storage" },
     ],
   },
   {

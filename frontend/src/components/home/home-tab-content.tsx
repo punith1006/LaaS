@@ -261,7 +261,7 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
         }}
       >
         <QuickActionButton label="Launch Compute" href="#" />
-        <QuickActionButton label="Manage Storage" href="#" />
+        <QuickActionButton label="Manage Storage" href="/storage" />
         <QuickActionButton label="API Keys" href="#" />
       </div>
 

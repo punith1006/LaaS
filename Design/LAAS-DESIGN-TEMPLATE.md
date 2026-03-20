@@ -1030,3 +1030,417 @@ When building components, verify:
 - [ ] Subtle hover states (not dramatic)
 - [ ] Focus states use `--focusColor-default`
 - [ ] Consistent padding/margin values
+
+---
+
+## 22. FILE STORE / FILE LIST
+
+The File Store section displays user files and folders in a structured table format with navigation capabilities.
+
+### File List Structure
+```css
+.file-list-container {
+  background-color: var(--bgColor-default);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.file-list-header {
+  display: grid;
+  grid-template-columns: 1fr 100px 100px 160px 40px;
+  gap: 12px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--borderColor-muted);
+  background-color: var(--bgColor-muted);
+  height: 40px;
+  align-items: center;
+}
+
+.file-list-header-cell {
+  font-family: "Suisse Intl", sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--fgColor-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+```
+
+### File Row
+```css
+.file-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 100px 160px 40px;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--borderColor-muted);
+  align-items: center;
+  height: 48px;
+  transition: background-color 0.1s ease;
+}
+
+.file-row:hover {
+  background-color: rgba(11, 11, 11, 0.02);
+}
+
+/* Dark theme */
+.theme-dark .file-row:hover {
+  background-color: rgba(240, 239, 226, 0.02);
+}
+```
+
+### File Name Cell
+```css
+.file-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.file-icon-container {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background-color: var(--bgColor-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.file-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.file-icon.folder {
+  stroke: var(--fgColor-info);
+}
+
+.file-icon.file {
+  stroke: var(--fgColor-muted);
+}
+
+.file-name {
+  font-family: "Suisse Intl", sans-serif;
+  font-size: 0.875rem;
+  color: var(--fgColor-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Folder names are clickable */
+.folder-name {
+  color: var(--fgColor-info);
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.folder-name:hover {
+  background-color: var(--bgColor-muted);
+  text-decoration: underline;
+}
+
+.folder-arrow {
+  width: 12px;
+  height: 12px;
+  opacity: 0.6;
+}
+```
+
+### File Metadata Cells
+```css
+.file-type {
+  font-family: "Suisse Intl Mono", monospace;
+  font-size: 0.8125rem;
+  color: var(--fgColor-muted);
+  text-transform: capitalize;
+}
+
+.file-size {
+  font-family: "Suisse Intl Mono", monospace;
+  font-size: 0.8125rem;
+  color: var(--fgColor-muted);
+}
+
+.file-date {
+  font-family: "Suisse Intl Mono", monospace;
+  font-size: 0.8125rem;
+  color: var(--fgColor-muted);
+}
+```
+
+### Breadcrumb Navigation
+```css
+.breadcrumb-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background-color: var(--bgColor-muted);
+  border-bottom: 1px solid var(--borderColor-muted);
+}
+
+.back-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background-color: var(--bgColor-default);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: "Suisse Intl", sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--fgColor-default);
+  transition: all 0.15s ease;
+}
+
+.back-button:hover {
+  background-color: var(--bgColor-muted);
+  border-color: var(--fgColor-muted);
+}
+
+.breadcrumb-path {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.breadcrumb-item {
+  padding: 4px 8px;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: "Suisse Intl", sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--fgColor-info);
+  transition: background-color 0.15s ease;
+}
+
+.breadcrumb-item:hover {
+  background-color: var(--bgColor-default);
+}
+
+.breadcrumb-item.current {
+  background-color: var(--bgColor-default);
+  font-weight: 600;
+  color: var(--fgColor-default);
+  cursor: default;
+}
+
+.breadcrumb-separator {
+  width: 14px;
+  height: 14px;
+  stroke: var(--fgColor-muted);
+}
+```
+
+### Action Menu (Three-dot)
+```css
+.action-menu-container {
+  position: relative;
+}
+
+.action-menu-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background-color: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--fgColor-muted);
+  transition: background-color 0.15s ease;
+}
+
+.action-menu-button:hover {
+  background-color: var(--bgColor-muted);
+}
+
+.action-menu-button.active {
+  background-color: var(--bgColor-muted);
+}
+
+/* Dropdown rendered via Portal */
+.action-dropdown {
+  position: fixed;
+  background-color: var(--bgColor-default);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  min-width: 140px;
+  overflow: hidden;
+}
+
+.action-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: "Suisse Intl", sans-serif;
+  font-size: 0.8125rem;
+  color: var(--fgColor-default);
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.action-dropdown-item:hover {
+  background-color: var(--bgColor-muted);
+}
+
+.action-dropdown-item.danger {
+  color: var(--fgColor-critical);
+}
+```
+
+### Empty State
+```css
+.empty-state {
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.empty-state-icon {
+  width: 48px;
+  height: 48px;
+  stroke: var(--fgColor-muted);
+  stroke-width: 1.5;
+  margin: 0 auto 16px;
+}
+
+.empty-state-text {
+  font-family: "Suisse Intl", sans-serif;
+  font-size: 0.875rem;
+  color: var(--fgColor-muted);
+  margin: 0;
+}
+```
+
+### Toolbar / Filter Bar
+```css
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--borderColor-default);
+  background-color: var(--bgColor-default);
+}
+
+.search-input-container {
+  position: relative;
+  width: 240px;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  stroke: var(--fgColor-muted);
+}
+
+.search-input {
+  width: 100%;
+  font-family: "Suisse Intl", sans-serif;
+  font-size: 0.875rem;
+  color: var(--fgColor-default);
+  background-color: transparent;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 4px;
+  padding: 0 12px 0 36px;
+  height: 32px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.search-input:focus {
+  border-color: var(--fgColor-default);
+}
+
+.search-input::placeholder {
+  color: var(--fgColor-muted);
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background-color: transparent;
+  border: 1px solid var(--borderColor-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--fgColor-muted);
+  transition: all 0.15s ease;
+}
+
+.icon-button:hover {
+  background-color: var(--bgColor-muted);
+  border-color: var(--fgColor-muted);
+}
+```
+
+### Filter Tabs
+```css
+.filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-tab {
+  padding: 4px 12px;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: "Suisse Intl", sans-serif;
+  font-size: 0.875rem;
+  color: var(--fgColor-muted);
+  transition: all 0.15s ease;
+}
+
+.filter-tab:hover {
+  background-color: rgba(11, 11, 11, 0.05);
+  color: var(--fgColor-default);
+}
+
+.filter-tab.active {
+  background-color: var(--bgColor-muted);
+  color: var(--fgColor-default);
+  font-weight: 500;
+}
+```

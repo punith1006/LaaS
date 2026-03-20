@@ -273,25 +273,20 @@ export class DashboardService {
       return total + (session.computeConfig?.basePricePerHourCents ?? 0);
     }, 0);
 
-    // Get today's billing charges for daily spend
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // dailySpend and chart both use past-12h charges (simpler, single source of truth)
+    const twelveHoursAgo = new Date();
+    twelveHoursAgo.setHours(twelveHoursAgo.getHours() - 12);
 
-    const todayCharges = await this.prisma.billingCharge.findMany({
+    const recentCharges12h = await this.prisma.billingCharge.findMany({
       where: {
         userId,
         createdAt: {
-          gte: today,
-          lt: tomorrow,
+          gte: twelveHoursAgo,
         },
       },
     });
 
-    const dailySpendCents = todayCharges.reduce((total, charge) => {
-      return total + Number(charge.amountCents);
-    }, 0);
+    const dailySpendCents = recentCharges12h.reduce((t, c) => t + Number(c.amountCents), 0);
 
     // Get billing history for the last 30 days
     const thirtyDaysAgo = new Date();
@@ -318,7 +313,7 @@ export class DashboardService {
       status: 'completed' as const,
     }));
 
-    // Calculate rolling average (last 7 days)
+    // Rolling average: average daily spend over the last 7 days (monthly timescale approximation)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -334,59 +329,35 @@ export class DashboardService {
     const weeklySpendCents = weekCharges.reduce((total, charge) => {
       return total + Number(charge.amountCents);
     }, 0);
-    const rollingAverageDaily = weeklySpendCents / 7 / 100; // Convert to rupees
+    const rollingAverageDaily = weeklySpendCents / 7 / 100; // rupees/day (monthly timescale)
 
-    // Generate hourly spend data for today's chart (every 2 hours like reference)
-    // Shows all 24 hours with actual data from the full day
-    const hourlyData: HourlySpendData[] = [];
-    
-    // Get today's charges grouped by hour
-    const todayChargesByHour = new Map<number, number>();
-    todayCharges.forEach(charge => {
-      const hour = new Date(charge.createdAt).getHours();
-      const currentAmount = todayChargesByHour.get(hour) || 0;
-      todayChargesByHour.set(hour, currentAmount + Number(charge.amountCents));
+    // Group charges by hour (0-11, representing "12h ago" to "now")
+    const chargesByRelativeHour = new Map<number, number>();
+    recentCharges12h.forEach(charge => {
+      const chargeTime = new Date(charge.createdAt).getTime();
+      const hoursAgo = Math.round((Date.now() - chargeTime) / (1000 * 60 * 60));
+      // Bucket into 0-11 (11 = 11h ago, 0 = current hour)
+      const bucket = Math.min(11, Math.max(0, hoursAgo));
+      chargesByRelativeHour.set(
+        bucket,
+        (chargesByRelativeHour.get(bucket) ?? 0) + Number(charge.amountCents)
+      );
     });
-    
-    // Build data for every 2-hour interval (00:00, 02:00, 04:00, ..., 22:00, Now)
-    // Use actual billing data for all intervals to show the full day's pattern
-    const intervals = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
+
+    // Chart intervals: from "12h ago" to "Now" in 1-hour buckets
+    const hourlyData: HourlySpendData[] = [];
     let cumulativeSpend = 0;
-    
-    for (const intervalHour of intervals) {
-      const hourLabel = intervalHour.toString().padStart(2, '0') + ':00';
-      
-      // The interval represents the window from (intervalHour-2) to intervalHour
-      // e.g., 14:00 represents 12:00-14:00
-      const windowStartHour = intervalHour - 2;
-      
-      // Add charges for this 2-hour window to cumulative
-      for (let h = windowStartHour + 1; h <= intervalHour; h++) {
-        cumulativeSpend += todayChargesByHour.get(h) || 0;
-      }
-      
-      // Get the total spend in this 2-hour window
-      let intervalSpend = 0;
-      for (let h = windowStartHour + 1; h <= intervalHour; h++) {
-        intervalSpend += todayChargesByHour.get(h) || 0;
-      }
-      // Calculate hourly rate for this interval (total spend / 2 hours)
-      const hourlyRateForInterval = intervalSpend / 2;
-      
+
+    for (let i = 11; i >= 0; i--) {
+      const spendThisHour = chargesByRelativeHour.get(i) ?? 0;
+      cumulativeSpend += spendThisHour;
+      const hoursLabel = i === 0 ? 'Now' : `-${i}h`;
       hourlyData.push({
-        hour: hourLabel,
-        cumulativeSpend: cumulativeSpend / 100, // Convert to rupees
-        hourlyRate: hourlyRateForInterval / 100, // Hourly rate at this interval
+        hour: hoursLabel,
+        cumulativeSpend: cumulativeSpend / 100,
+        hourlyRate: spendThisHour / 100,
       });
     }
-    
-    // Add "Now" point with current actual cumulative spend and active rate
-    // Use the total daily spend calculated from all today's charges
-    hourlyData.push({
-      hour: 'Now',
-      cumulativeSpend: dailySpendCents / 100, // Total today's spend
-      hourlyRate: currentSpendRateCentsPerHour / 100, // Current active rate
-    });
 
     const isInstitution = user.authType === 'university_sso';
 

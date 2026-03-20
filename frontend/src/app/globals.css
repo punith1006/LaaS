@@ -3,7 +3,8 @@
 @theme inline {
   --color-background: #ffffff;
   --color-foreground: #171717;
-  --font-sans: ui-sans-serif, system-ui, sans-serif, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Suisse Intl", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Suisse Intl Mono", "SF Mono", Consolas, monospace;
 }
 
 /* App shell — Lambda's exact CSS system (from Lambda.ai) */
@@ -15,12 +16,20 @@
   --fgColor-default: #0B0B0B;
   --fgColor-mild: #2E2E2E;
   --fgColor-muted: #636363;
+  --fgColor-inverse: #F0EFE2;
   --borderColor-default: #BFBEB4;
 
   /* Info/Alert colors */
   --bgColor-info: #cedeff;
   --fgColor-info: #3a73ff;
   --borderColor-info: #3a73ff;
+
+  /* Info Section (for info banners) */
+  --bgColor-info-section: #e6f0ff;
+  --bgColor-warning-section: #fff4e5;
+  --borderColor-warning: #d98b0c;
+  --fgColor-warning: #d98b0c;
+  --fgColor-critical: #e70000;
 
   /* Shell */
   --shell-bg: var(--bgColor-default);
@@ -64,12 +73,20 @@ body {
   --fgColor-default: #F0EFE2;
   --fgColor-mild: #BFBEB4;
   --fgColor-muted: #818178;
+  --fgColor-inverse: #0B0B0B;
   --borderColor-default: #2E2E2E;
 
   /* Info/Alert colors - dark theme */
   --bgColor-info: #00094a;
   --fgColor-info: #6c9aff;
   --borderColor-info: #6c9aff;
+
+  /* Info Section - dark theme */
+  --bgColor-info-section: #00094a;
+  --bgColor-warning-section: #3d2800;
+  --borderColor-warning: #fda422;
+  --fgColor-warning: #fda422;
+  --fgColor-critical: #ff6742;
 }
 
 /* Smooth theme transitions */
