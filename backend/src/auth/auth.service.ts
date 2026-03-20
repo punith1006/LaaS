@@ -421,7 +421,7 @@ export class AuthService {
       await this.mail.sendWelcomeEmail(user.email, user.firstName);
 
       if (authType === 'university_sso' && user.storageUid) {
-        const result = await this.storage.provisionUserQuota(user.storageUid);
+        const result = await this.storage.provisionUserQuota(user.storageUid, user.id);
         await this.prisma.user.update({
           where: { id: user.id },
           data: result.ok
@@ -500,7 +500,7 @@ export class AuthService {
         'Storage is already provisioned or not applicable.',
       );
     }
-    const result = await this.storage.provisionUserQuota(user.storageUid);
+    const result = await this.storage.provisionUserQuota(user.storageUid, userId);
     await this.prisma.user.update({
       where: { id: userId },
       data: result.ok

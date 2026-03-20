@@ -209,6 +209,7 @@ export interface HomeDashboardData {
     firstName: string;
     lastName: string;
     authType: string;
+    storageUid: string | null;
     storageQuotaGb: number;
     storageProvisioningStatus: string | null;
     storageProvisioningError: string | null;
@@ -244,6 +245,7 @@ export interface BillingData {
   usage: {
     storageQuotaGb: number;
     storageUsedGb: number;
+    storageAllocatedGb: number;
     computeHoursUsed: number;
     billingCycle: string;
   };
@@ -256,11 +258,18 @@ export interface BillingData {
   creditBalance: number;
   spendRate: number;
   spendLimit: number;
+  spendLimitEnabled: boolean;
   dailySpend: number;
   currentSpendRate: number;
+  runway: number | null; // Hours of runway remaining
   gpus: number;
+  gpuVramMb: number;
   vcpus: number;
+  memoryMb: number;
   endpoints: number;
+  storageAllocatedGb: number;
+  storageUsedGb: number;
+  storageUsagePercent: number;
   hourlyData: HourlySpendData[];
 }
 

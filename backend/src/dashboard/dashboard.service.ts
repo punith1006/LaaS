@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 
 export interface HomeDashboardData {
   user: {
@@ -8,6 +9,7 @@ export interface HomeDashboardData {
     firstName: string;
     lastName: string;
     authType: string;
+    storageUid: string | null;
     storageQuotaGb: number;
     storageProvisioningStatus: string | null;
     storageProvisioningError: string | null;
@@ -43,6 +45,7 @@ export interface BillingData {
   usage: {
     storageQuotaGb: number;
     storageUsedGb: number;
+    storageAllocatedGb: number;
     computeHoursUsed: number;
     billingCycle: string;
   };
@@ -55,11 +58,18 @@ export interface BillingData {
   creditBalance: number;
   spendRate: number;
   spendLimit: number;
+  spendLimitEnabled: boolean;
   dailySpend: number;
   currentSpendRate: number;
+  runway: number | null; // Hours of runway remaining (null if no active sessions)
   gpus: number;
+  gpuVramMb: number;
   vcpus: number;
+  memoryMb: number;
   endpoints: number;
+  storageAllocatedGb: number;
+  storageUsedGb: number;
+  storageUsagePercent: number; // Live usage % from ZFS via Python service
   hourlyData: HourlySpendData[]; // Today's hourly spend data for the chart
 }
 
@@ -79,7 +89,10 @@ export interface HourlySpendData {
 
 @Injectable()
 export class DashboardService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storageService: StorageService,
+  ) {}
 
   async getHomeData(userId: string): Promise<HomeDashboardData> {
     // Get user with storage info
@@ -91,6 +104,7 @@ export class DashboardService {
         firstName: true,
         lastName: true,
         authType: true,
+        storageUid: true,
         storageProvisioningStatus: true,
         storageProvisioningError: true,
       },
@@ -100,9 +114,9 @@ export class DashboardService {
       throw new Error('User not found');
     }
 
-    // Get storage volume info
+    // Get storage volume info (real quota from DB)
     const storageVolume = await this.prisma.userStorageVolume.findFirst({
-      where: { userId },
+      where: { userId, status: 'active' },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -124,9 +138,18 @@ export class DashboardService {
     // Get notebook count (placeholder - model not yet implemented)
     const totalNotebooks = 0;
 
-    const quotaGb = user.authType === 'university_sso' ? 5 : 5;
-    const usedBytes = storageVolume?.usedBytes ?? BigInt(0);
-    const usedGb = Math.round((Number(usedBytes) / (1024 * 1024 * 1024)) * 100) / 100;
+    // Storage quota from UserStorageVolume.quotaBytes (real DB data)
+    const quotaBytes = storageVolume?.quotaBytes ?? BigInt(0);
+    const quotaGb = Math.round((Number(quotaBytes) / (1024 ** 3)) * 100) / 100;
+
+    // Live storage used from ZFS via Python service (real-time, no DB caching)
+    let usedGb = Math.round((Number(storageVolume?.usedBytes ?? BigInt(0)) / (1024 ** 3)) * 100) / 100;
+    if (user.storageUid && quotaGb > 0) {
+      const liveUsage = await this.storageService.getStorageUsage(user.storageUid);
+      if (liveUsage) {
+        usedGb = liveUsage.usedGb;
+      }
+    }
 
     // Get recent activity (placeholder - can be expanded)
     const recentActivity: ActivityItem[] = [];
@@ -138,6 +161,7 @@ export class DashboardService {
         firstName: user.firstName,
         lastName: user.lastName,
         authType: user.authType,
+        storageUid: user.storageUid,
         storageQuotaGb: quotaGb,
         storageProvisioningStatus: user.storageProvisioningStatus,
         storageProvisioningError: user.storageProvisioningError,
@@ -164,6 +188,7 @@ export class DashboardService {
       select: {
         authType: true,
         storageProvisioningStatus: true,
+        storageUid: true,
       },
     });
 
@@ -177,10 +202,20 @@ export class DashboardService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const isInstitution = user.authType === 'university_sso';
-    const quotaGb = isInstitution ? 5 : 5;
-    const usedBytes = storageVolume?.usedBytes ?? BigInt(0);
-    const usedGb = Math.round((Number(usedBytes) / (1024 * 1024 * 1024)) * 100) / 100;
+    // Allocated quota from the actual storage volume record (DB is source of truth for quota)
+    const quotaBytes = storageVolume?.quotaBytes ?? BigInt(0);
+    const allocatedGb = Math.round((Number(quotaBytes) / (1024 * 1024 * 1024)) * 100) / 100;
+
+    // Fetch LIVE storage usage from ZFS via Python service (no DB caching)
+    let storageUsedGb = 0;
+    let storageUsagePercent = 0;
+    if (user.storageUid) {
+      const liveUsage = await this.storageService.getStorageUsage(user.storageUid);
+      if (liveUsage) {
+        storageUsedGb = liveUsage.usedGb;
+        storageUsagePercent = liveUsage.usagePercent;
+      }
+    }
 
     // Get compute hours from sessions
     const sessions = await this.prisma.session.findMany({
@@ -209,6 +244,18 @@ export class DashboardService {
     const wallet = await this.prisma.wallet.findUnique({
       where: { userId },
     });
+
+    // Fetch spend limit fields via raw SQL (Prisma client may not have these after schema migration)
+    const walletRaw = await this.prisma.$queryRaw<Array<{
+      spend_limit_cents: number | null;
+      spend_limit_enabled: boolean;
+    }>>`
+      SELECT spend_limit_cents, spend_limit_enabled
+      FROM wallets
+      WHERE user_id = ${userId}::uuid
+      LIMIT 1
+    `;
+    const walletExtra = walletRaw[0] ?? { spend_limit_cents: null, spend_limit_enabled: false };
 
     // Get active sessions for current spend rate calculation
     const activeSessions = await this.prisma.session.findMany({
@@ -341,6 +388,8 @@ export class DashboardService {
       hourlyRate: currentSpendRateCentsPerHour / 100, // Current active rate
     });
 
+    const isInstitution = user.authType === 'university_sso';
+
     return {
       plan: {
         type: isInstitution ? 'institution' : 'free',
@@ -350,8 +399,9 @@ export class DashboardService {
           : 'You are on the free tier with basic access to LaaS platform resources.',
       },
       usage: {
-        storageQuotaGb: quotaGb,
-        storageUsedGb: usedGb,
+        storageQuotaGb: allocatedGb,
+        storageUsedGb: storageUsedGb,
+        storageAllocatedGb: allocatedGb, // Actual quota from UserStorageVolume.quotaBytes
         computeHoursUsed: Math.round(computeHoursUsed * 100) / 100,
         billingCycle: isInstitution ? 'Institution Managed' : 'N/A',
       },
@@ -365,12 +415,43 @@ export class DashboardService {
       // Lambda.ai style billing fields (real data from wallet/billing tables)
       creditBalance: Number(wallet?.balanceCents ?? 0) / 100, // Convert cents to rupees
       spendRate: rollingAverageDaily, // Rolling average daily spend
-      spendLimit: (wallet?.spendLimitCents ?? 0) / 100, // Convert cents to rupees
+      spendLimit: (walletExtra.spend_limit_cents ?? 0) / 100, // Convert cents to rupees (0 means no limit)
+      spendLimitEnabled: walletExtra.spend_limit_enabled,
       dailySpend: dailySpendCents / 100, // Convert cents to rupees
       currentSpendRate: currentSpendRateCentsPerHour / 100, // Convert cents/hour to rupees/hour
+      runway: (() => {
+        // Ceiling logic:
+        // - If spendLimit is set AND spendLimit <= creditBalance → ceiling = spendLimit
+        // - If spendLimit is set AND spendLimit > creditBalance → ceiling = creditBalance
+        // - If spendLimit is not set → ceiling = creditBalance
+        const balanceCents = Number(wallet?.balanceCents ?? 0);
+        const spendLimitCentsVal = walletExtra.spend_limit_enabled && (walletExtra.spend_limit_cents ?? 0) > 0
+          ? (walletExtra.spend_limit_cents ?? 0)
+          : null;
+
+        let ceilingCents: number;
+        if (spendLimitCentsVal !== null) {
+          ceilingCents = spendLimitCentsVal <= balanceCents ? spendLimitCentsVal : balanceCents;
+        } else {
+          ceilingCents = balanceCents;
+        }
+
+        // Runway = (ceiling - totalSpentToday) / burnRate (in hours)
+        const remainingCents = ceilingCents - dailySpendCents;
+        if (remainingCents <= 0 || currentSpendRateCentsPerHour <= 0) return null;
+
+        const hoursLeft = remainingCents / currentSpendRateCentsPerHour;
+        return hoursLeft; // Number of hours of runway remaining
+      })(),
       gpus: activeSessions.filter(s => (s.actualGpuVramMb ?? 0) > 0).length,
+      gpuVramMb: activeSessions.reduce((total, s) => total + (s.actualGpuVramMb ?? 0), 0),
       vcpus: activeSessions.reduce((total, s) => total + (s.computeConfig?.vcpu ?? 0), 0),
+      memoryMb: activeSessions.reduce((total, s) => total + (s.computeConfig?.memoryMb ?? 0), 0),
       endpoints: activeSessions.length,
+      // Storage: live used from ZFS via Python service; allocated from UserStorageVolume
+      storageAllocatedGb: allocatedGb,
+      storageUsedGb: storageUsedGb,
+      storageUsagePercent,
       hourlyData, // Today's hourly spend data for the chart
     };
   }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutModal } from "./sign-out-modal";
 import { clearTokens, getIdToken } from "@/lib/token";
+import { getBillingData } from "@/lib/api";
 
 /**
  * Base screen template — Utilitarian minimalism (Design\template.txt).
@@ -19,6 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [hasActiveInstances, setHasActiveInstances] = useState(false);
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
 
   // Load dark mode preference from localStorage on mount
   useEffect(() => {
@@ -27,6 +29,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setIsDarkMode(true);
       document.documentElement.classList.add("dark");
     }
+  }, []);
+
+  // Fetch credit balance on mount
+  useEffect(() => {
+    getBillingData()
+      .then((data) => {
+        setCreditBalance(data?.creditBalance ?? null);
+      })
+      .catch(() => {
+        setCreditBalance(null);
+      });
   }, []);
 
   const toggleDarkMode = () => {
@@ -145,6 +158,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }}
           aria-label="Header"
         >
+          {/* Credits Remaining */}
+          <div
+            className="flex items-center"
+            style={{
+              fontFamily: "ui-monospace, monospace",
+              fontSize: "1rem",
+              fontWeight: 500,
+              lineHeight: "1.375rem",
+              textTransform: "uppercase",
+              color: "var(--fgColor-default)",
+              padding: "8px",
+              gap: "8px",
+            }}
+          >
+            Credits Remaining: {creditBalance !== null ? `₹${creditBalance.toFixed(2)}` : "—"}
+          </div>
+
           {/* Status indicator */}
           <div
             className="flex items-center"
@@ -154,7 +184,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               fontWeight: 500,
               lineHeight: "1.375rem",
               textTransform: "uppercase",
-              color: "var(--fgColor-mild)",
+              color: "var(--fgColor-default)",
               padding: "8px",
               gap: "8px",
             }}
@@ -180,7 +210,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               fontWeight: 500,
               lineHeight: "1.375rem",
               textTransform: "uppercase",
-              color: "var(--fgColor-mild)",
+              color: "var(--fgColor-default)",
               background: "transparent",
               border: "none",
               padding: "8px",
@@ -236,7 +266,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               fontWeight: 500,
               lineHeight: "1.375rem",
               textTransform: "uppercase",
-              color: "var(--fgColor-mild)",
+              color: "var(--fgColor-default)",
               background: "transparent",
               border: "none",
               padding: "8px",

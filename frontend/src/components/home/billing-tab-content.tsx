@@ -53,6 +53,7 @@ function generateHourlyData(dailySpend: number, currentRate: number) {
     data.push({
       time: hour,
       daySpend: Math.max(0, cumulativeSpend),
+      rollingAvg: Math.max(0, cumulativeSpend),
       hourSpend: Math.max(0, hourlyRate),
     });
   }
@@ -61,6 +62,7 @@ function generateHourlyData(dailySpend: number, currentRate: number) {
   data.push({
     time: "Now",
     daySpend: dailySpend,
+    rollingAvg: dailySpend,
     hourSpend: currentRate,
   });
 
@@ -73,17 +75,21 @@ function MetricCard({
   label,
   value,
   subValue,
+  highlight,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   subValue?: string;
+  highlight?: boolean;
 }) {
   return (
     <div
       style={{
-        backgroundColor: "var(--bgColor-mild)",
-        border: "1px solid var(--borderColor-default)",
+        backgroundColor: highlight ? "var(--bgColor-info, #cedeff)" : "var(--bgColor-mild)",
+        border: highlight
+          ? "1px solid var(--borderColor-info, #3a73ff)"
+          : "1px solid var(--borderColor-default)",
         borderRadius: "4px",
         padding: "16px",
         display: "flex",
@@ -98,7 +104,7 @@ function MetricCard({
           width: "40px",
           height: "40px",
           borderRadius: "4px",
-          backgroundColor: "var(--bgColor-muted)",
+          backgroundColor: highlight ? "transparent" : "var(--bgColor-muted)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -112,7 +118,7 @@ function MetricCard({
           style={{
             fontFamily: "var(--font-sans)",
             fontSize: "var(--text-xs)",
-            color: "var(--fgColor-muted)",
+            color: highlight ? "var(--fgColor-info, #3a73ff)" : "var(--fgColor-muted)",
             marginBottom: "2px",
           }}
         >
@@ -134,7 +140,7 @@ function MetricCard({
             style={{
               fontFamily: "var(--font-sans)",
               fontSize: "var(--text-xs)",
-              color: "var(--fgColor-muted)",
+              color: highlight ? "var(--fgColor-info, #3a73ff)" : "var(--fgColor-muted)",
             }}
           >
             {subValue}
@@ -290,20 +296,54 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
   const usage = billingData?.usage ?? {
     storageQuotaGb: user?.storageQuotaGb ?? 5,
     storageUsedGb: 0,
+    storageAllocatedGb: 0,
     computeHoursUsed: 0,
+    billingCycle: 'N/A',
   };
 
   // Mock data for Lambda.ai style billing display
   const creditBalance = billingData?.creditBalance ?? 0;
   const spendRate = billingData?.spendRate ?? 0;
-  const spendLimit = billingData?.spendLimit ?? 80;
-  const dailySpend = billingData?.dailySpend ?? 3.24; // Mock value for demo
-  const currentSpendRate = billingData?.currentSpendRate ?? 0.18; // Mock value for demo
+  const spendLimit = billingData?.spendLimit ?? 0;
+  const spendLimitEnabled = billingData?.spendLimitEnabled ?? false;
+  const dailySpend = billingData?.dailySpend ?? 0;
+  const currentSpendRate = billingData?.currentSpendRate ?? 0;
+  const runwayHours = billingData?.runway ?? null;
 
-  // Resource usage
+  // Format runway as human-readable string
+  const formatRunway = (hours: number | null): string => {
+    if (hours === null || currentSpendRate <= 0) return "--";
+    if (hours <= 0) return "0 hrs";
+    const days = Math.floor(hours / 24);
+    const remainingHours = Math.floor(hours % 24);
+    if (days > 0 && remainingHours > 0) return `${days}d ${remainingHours}h`;
+    if (days > 0) return `${days}d`;
+    return `${remainingHours}h`;
+  };
+
+  // Resource usage (from active sessions + storage volume - all real DB data)
   const gpus = billingData?.gpus ?? 0;
+  const gpuVramMb = billingData?.gpuVramMb ?? 0;
   const vcpus = billingData?.vcpus ?? 0;
+  const memoryMb = billingData?.memoryMb ?? 0;
   const endpoints = billingData?.endpoints ?? 0;
+  const storageAllocatedGb = billingData?.storageAllocatedGb ?? 0;
+  const storageUsedGb = billingData?.storageUsedGb ?? 0;
+  const storageUsagePercent = billingData?.storageUsagePercent ?? 0;
+
+  // Format memory
+  const formatMemory = (mb: number) => {
+    if (mb === 0) return "0 MB";
+    if (mb >= 1024) return `${(mb / 1024).toFixed(0)} GB`;
+    return `${mb} MB`;
+  };
+
+  // Format GPU VRAM
+  const formatVram = (mb: number) => {
+    if (mb === 0) return "--";
+    if (mb >= 1024) return `${(mb / 1024).toFixed(0)} GB`;
+    return `${mb} MB`;
+  };
 
   // Generate chart data from hourly data
   const chartData = useMemo(() => {
@@ -313,6 +353,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
         time: item.hour,
         rollingAvg: item.cumulativeSpend, // Cumulative spend up to this hour (blue line)
         hourSpend: item.hourlyRate, // Actual hourly rate (orange line)
+        daySpend: item.cumulativeSpend, // alias for type compat
       }));
     }
     
@@ -367,6 +408,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
           }}
         >
           <MetricCard
+            highlight
             icon={
               <svg
                 width="20"
@@ -375,7 +417,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.5"
-                style={{ color: "var(--fgColor-muted)" }}
+                style={{ color: "var(--fgColor-info, #3a73ff)" }}
               >
                 <rect x="2" y="6" width="20" height="12" rx="2" />
                 <path d="M2 10h20" />
@@ -399,7 +441,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                 <path d="M12 6v6l4 2" />
               </svg>
             }
-            label="Current rate"
+            label="Burn rate"
             value={`₹${currentSpendRate.toFixed(2)}/hr`}
           />
           <MetricCard
@@ -417,8 +459,8 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                 <path d="M12 6v6l4 2" />
               </svg>
             }
-            label="Est. time left"
-            value="--"
+            label="Runway"
+            value={formatRunway(runwayHours)}
           />
           <MetricCard
             icon={
@@ -564,7 +606,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                   letterSpacing: "0.05em",
                 }}
               >
-                Current spend rate
+                Current burn rate
               </div>
               <div
                 style={{
@@ -793,10 +835,18 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
               gap: "0 24px",
             }}
           >
-            <ResourceItem label="GPUs" value={gpus} />
+            <ResourceItem label="GPUs" value={gpus > 0 ? `${gpus} (${formatVram(gpuVramMb)} VRAM)` : "0"} />
             <ResourceItem label="vCPUs" value={vcpus} />
-            <ResourceItem label="Storage" value={`${usage.storageUsedGb} GB`} />
+            <ResourceItem label="RAM" value={formatMemory(memoryMb)} />
             <ResourceItem label="Endpoints" value={endpoints} />
+            <ResourceItem
+              label="Storage allocated"
+              value={storageAllocatedGb > 0 ? `${storageAllocatedGb} GB` : "Not provisioned"}
+            />
+            <ResourceItem
+              label="Storage used"
+              value={storageAllocatedGb > 0 ? `${storageUsedGb.toFixed(2)} GB (${storageUsagePercent}%)` : "--"}
+            />
           </div>
         </div>
       </div>

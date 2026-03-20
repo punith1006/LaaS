@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import { spawn } from 'child_process';
 
@@ -16,6 +17,7 @@ export interface ProvisionResult {
 
 /**
  * Provisions 5GB ZFS quota for institution members (university_sso) at user creation only.
+ * After successful host-level provisioning, creates a UserStorageVolume record in the DB.
  * Checks available space (when using script) and returns a result so the app can persist status.
  * Supports two backends:
  * - USER_STORAGE_PROVISION_SCRIPT: path to script; called with storageUid as first argument.
@@ -26,7 +28,9 @@ export interface ProvisionResult {
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
 
-  async provisionUserQuota(storageUid: string): Promise<ProvisionResult> {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async provisionUserQuota(storageUid: string, userId: string): Promise<ProvisionResult> {
     if (!storageUid || !storageUid.startsWith('u_')) {
       const msg = `Invalid storageUid for provisioning: ${storageUid}`;
       this.logger.warn(msg);
@@ -36,17 +40,48 @@ export class StorageService {
     const scriptPath = process.env[SCRIPT_ENV];
     const provisionUrl = process.env[URL_ENV];
 
+    let result: ProvisionResult;
+
     if (scriptPath) {
-      return this.runScript(scriptPath, storageUid);
+      result = await this.runScript(scriptPath, storageUid);
+    } else if (provisionUrl) {
+      result = await this.callProvisionUrl(provisionUrl, storageUid);
+    } else {
+      const msg = `Storage provisioning skipped (set ${SCRIPT_ENV} or ${URL_ENV} to enable).`;
+      this.logger.debug(`${msg} storageUid=${storageUid}`);
+      return { ok: false, error: msg };
     }
 
-    if (provisionUrl) {
-      return this.callProvisionUrl(provisionUrl, storageUid);
+    // After host-level provisioning, persist the UserStorageVolume record in DB
+    if (result.ok) {
+      try {
+        // Use raw SQL to bypass stale Prisma client types (allocationType field added after last generate)
+        await this.prisma.$executeRaw`
+          INSERT INTO user_storage_volumes (id, user_id, storage_uid, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at)
+          VALUES (
+            gen_random_uuid()::uuid,
+            ${userId}::uuid,
+            ${storageUid},
+            'ubuntu22',
+            ${BigInt(QUOTA_GB) * BigInt(1024) ** BigInt(3)},
+            0,
+            'sso_default',
+            'active',
+            NOW(),
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT (user_id) DO NOTHING
+        `;
+        this.logger.log(`UserStorageVolume created for userId=${userId} quota=${QUOTA_GB}GB`);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Failed to create UserStorageVolume for userId=${userId}: ${errMsg}`);
+        // Don't fail the overall result — host provisioning succeeded, DB record is secondary
+      }
     }
 
-    const msg = `Storage provisioning skipped (set ${SCRIPT_ENV} or ${URL_ENV} to enable).`;
-    this.logger.debug(`${msg} storageUid=${storageUid}`);
-    return { ok: false, error: msg };
+    return result;
   }
 
   private runScript(scriptPath: string, storageUid: string): Promise<ProvisionResult> {
@@ -159,6 +194,68 @@ export class StorageService {
         `Storage provision URL request failed requestId=${requestId} storageUid=${storageUid} error=${msg}`,
       );
       return { ok: false, error: msg };
+    }
+  }
+
+  /**
+   * Fetch live storage usage (used/quota bytes) from the Python service.
+   * Returns null if the service is not configured or the dataset is not found.
+   */
+  async getStorageUsage(storageUid: string): Promise<{
+    usedBytes: number;
+    quotaBytes: number;
+    usedGb: number;
+    quotaGb: number;
+    usagePercent: number;
+  } | null> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      this.logger.debug('USER_STORAGE_PROVISION_URL not set, skipping live usage fetch');
+      return null;
+    }
+
+    const url = `${provisionUrl}/storage/usage/${encodeURIComponent(storageUid)}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.status === 404) {
+        // Dataset not found — user has no storage provisioned yet
+        return null;
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        this.logger.warn(`Storage usage fetch failed for ${storageUid}: ${text}`);
+        return null;
+      }
+
+      const data = await res.json() as {
+        usedBytes: number;
+        quotaBytes: number;
+        usedGb: number;
+        quotaGb: number;
+        usagePercent: number;
+      };
+
+      return {
+        usedBytes: data.usedBytes,
+        quotaBytes: data.quotaBytes,
+        usedGb: data.usedGb,
+        quotaGb: data.quotaGb,
+        usagePercent: data.usagePercent,
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Storage usage fetch error for ${storageUid}: ${msg}`);
+      return null;
     }
   }
 }

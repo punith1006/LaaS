@@ -15,11 +15,15 @@ function QuickStatCard({
   value,
   subtitle,
   icon,
+  status,
+  statusColor,
 }: {
   title: string;
   value: string;
   subtitle?: string;
   icon?: React.ReactNode;
+  status?: string;
+  statusColor?: string;
 }) {
   return (
     <div
@@ -35,15 +39,41 @@ function QuickStatCard({
     >
       <div
         style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: "var(--text-xs)",
-          fontWeight: 500,
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-          color: "var(--fgColor-muted)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "8px",
         }}
       >
-        {title}
+        <div
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: "var(--text-xs)",
+            fontWeight: 500,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            color: "var(--fgColor-muted)",
+          }}
+        >
+          {title}
+        </div>
+        {status && (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-xs)",
+              fontWeight: 600,
+              color: statusColor ?? "var(--fgColor-success)",
+              padding: "2px 8px",
+              borderRadius: "9999px",
+              backgroundColor: "var(--bgColor-overlay, rgba(255,255,255,0.06))",
+              border: "1px solid currentColor",
+              opacity: 0.85,
+            }}
+          >
+            {status}
+          </div>
+        )}
       </div>
       <div
         style={{
@@ -206,6 +236,8 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
           title="Storage"
           value={`${usedGb} / ${quotaGb} GB`}
           subtitle={isInstitution ? "Institution allocated" : "Default allocation"}
+          status={storageDisplay.text}
+          statusColor={storageDisplay.color}
         />
         <QuickStatCard
           title="Active Sessions"
@@ -216,11 +248,6 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
           title="Resources"
           value={`${quickStats.totalDatasets + quickStats.totalNotebooks}`}
           subtitle={`${quickStats.totalDatasets} datasets, ${quickStats.totalNotebooks} notebooks`}
-        />
-        <QuickStatCard
-          title="Storage Status"
-          value={storageDisplay.text}
-          subtitle={storageStatus === "provisioned" ? "Your storage is ready" : "Storage setup status"}
         />
       </div>
 
@@ -233,8 +260,7 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
           flexWrap: "wrap",
         }}
       >
-        <QuickActionButton label="Launch Notebook" href="#" />
-        <QuickActionButton label="View Datasets" href="#" />
+        <QuickActionButton label="Launch Compute" href="#" />
         <QuickActionButton label="Manage Storage" href="#" />
         <QuickActionButton label="API Keys" href="#" />
       </div>
