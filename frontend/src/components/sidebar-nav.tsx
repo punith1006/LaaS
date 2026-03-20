@@ -43,10 +43,7 @@ const navSections: NavSection[] = [
     id: "hub",
     label: "THE HUB",
     items: [
-      { id: "overview", label: "Overview" },
-      { id: "datasets", label: "Datasets" },
-      { id: "notebooks", label: "Notebooks" },
-      { id: "models", label: "Models" },
+      { id: "templates", label: "Templates" },
     ],
   },
   {
@@ -55,8 +52,6 @@ const navSections: NavSection[] = [
     items: [
       { id: "instances", label: "Instances" },
       { id: "storage", label: "Storage" },
-      { id: "clusters", label: "Clusters" },
-      { id: "firewall", label: "Firewall" },
     ],
   },
   {
