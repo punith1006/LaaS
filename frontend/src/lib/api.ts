@@ -272,6 +272,9 @@ export interface BillingData {
   storageUsedGb: number;
   storageUsagePercent: number;
   hourlyData: HourlySpendData[];
+  // Storage billing fields (from backend Task 13)
+  storageBurnRateCentsPerHour?: number;
+  storageMonthlyEstimateCents?: number;
 }
 
 export interface HourlySpendData {
@@ -444,6 +447,18 @@ export async function deleteStorageVolume(id: string): Promise<void> {
     });
   }
   // Mock for development
+}
+
+// Storage status types
+export interface StorageStatus {
+  hasStorage: boolean;
+  reachable: boolean;
+  serviceHealthy: boolean;
+  datasetExists?: boolean;
+}
+
+export async function getStorageStatus(): Promise<StorageStatus> {
+  return storageFetch('/api/storage/status');
 }
 
 // File listing types

@@ -15,6 +15,7 @@ import {
   uploadStorageFiles,
   downloadStorageFile,
   deleteStorageFile,
+  getStorageStatus,
 } from "@/lib/api";
 
 // Storage types (from API)
@@ -71,6 +72,9 @@ export default function StoragePage() {
   const [currentPath, setCurrentPath] = useState<string>("/");
   const [pathHistory, setPathHistory] = useState<{ path: string; name: string }[]>([]);
 
+  // Storage reachability state: null = checking, true = reachable, false = unreachable
+  const [storageReachable, setStorageReachable] = useState<boolean | null>(null);
+
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -117,13 +121,27 @@ export default function StoragePage() {
         console.error("Failed to fetch live storage usage:", error);
       }
     };
+    const checkReachability = async () => {
+      try {
+        const status = await getStorageStatus();
+        setStorageReachable(status.reachable);
+      } catch {
+        setStorageReachable(false);
+      }
+    };
     fetchStorages();
     fetchLiveUsage();
+    checkReachability();
   }, []);
 
   // Fetch files when path changes or storage becomes available
   useEffect(() => {
     if (!hasStorage) return;
+    // Skip fetching if storage is known to be unreachable
+    if (storageReachable === false) {
+      setFiles([]);
+      return;
+    }
     
     const fetchFiles = async () => {
       setLoadingFiles(true);
@@ -155,15 +173,20 @@ export default function StoragePage() {
           };
         });
         setFiles(uiFiles);
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("Failed to fetch files:", error);
+        // 503 means storage unreachable
+        const errMsg = error instanceof Error ? error.message : '';
+        if (errMsg.includes('503') || errMsg.toLowerCase().includes('unreachable')) {
+          setStorageReachable(false);
+        }
         setFiles([]);
       } finally {
         setLoadingFiles(false);
       }
     };
     fetchFiles();
-  }, [hasStorage, currentPath]);
+  }, [hasStorage, currentPath, storageReachable]);
 
   // Refresh files helper - reusable for mkdir, upload, delete
   const refreshFiles = async () => {
@@ -192,8 +215,16 @@ export default function StoragePage() {
         };
       });
       setFiles(uiFiles);
-    } catch (error) {
+      // Successful refresh means storage is reachable
+      setStorageReachable(true);
+    } catch (error: unknown) {
       console.error('Failed to refresh files:', error);
+      // 503 means storage unreachable
+      const errMsg = error instanceof Error ? error.message : '';
+      if (errMsg.includes('503') || errMsg.toLowerCase().includes('unreachable')) {
+        setStorageReachable(false);
+        setFiles([]);
+      }
     } finally {
       setLoadingFiles(false);
     }
@@ -346,8 +377,7 @@ export default function StoragePage() {
               lineHeight: 1.5,
             }}
           >
-            High-performance NFS storage mounted on your compute instances. 
-            Billed per GB per month.
+            Network storage attached to your compute instances. Pay only for what you use.
           </p>
         </div>
         {hasStorage ? (
@@ -573,7 +603,7 @@ export default function StoragePage() {
               marginRight: "auto",
             }}
           >
-            Filesystems offer fast, nearly infinite storage that can be mounted to your instance(s).
+            Persistent storage volumes that attach to your instances for data that survives sessions.
           </p>
           <button
             onClick={() => setIsCreateModalOpen(true)}
@@ -601,6 +631,63 @@ export default function StoragePage() {
       {/* Storage Usage Card and Files Section - only show when storage exists */}
       {hasStorage && (
       <>
+      {/* Storage Unreachable Banner */}
+      {storageReachable === false && (
+        <div
+          style={{
+            backgroundColor: "transparent",
+            border: "1px solid #f85149",
+            borderRadius: "4px",
+            padding: "16px",
+            marginBottom: "24px",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "12px",
+          }}
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#f85149"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ flexShrink: 0, marginTop: "2px" }}
+          >
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <div style={{ flex: 1 }}>
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.875rem",
+                fontWeight: 600,
+                color: "var(--fgColor-default)",
+                margin: 0,
+                marginBottom: "4px",
+              }}
+            >
+              File Store Unreachable
+            </p>
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.8125rem",
+                color: "var(--fgColor-muted)",
+                margin: 0,
+                lineHeight: 1.5,
+              }}
+            >
+              Your File Store could not be reached on the host. This may be a temporary issue — contact support if it persists. File operations are disabled.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
@@ -796,6 +883,7 @@ export default function StoragePage() {
             {/* New Folder Button */}
             <button
               onClick={() => setShowNewFolderModal(true)}
+              disabled={storageReachable === false}
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.8125rem",
@@ -806,14 +894,15 @@ export default function StoragePage() {
                 borderRadius: "4px",
                 padding: "0 12px",
                 height: "32px",
-                cursor: "pointer",
+                cursor: storageReachable === false ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
                 transition: "background-color 0.15s ease",
+                opacity: storageReachable === false ? 0.5 : 1,
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(11, 11, 11, 0.05)")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              onMouseEnter={(e) => storageReachable !== false && (e.currentTarget.style.backgroundColor = "rgba(11, 11, 11, 0.05)")}
+              onMouseLeave={(e) => storageReachable !== false && (e.currentTarget.style.backgroundColor = "transparent")}
             >
               {/* Minimal folder-plus icon */}
               <svg
@@ -845,7 +934,7 @@ export default function StoragePage() {
             {/* Upload Files Button */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
+              disabled={uploading || storageReachable === false}
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.8125rem",
@@ -856,15 +945,15 @@ export default function StoragePage() {
                 borderRadius: "4px",
                 padding: "0 12px",
                 height: "32px",
-                cursor: uploading ? "not-allowed" : "pointer",
+                cursor: (uploading || storageReachable === false) ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
                 transition: "opacity 0.15s ease",
-                opacity: uploading ? 0.7 : 1,
+                opacity: (uploading || storageReachable === false) ? 0.5 : 1,
               }}
-              onMouseEnter={(e) => !uploading && (e.currentTarget.style.opacity = "0.85")}
-              onMouseLeave={(e) => !uploading && (e.currentTarget.style.opacity = "1")}
+              onMouseEnter={(e) => !(uploading || storageReachable === false) && (e.currentTarget.style.opacity = "0.85")}
+              onMouseLeave={(e) => !(uploading || storageReachable === false) && (e.currentTarget.style.opacity = "1")}
             >
               {uploading ? (
                 <>
@@ -1094,7 +1183,41 @@ export default function StoragePage() {
 
         {/* File List */}
         <div style={{ position: "relative", zIndex: 10 }}>
-          {filteredFiles.length === 0 ? (
+          {storageReachable === false ? (
+            /* Storage unreachable empty state */
+            <div
+              style={{
+                padding: "48px 24px",
+                textAlign: "center",
+              }}
+            >
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#f85149"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ margin: "0 auto 16px", opacity: 0.8 }}
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.875rem",
+                  color: "var(--fgColor-muted)",
+                  margin: 0,
+                }}
+              >
+                Storage is unreachable
+              </p>
+            </div>
+          ) : filteredFiles.length === 0 ? (
             <div
               style={{
                 padding: "48px 24px",
@@ -1153,8 +1276,10 @@ export default function StoragePage() {
           )}
         </div>
       </div>
+      </>
+      )}
 
-      {/* Create Storage Modal */}
+      {/* Create Storage Modal - OUTSIDE hasStorage conditional so it works for new users */}
       {isCreateModalOpen && (
         <CreateStorageModal
           onClose={() => setIsCreateModalOpen(false)}
@@ -1178,8 +1303,6 @@ export default function StoragePage() {
           }}
           currentPath={currentPath}
         />
-      )}
-      </>
       )}
     </div>
   );
@@ -1700,6 +1823,21 @@ function CreateStorageModal({
   const [nameChecking, setNameChecking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Dark mode detection
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains("dark"));
+    };
+    checkDarkMode();
+    
+    // Listen for class changes on documentElement
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    
+    return () => observer.disconnect();
+  }, []);
 
   // Debounced name validation
   const nameCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1791,6 +1929,7 @@ function CreateStorageModal({
 
   return (
     <>
+      {/* Modal Overlay */}
       <div
         onClick={onClose}
         onMouseUp={handleMouseUp}
@@ -1800,11 +1939,15 @@ function CreateStorageModal({
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: "rgba(11, 11, 11, 0.15)",
-          zIndex: 100,
+          backgroundColor: isDarkMode ? "rgba(11, 11, 11, 0.60)" : "rgba(11, 11, 11, 0.15)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       />
 
+      {/* Modal Container */}
       <div
         style={{
           position: "fixed",
@@ -1812,28 +1955,32 @@ function CreateStorageModal({
           left: "50%",
           transform: "translate(-50%, -50%)",
           width: "100%",
-          maxWidth: "480px",
+          maxWidth: "420px",
+          maxHeight: "95vh",
           backgroundColor: "var(--bgColor-default)",
           border: "1px solid var(--borderColor-default)",
-          borderRadius: "8px",
-          zIndex: 101,
-          overflow: "hidden",
+          borderRadius: 0,
+          zIndex: 1001,
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "none",
         }}
       >
+        {/* Modal Header */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            padding: "16px 20px",
+            padding: "16px 24px",
             borderBottom: "1px solid var(--borderColor-default)",
           }}
         >
           <h2
             style={{
               fontFamily: "var(--font-sans)",
-              fontSize: "1rem",
-              fontWeight: 600,
+              fontSize: "1.125rem",
+              fontWeight: 400,
               color: "var(--fgColor-default)",
               margin: 0,
             }}
@@ -1843,25 +1990,25 @@ function CreateStorageModal({
           <button
             onClick={onClose}
             style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "4px",
+              width: "24px",
+              height: "24px",
               backgroundColor: "transparent",
               border: "none",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
-              color: "var(--fgColor-muted)",
+              color: "var(--fgColor-default)",
+              padding: 0,
             }}
           >
             <svg
-              width="18"
-              height="18"
+              width="24"
+              height="24"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
@@ -1871,274 +2018,278 @@ function CreateStorageModal({
           </button>
         </div>
 
-        <div style={{ padding: "20px" }}>
+        {/* Modal Content */}
+        <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+          {/* Info Callout - Blue themed */}
           <div
             style={{
-              backgroundColor: "var(--bgColor-warning-section)",
-              border: "1px solid var(--borderColor-warning)",
+              backgroundColor: isDarkMode ? "#00094A" : "#CEDEFF",
+              border: "1px solid var(--borderColor-info, #3A73FF)",
               borderRadius: "4px",
               padding: "12px",
-              marginBottom: "20px",
+              marginBottom: "24px",
               display: "flex",
-              gap: "12px",
+              gap: "8px",
+              alignItems: "flex-start",
             }}
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--fgColor-warning)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ flexShrink: 0, marginTop: "2px" }}
-            >
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
+            {/* Info icon */}
+            <div style={{ flexShrink: 0, marginTop: "1px" }}>
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--fgColor-default)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+            </div>
             <div
               style={{
                 fontFamily: "var(--font-sans)",
-                fontSize: "0.8125rem",
+                fontSize: "0.875rem",
+                lineHeight: "1.375rem",
+                fontWeight: 400,
                 color: "var(--fgColor-default)",
-                lineHeight: 1.5,
               }}
             >
-              File Stores persist independently of compute instances. 
-              Billed at ₹0.50/GB/month.
+              <strong>File Store</strong> provides persistent network storage that attaches to your compute instances. 
+              Storage is billed at <strong>Rs.7/GB per month</strong>{" "}
+              (~Rs.0.01/GB per hour), charged continuously as long as the File Store exists 
+              — even when not mounted to an instance. Minimum allocation is <strong>5 GB</strong>.
             </div>
           </div>
 
-          <div style={{ marginBottom: "24px" }}>
-            <label
-              style={{
-                display: "block",
-                fontFamily: "var(--font-sans)",
-                fontSize: "0.75rem",
-                fontWeight: 500,
-                color: "var(--fgColor-default)",
-                marginBottom: "8px",
-              }}
-            >
-              Name
-            </label>
-            <div style={{ position: "relative" }}>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="Enter file store name"
+          {/* Form */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {/* Name Field */}
+            <div>
+              <label
                 style={{
-                  width: "100%",
+                  display: "block",
                   fontFamily: "var(--font-sans)",
-                  fontSize: "0.875rem",
+                  fontSize: "0.75rem",
+                  fontWeight: 400,
+                  lineHeight: "1rem",
                   color: "var(--fgColor-default)",
-                  backgroundColor: "transparent",
-                  border: `1px solid ${
-                    nameError
-                      ? "var(--fgColor-critical)"
-                      : nameChecking
-                      ? "var(--borderColor-default)"
-                      : "var(--borderColor-default)"
-                  }`,
-                  borderRadius: "4px",
-                  padding: "0 12px",
-                  height: "40px",
-                  outline: "none",
-                  boxSizing: "border-box",
-                  opacity: nameChecking ? 0.7 : 1,
+                  paddingBottom: "4px",
                 }}
-              />
-              {nameChecking && (
+              >
+                Name
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  placeholder="Enter file store name"
+                  style={{
+                    width: "100%",
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.875rem",
+                    fontWeight: 400,
+                    lineHeight: "1.375rem",
+                    color: "var(--fgColor-default)",
+                    backgroundColor: "transparent",
+                    border: `1px solid ${
+                      nameError
+                        ? "var(--fgColor-critical, #E70000)"
+                        : "#818178"
+                    }`,
+                    borderRadius: "4px",
+                    padding: "8px",
+                    height: "40px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                  onFocus={(e) => {
+                    if (!nameError) {
+                      e.target.style.border = "1px solid var(--fgColor-default)";
+                    }
+                  }}
+                  onBlur={(e) => {
+                    if (!nameError) {
+                      e.target.style.border = "1px solid #818178";
+                    }
+                  }}
+                />
+                {nameChecking && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "16px",
+                      height: "16px",
+                      border: "2px solid var(--borderColor-default)",
+                      borderTopColor: "var(--fgColor-info)",
+                      borderRadius: "50%",
+                      animation: "spin 1s linear infinite",
+                    }}
+                  />
+                )}
+              </div>
+              {nameError && (
+                <p
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    color: "var(--fgColor-critical, #E70000)",
+                    margin: 0,
+                    paddingTop: "4px",
+                  }}
+                >
+                  {nameError}
+                </p>
+              )}
+            </div>
+
+            {/* Size Field */}
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  fontWeight: 400,
+                  lineHeight: "1rem",
+                  color: "var(--fgColor-default)",
+                  paddingBottom: "4px",
+                }}
+              >
+                Size (5 GB - 10 GB)
+              </label>
+              
+              {/* Current size display */}
+              <div
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "1.5rem",
+                  fontWeight: 600,
+                  color: "var(--fgColor-default)",
+                  marginBottom: "12px",
+                  marginTop: "4px",
+                }}
+              >
+                {formatSize(sizeGb)}
+              </div>
+
+              {/* Slider */}
+              <div
+                style={{
+                  position: "relative",
+                  height: "4px",
+                  backgroundColor: "var(--bgColor-muted, #D7D6CE)",
+                  borderRadius: "2px",
+                  cursor: "pointer",
+                  marginTop: "8px",
+                }}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const percent = Math.max(0, Math.min(1, x / rect.width));
+                  handleSizeChange(Math.round(percent * 5) + 5);
+                }}
+              >
+                {/* Slider fill */}
                 <div
                   style={{
                     position: "absolute",
-                    right: "12px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    width: "16px",
-                    height: "16px",
-                    border: "2px solid var(--borderColor-default)",
-                    borderTopColor: "var(--fgColor-info)",
-                    borderRadius: "50%",
-                    animation: "spin 1s linear infinite",
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: `${((sizeGb - 5) / 5) * 100}%`,
+                    backgroundColor: "var(--fgColor-default)",
+                    borderRadius: "2px",
+                    transition: isDragging ? "none" : "width 0.1s ease",
                   }}
                 />
-              )}
-            </div>
-            {nameError && (
-              <p
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--fgColor-critical)",
-                  margin: "4px 0 0 0",
-                }}
-              >
-                {nameError}
-              </p>
-            )}
-          </div>
+                
+                {/* Slider thumb */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: `${((sizeGb - 5) / 5) * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                    width: "16px",
+                    height: "16px",
+                    backgroundColor: "var(--fgColor-default)",
+                    border: "none",
+                    borderRadius: "50%",
+                    cursor: "grab",
+                    transition: isDragging ? "none" : "left 0.1s ease",
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    handleMouseDown();
+                  }}
+                  onMouseUp={handleMouseUp}
+                  onMouseMove={(e) => {
+                    if (!isDragging) return;
+                    const slider = e.currentTarget.parentElement;
+                    if (!slider) return;
+                    const rect = slider.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const percent = Math.max(0, Math.min(1, x / rect.width));
+                    handleSizeChange(Math.round(percent * 5) + 5);
+                  }}
+                />
+              </div>
 
-          <div style={{ marginBottom: "24px" }}>
-            <label
-              style={{
-                display: "block",
-                fontFamily: "var(--font-sans)",
-                fontSize: "0.75rem",
-                fontWeight: 500,
-                color: "var(--fgColor-default)",
-                marginBottom: "8px",
-              }}
-            >
-              Size (5 GB - 10 GB)
-            </label>
-            
-            <div
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: "1.5rem",
-                fontWeight: 600,
-                color: "var(--fgColor-default)",
-                marginBottom: "16px",
-              }}
-            >
-              {formatSize(sizeGb)}
-            </div>
-
-            <div
-              style={{
-                position: "relative",
-                height: "40px",
-                backgroundColor: "var(--bgColor-muted)",
-                borderRadius: "4px",
-                cursor: "pointer",
-              }}
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const percent = Math.max(0, Math.min(1, x / rect.width));
-                // Map to 5-10 range instead of 1-10
-                handleSizeChange(Math.round(percent * 5) + 5);
-              }}
-            >
+              {/* Min/Max labels */}
               <div
                 style={{
-                  position: "absolute",
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: `${((sizeGb - 5) / 5) * 100}%`,
-                  backgroundColor: "var(--fgColor-info)",
-                  borderRadius: "4px",
-                  transition: isDragging ? "none" : "width 0.1s ease",
-                }}
-              />
-              
-              <div
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: `${((sizeGb - 5) / 5) * 100}%`,
-                  transform: "translate(-50%, -50%)",
-                  width: "20px",
-                  height: "20px",
-                  backgroundColor: "var(--fgColor-inverse)",
-                  border: "2px solid var(--fgColor-info)",
-                  borderRadius: "50%",
-                  cursor: "grab",
-                  transition: isDragging ? "none" : "left 0.1s ease",
-                }}
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  handleMouseDown();
-                }}
-                onMouseUp={handleMouseUp}
-                onMouseMove={(e) => {
-                  if (!isDragging) return;
-                  const slider = e.currentTarget.parentElement;
-                  if (!slider) return;
-                  const rect = slider.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const percent = Math.max(0, Math.min(1, x / rect.width));
-                  // Map to 5-10 range instead of 1-10
-                  handleSizeChange(Math.round(percent * 5) + 5);
-                }}
-              />
-
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
                   display: "flex",
                   justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "0 8px",
-                  pointerEvents: "none",
+                  marginTop: "8px",
                 }}
               >
-                {[5, 6, 7, 8, 9, 10].map((n) => (
-                  <div
-                    key={n}
-                    style={{
-                      width: "2px",
-                      height: "8px",
-                      backgroundColor: "var(--borderColor-default)",
-                      borderRadius: "1px",
-                    }}
-                  />
-                ))}
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    color: "var(--fgColor-muted)",
+                  }}
+                >
+                  5 GB
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    color: "var(--fgColor-muted)",
+                  }}
+                >
+                  10 GB
+                </span>
               </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "8px",
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--fgColor-muted)",
-                }}
-              >
-                5 GB
-              </span>
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--fgColor-muted)",
-                }}
-              >
-                10 GB
-              </span>
             </div>
           </div>
 
+          {/* Submit error */}
           {submitError && (
             <div
               style={{
-                backgroundColor: "var(--bgColor-critical-section)",
-                border: "1px solid var(--fgColor-critical)",
+                backgroundColor: "transparent",
+                border: "1px solid var(--fgColor-critical, #E70000)",
                 borderRadius: "4px",
                 padding: "12px",
-                marginBottom: "16px",
+                marginTop: "16px",
               }}
             >
               <p
                 style={{
                   fontFamily: "var(--font-sans)",
                   fontSize: "0.8125rem",
-                  color: "var(--fgColor-critical)",
+                  color: "var(--fgColor-critical, #E70000)",
                   margin: 0,
                 }}
               >
@@ -2147,7 +2298,18 @@ function CreateStorageModal({
             </div>
           )}
 
-          <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+          {/* Button Row */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: "16px",
+              marginTop: "24px",
+              paddingTop: "16px",
+              borderTop: "1px solid var(--borderColor-default)",
+            }}
+          >
+            {/* Cancel Button */}
             <button
               onClick={onClose}
               disabled={isSubmitting}
@@ -2155,18 +2317,20 @@ function CreateStorageModal({
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: 500,
-                color: "var(--fgColor-default)",
+                color: "var(--fgColor-mild, #2E2E2E)",
                 backgroundColor: "transparent",
-                border: "1px solid var(--borderColor-default)",
+                border: "1px solid #818178",
                 borderRadius: "4px",
-                padding: "0 20px",
+                padding: "0 24px",
                 height: "40px",
                 cursor: isSubmitting ? "not-allowed" : "pointer",
-                opacity: isSubmitting ? 0.6 : 1,
+                opacity: isSubmitting ? 0.4 : 1,
               }}
             >
               Cancel
             </button>
+
+            {/* Create File Store Button */}
             <button
               onClick={handleSubmit}
               disabled={!isValid || isSubmitting}
@@ -2174,21 +2338,43 @@ function CreateStorageModal({
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: 500,
-                color: "var(--fgColor-inverse)",
+                color: isDarkMode ? "#161616" : "#E7E6D9",
                 backgroundColor: isValid && !isSubmitting
-                  ? "var(--fgColor-default)"
-                  : "var(--fgColor-muted)",
-                border: `1px solid ${isValid && !isSubmitting
-                  ? "var(--fgColor-default)"
-                  : "var(--fgColor-muted)"}`,
+                  ? (isDarkMode ? "#BFBEB4" : "#2E2E2E")
+                  : (isDarkMode ? "#636363" : "#818178"),
+                border: "1px solid transparent",
                 borderRadius: "4px",
-                padding: "0 20px",
+                padding: "0 24px",
                 height: "40px",
                 cursor: isValid && !isSubmitting ? "pointer" : "not-allowed",
-                transition: "opacity 0.15s ease",
+                opacity: isValid && !isSubmitting ? 1 : 0.4,
                 display: "flex",
                 alignItems: "center",
+                justifyContent: "center",
                 gap: "8px",
+                transition: "background-color 0.15s ease, color 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (isValid && !isSubmitting) {
+                  if (isDarkMode) {
+                    e.currentTarget.style.backgroundColor = "#F0EFE2";
+                    e.currentTarget.style.color = "#0B0B0B";
+                  } else {
+                    e.currentTarget.style.backgroundColor = "#0B0B0B";
+                    e.currentTarget.style.color = "#F0EFE2";
+                  }
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (isValid && !isSubmitting) {
+                  if (isDarkMode) {
+                    e.currentTarget.style.backgroundColor = "#BFBEB4";
+                    e.currentTarget.style.color = "#161616";
+                  } else {
+                    e.currentTarget.style.backgroundColor = "#2E2E2E";
+                    e.currentTarget.style.color = "#E7E6D9";
+                  }
+                }
               }}
             >
               {isSubmitting && (
@@ -2196,7 +2382,7 @@ function CreateStorageModal({
                   style={{
                     width: "14px",
                     height: "14px",
-                    border: "2px solid var(--fgColor-inverse)",
+                    border: `2px solid ${isDarkMode ? "#161616" : "#E7E6D9"}`,
                     borderTopColor: "transparent",
                     borderRadius: "50%",
                     animation: "spin 1s linear infinite",

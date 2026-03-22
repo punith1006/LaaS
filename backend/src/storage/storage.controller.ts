@@ -13,8 +13,10 @@ import {
   HttpStatus,
   BadRequestException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { IsString, IsNotEmpty, IsInt, Min, Max, Length } from 'class-validator';
 import { StorageService } from './storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -24,7 +26,14 @@ const MIN_QUOTA_GB = 5;
 const MAX_QUOTA_GB = 10;
 
 export class CreateStorageVolumeDto {
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 128)
   name: string;
+
+  @IsInt()
+  @Min(MIN_QUOTA_GB)
+  @Max(MAX_QUOTA_GB)
   quotaGb: number;
 }
 
@@ -107,11 +116,50 @@ export class StorageController {
     const files = await this.storageService.getFiles(storageUid, path || '/');
 
     if (files === null) {
-      // Return empty array if path not found or service unavailable
-      return [];
+      throw new ServiceUnavailableException('Storage service unreachable or dataset not found');
     }
 
     return files;
+  }
+
+  /**
+   * Check the reachability of the user's storage dataset
+   */
+  @Get('status')
+  async getStorageStatus(@Req() req: { user: { id: string } }) {
+    const userId = req.user.id;
+
+    // Check if user has a storage volume in DB
+    const volumes = await this.prisma.$queryRaw<{ storage_uid: string }[]>`
+      SELECT storage_uid FROM user_storage_volumes
+      WHERE user_id = ${userId}::uuid AND status = 'active'
+      ORDER BY created_at DESC LIMIT 1
+    `;
+
+    if (volumes.length === 0) {
+      return { hasStorage: false, reachable: false, serviceHealthy: false };
+    }
+
+    const storageUid = volumes[0].storage_uid;
+
+    // Check service-level health first
+    const health = await this.storageService.checkStorageHealth();
+    const serviceHealthy = health?.healthy ?? false;
+
+    if (!serviceHealthy) {
+      return { hasStorage: true, reachable: false, serviceHealthy: false };
+    }
+
+    // Check if the specific dataset exists by probing usage
+    const usage = await this.storageService.getStorageUsage(storageUid);
+    const datasetExists = usage !== null;
+
+    return {
+      hasStorage: true,
+      reachable: datasetExists && serviceHealthy,
+      serviceHealthy,
+      datasetExists,
+    };
   }
 
   /**
@@ -328,8 +376,8 @@ export class StorageController {
     const storageUid = `u_${randomBytes(12).toString('hex')}`;
     const quotaBytes = BigInt(quotaGb) * BigInt(1024) ** BigInt(3);
 
-    // Call storage provisioning service
-    const result = await this.storageService.provisionUserQuota(storageUid, userId);
+    // Call storage provisioning service with the user-selected quota
+    const result = await this.storageService.provisionUserQuota(storageUid, userId, quotaGb);
 
     if (!result.ok) {
       throw new BadRequestException(
@@ -337,15 +385,21 @@ export class StorageController {
       );
     }
 
+    // Build the paths based on storageUid (same pattern as SSO provisioning)
+    const zfsDatasetPath = `datapool/users/${storageUid}`;
+    const nfsExportPath = `/mnt/nfs/users/${storageUid}`;
+
     // Create database record using raw SQL
     try {
       const volume = await this.prisma.$queryRaw<StorageVolumeRow>`
-        INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at)
+        INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at)
         VALUES (
           gen_random_uuid()::uuid,
           ${userId}::uuid,
           ${trimmedName},
           ${storageUid},
+          ${zfsDatasetPath},
+          ${nfsExportPath},
           'ubuntu22',
           ${quotaBytes},
           0::bigint,
@@ -359,6 +413,23 @@ export class StorageController {
       `;
 
       const v = volume[0];
+
+      // Link the new storage volume to the user record (same fields SSO provisioning sets)
+      await this.prisma.$executeRaw`
+        UPDATE users
+        SET storage_uid = ${storageUid},
+            storage_provisioning_status = 'provisioned',
+            storage_provisioned_at = NOW(),
+            storage_provisioning_error = NULL,
+            updated_at = NOW()
+        WHERE id = ${userId}::uuid
+      `;
+      
+      // Calculate billing info for the response
+      const pricePerGbMonth = 7.00; // Rs.7 per GB per month
+      const monthlyEstimate = quotaGb * pricePerGbMonth;
+      const hourlyRate = (quotaGb * 700) / 730 / 100; // (quotaGb * paise) / hoursPerMonth / 100 = Rs/hour
+      
       return {
         id: v.id,
         name: v.name,
@@ -369,6 +440,10 @@ export class StorageController {
         allocationType: v.allocation_type,
         provisionedAt: v.provisioned_at,
         createdAt: v.created_at,
+        // Billing info
+        pricePerGbMonth,           // Rs.7 per GB/month
+        monthlyEstimate,           // Total monthly cost in rupees
+        hourlyRate,                // Hourly rate in rupees
       };
     } catch (error) {
       // If DB insert fails, the ZFS dataset was still created

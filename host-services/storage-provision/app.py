@@ -154,24 +154,26 @@ def reconcile_nfs_for(storage_uid: str) -> Optional[str]:
     return None
 
 
-def post_verify_provisioned(storage_uid: str) -> Optional[str]:
-    """Verify dataset exists and has 5G quota. Returns None if ok, else error message."""
+def post_verify_provisioned(storage_uid: str, quota_gb: int) -> Optional[str]:
+    """Verify dataset exists and has the expected quota. Returns None if ok, else error message."""
     dataset = f"datapool/users/{storage_uid}"
     ok, out = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
     if not ok:
         return f"Verification failed: dataset not found or inaccessible"
     out = out.strip()
-    # Accept 5G or exact bytes (5 * 1024**3)
-    if out != "5G" and out != "5368709120":
-        return f"Verification failed: quota mismatch (got {out})"
+    # Accept XG format or exact bytes (quota_gb * 1024**3)
+    expected_gb = f"{quota_gb}G"
+    expected_bytes = str(quota_gb * (1024 ** 3))
+    if out != expected_gb and out != expected_bytes:
+        return f"Verification failed: quota mismatch (got {out}, expected {expected_gb})"
     return None
 
 
-def run_provision_script(storage_uid: str) -> tuple[int, str]:
+def run_provision_script(storage_uid: str, quota_gb: int) -> tuple[int, str]:
     """Run provision script with sudo; return (exit_code, stderr_or_stdout)."""
     try:
         result = subprocess.run(
-            ["sudo", SCRIPT_PATH, storage_uid],
+            ["sudo", SCRIPT_PATH, storage_uid, str(quota_gb)],
             capture_output=True,
             text=True,
             timeout=30,
@@ -229,17 +231,20 @@ def provision():
         log_event(request_id, client_ip, storage_uid, "failed", "Invalid quotaGb")
         return jsonify(error="Invalid quotaGb"), 400
 
+    # Convert to integer for ZFS commands
+    quota_gb_int = int(quota_gb)
+
     # Pre-check: pool and parent dataset exist (no provision if ZFS not ready)
     pre_err = pre_check_zfs_ready()
     if pre_err:
         log_event(request_id, client_ip, storage_uid, "failed", pre_err)
         return jsonify(error=pre_err), 500
 
-    # Run script (script uses 5G; we ignore quota_gb for now to match existing script)
-    code, output = run_provision_script(storage_uid)
+    # Run provision script with storage_uid and quota_gb
+    code, output = run_provision_script(storage_uid, quota_gb_int)
     if code == 0:
         # Post-check: only report success to backend after verifying dataset and quota
-        verify_err = post_verify_provisioned(storage_uid)
+        verify_err = post_verify_provisioned(storage_uid, quota_gb_int)
         if verify_err:
             log_event(request_id, client_ip, storage_uid, "failed", verify_err)
             return jsonify(error=verify_err), 500

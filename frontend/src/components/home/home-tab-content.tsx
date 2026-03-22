@@ -168,6 +168,8 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
         return { text: "Live", color: "#3fb950" };        // Green - service healthy
       } else if (healthStatus === "unreachable") {
         return { text: "Unreachable", color: "#f85149" };  // Red - service down
+      } else if (healthStatus === "not_found") {
+        return { text: "Not Found", color: "#f85149" };   // Red - dataset deleted from host
       }
       // healthStatus is null (no check performed) - fall back to DB status
       return { text: "Live", color: "#3fb950" };

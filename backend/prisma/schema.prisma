@@ -597,31 +597,33 @@ model UserGroupMember {
 // ============================================================================
 
 model UserStorageVolume {
-  id                 String              @id @default(uuid()) @db.Uuid
-  userId             String              @map("user_id") @db.Uuid
-  name               String              @map("name") @db.VarChar(128)
-  storageUid         String              @map("storage_uid") @db.VarChar(64)
-  zfsDatasetPath     String?             @map("zfs_dataset_path")
-  nfsExportPath      String?             @map("nfs_export_path")
-  containerMountPath String?             @map("container_mount_path")
-  osChoice           String              @map("os_choice") @db.VarChar(32)
-  quotaBytes         BigInt              @map("quota_bytes")
-  allocationType     String              @map("allocation_type") // 'sso_default' / 'purchased' / 'admin_granted' / 'user_created'
-  usedBytes          BigInt              @default(0) @map("used_bytes")
-  usedBytesUpdatedAt DateTime?           @map("used_bytes_updated_at")
-  status             StorageVolumeStatus
-  provisionedAt      DateTime?           @map("provisioned_at")
-  wipedAt            DateTime?           @map("wiped_at")
-  wipeReason         String?             @map("wipe_reason")
-  quotaWarningSentAt DateTime?           @map("quota_warning_sent_at")
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  createdBy          String?             @map("created_by") @db.Uuid
-  updatedBy          String?             @map("updated_by") @db.Uuid
+  id                   String              @id @default(uuid()) @db.Uuid
+  userId               String              @map("user_id") @db.Uuid
+  name                 String              @map("name") @db.VarChar(128)
+  storageUid           String              @map("storage_uid") @db.VarChar(64)
+  zfsDatasetPath       String?             @map("zfs_dataset_path")
+  nfsExportPath        String?             @map("nfs_export_path")
+  containerMountPath   String?             @map("container_mount_path")
+  osChoice             String              @map("os_choice") @db.VarChar(32)
+  quotaBytes           BigInt              @map("quota_bytes")
+  allocationType       String              @map("allocation_type") // 'sso_default' / 'purchased' / 'admin_granted' / 'user_created'
+  pricePerGbCentsMonth Int                 @default(700) @map("price_per_gb_cents_month") // Rs.7 = 700 paise per GB per month
+  usedBytes            BigInt              @default(0) @map("used_bytes")
+  usedBytesUpdatedAt   DateTime?           @map("used_bytes_updated_at")
+  status               StorageVolumeStatus
+  provisionedAt        DateTime?           @map("provisioned_at")
+  wipedAt              DateTime?           @map("wiped_at")
+  wipeReason           String?             @map("wipe_reason")
+  quotaWarningSentAt   DateTime?           @map("quota_warning_sent_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  createdBy            String?             @map("created_by") @db.Uuid
+  updatedBy            String?             @map("updated_by") @db.Uuid
 
   // Relations
   user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict)
   storageExtensions    StorageExtension[]
+  billingCharges       BillingCharge[]
   osSwitchHistoriesOld OsSwitchHistory[]  @relation("OsSwitchOldVolume")
   osSwitchHistoriesNew OsSwitchHistory[]  @relation("OsSwitchNewVolume")
 
@@ -1218,8 +1220,11 @@ model PaymentTransaction {
 model BillingCharge {
   id                  String   @id @default(uuid()) @db.Uuid
   userId              String   @map("user_id") @db.Uuid
-  sessionId           String   @map("session_id") @db.Uuid
-  computeConfigId     String   @map("compute_config_id") @db.Uuid
+  chargeType          String   @default("compute") @map("charge_type") // 'compute' | 'storage'
+  sessionId           String?  @map("session_id") @db.Uuid // Nullable for storage charges
+  computeConfigId     String?  @map("compute_config_id") @db.Uuid // Nullable for storage charges
+  storageVolumeId     String?  @map("storage_volume_id") @db.Uuid // FK to UserStorageVolume (null for compute)
+  quotaGb             Int?     @map("quota_gb") // Storage GB being charged (null for compute)
   durationSeconds     Int      @map("duration_seconds")
   rateCentsPerHour    Int      @map("rate_cents_per_hour")
   amountCents         BigInt   @map("amount_cents")
@@ -1230,8 +1235,9 @@ model BillingCharge {
 
   // Relations
   user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
-  session           Session            @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  computeConfig     ComputeConfig      @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
+  session           Session?           @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  computeConfig     ComputeConfig?     @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
+  storageVolume     UserStorageVolume? @relation(fields: [storageVolumeId], references: [id], onDelete: Restrict)
   walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: Restrict)
 
   // Domain 15: Support and Feedback
@@ -1239,6 +1245,7 @@ model BillingCharge {
 
   @@index([userId, createdAt])
   @@index([sessionId])
+  @@index([storageVolumeId])
   @@map("billing_charges")
 }
 

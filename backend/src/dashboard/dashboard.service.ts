@@ -61,8 +61,11 @@ export interface BillingData {
   spendLimit: number;
   spendLimitEnabled: boolean;
   dailySpend: number;
-  currentSpendRate: number;
-  runway: number | null; // Hours of runway remaining (null if no active sessions)
+  currentSpendRate: number; // Total (compute + storage) burn rate in rupees/hour
+  computeBurnRateRupeesPerHour: number; // Compute-only burn rate in rupees/hour
+  storageBurnRateCentsPerHour: number; // Storage burn rate in paise/cents per hour
+  storageMonthlyEstimateCents: number; // Total monthly storage cost in paise/cents
+  runway: number | null; // Hours of runway remaining (null if no active sessions/storage)
   gpus: number;
   gpuVramMb: number;
   vcpus: number;
@@ -158,6 +161,14 @@ export class DashboardService {
       const health = await this.storageService.checkStorageHealth();
       if (health) {
         healthStatus = health.healthy ? 'live' : 'unreachable';
+      }
+    }
+
+    // If service is healthy, verify the user's actual dataset exists
+    if (healthStatus === 'live' && user.storageUid) {
+      const usage = await this.storageService.getStorageUsage(user.storageUid);
+      if (usage === null) {
+        healthStatus = 'not_found';  // Service up but dataset missing
       }
     }
 
@@ -279,10 +290,43 @@ export class DashboardService {
       },
     });
 
-    // Calculate current spend rate from active sessions
-    const currentSpendRateCentsPerHour = activeSessions.reduce((total, session) => {
+    // Calculate current compute spend rate from active sessions
+    const computeSpendRateCentsPerHour = activeSessions.reduce((total, session) => {
       return total + (session.computeConfig?.basePricePerHourCents ?? 0);
     }, 0);
+
+    // Fetch user's active storage volumes for storage billing calculation
+    // Use raw SQL to access pricePerGbCentsMonth and allocationType
+    const activeVolumes = await this.prisma.$queryRaw<Array<{
+      quota_bytes: bigint;
+      price_per_gb_cents_month: number;
+      allocation_type: string;
+    }>>`
+      SELECT quota_bytes, price_per_gb_cents_month, allocation_type
+      FROM user_storage_volumes
+      WHERE user_id = ${userId}::uuid AND status = 'active'
+    `;
+
+    // Filter out SSO default volumes (5GB free for SSO students)
+    // Only charge for 'user_created' or 'purchased' volumes
+    const chargeableVolumes = activeVolumes.filter(
+      v => v.allocation_type !== 'sso_default'
+    );
+
+    // Calculate storage hourly rate (in paise/cents per hour)
+    // Formula: (quotaGb * pricePerGbCentsMonth) / 730 hours per month
+    let storageRateCentsPerHour = 0;
+    let storageMonthlyEstimateCents = 0;
+    for (const vol of chargeableVolumes) {
+      const quotaGb = Number(vol.quota_bytes) / (1024 * 1024 * 1024);
+      const monthlyRate = vol.price_per_gb_cents_month * quotaGb;
+      const hourlyRate = monthlyRate / 730;
+      storageRateCentsPerHour += hourlyRate;
+      storageMonthlyEstimateCents += monthlyRate;
+    }
+
+    // Total spend rate = compute + storage (both in cents per hour)
+    const totalSpendRateCentsPerHour = computeSpendRateCentsPerHour + storageRateCentsPerHour;
 
     // dailySpend and chart both use past-12h charges (simpler, single source of truth)
     const twelveHoursAgo = new Date();
@@ -414,7 +458,10 @@ export class DashboardService {
       spendLimit: (walletExtra.spend_limit_cents ?? 0) / 100, // Convert cents to rupees (0 means no limit)
       spendLimitEnabled: walletExtra.spend_limit_enabled,
       dailySpend: dailySpendCents / 100, // Convert cents to rupees
-      currentSpendRate: currentSpendRateCentsPerHour / 100, // Convert cents/hour to rupees/hour
+      currentSpendRate: totalSpendRateCentsPerHour / 100, // Total (compute + storage) burn rate in rupees/hour
+      computeBurnRateRupeesPerHour: computeSpendRateCentsPerHour / 100, // Compute-only burn rate in rupees/hour
+      storageBurnRateCentsPerHour: storageRateCentsPerHour, // Storage burn rate in paise/cents per hour
+      storageMonthlyEstimateCents: storageMonthlyEstimateCents, // Total monthly storage cost in paise/cents
       runway: (() => {
         // Ceiling logic:
         // - If spendLimit is set AND spendLimit <= creditBalance → ceiling = spendLimit
@@ -433,10 +480,11 @@ export class DashboardService {
         }
 
         // Runway = (ceiling - totalSpentToday) / burnRate (in hours)
+        // Now uses total (compute + storage) rate for accurate runway
         const remainingCents = ceilingCents - dailySpendCents;
-        if (remainingCents <= 0 || currentSpendRateCentsPerHour <= 0) return null;
+        if (remainingCents <= 0 || totalSpendRateCentsPerHour <= 0) return null;
 
-        const hoursLeft = remainingCents / currentSpendRateCentsPerHour;
+        const hoursLeft = remainingCents / totalSpendRateCentsPerHour;
         return hoursLeft; // Number of hours of runway remaining
       })(),
       gpus: activeSessions.filter(s => (s.actualGpuVramMb ?? 0) > 0).length,
