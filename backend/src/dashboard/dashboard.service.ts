@@ -218,9 +218,9 @@ export class DashboardService {
       throw new Error('User not found');
     }
 
-    // Get storage volume for usage
+    // Get storage volume for usage (only active volumes, exclude wiped)
     const storageVolume = await this.prisma.userStorageVolume.findFirst({
-      where: { userId },
+      where: { userId, status: 'active' },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -550,5 +550,33 @@ export class DashboardService {
     }
 
     return { overall, services };
+  }
+
+  /**
+   * Get recent activity (audit logs) for the current user.
+   * Used for the Recent Activity section on the Home page.
+   */
+  async getRecentActivity(userId: string, days: number = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const logs = await this.prisma.auditLog.findMany({
+      where: {
+        actorId: userId,
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200, // reasonable limit
+    });
+
+    return logs.map((log) => ({
+      id: log.id,
+      action: log.action,
+      category: log.resourceType,
+      status: log.actionReason,
+      details: log.newData,
+      ipAddress: log.clientIp,
+      createdAt: log.createdAt.toISOString(),
+    }));
   }
 }

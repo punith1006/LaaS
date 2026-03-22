@@ -444,9 +444,19 @@ export async function deleteStorageVolume(id: string): Promise<void> {
   if (API_BASE) {
     await storageFetch(`/api/storage/volumes/${id}`, {
       method: 'DELETE',
+      body: JSON.stringify({}),
     });
   }
   // Mock for development
+}
+
+// Delete user's file store (no ID needed - backend determines from auth)
+export async function deleteUserFileStore(): Promise<{ ok: boolean; message?: string }> {
+  if (API_BASE) {
+    return storageFetch('/api/storage/volumes', { method: 'DELETE', body: JSON.stringify({}) });
+  }
+  // Mock for development
+  return { ok: true, message: 'Mock delete successful' };
 }
 
 // Storage status types
@@ -458,7 +468,11 @@ export interface StorageStatus {
 }
 
 export async function getStorageStatus(): Promise<StorageStatus> {
-  return storageFetch('/api/storage/status');
+  if (API_BASE) {
+    return storageFetch('/api/storage/status');
+  }
+  // Mock for development
+  return { hasStorage: false, reachable: false, serviceHealthy: false };
 }
 
 // File listing types
@@ -623,6 +637,35 @@ export async function deleteStorageFile(
   }
 
   return { success: true };
+}
+
+// Activity Log API Types
+export interface ActivityLogEntry {
+  id: string;
+  action: string;
+  category: string;
+  status: string;
+  details: Record<string, any> | null;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
+export async function getRecentActivity(days: number = 30): Promise<ActivityLogEntry[]> {
+  const token = getAccessToken();
+  if (!token) return [];
+
+  if (API_BASE) {
+    try {
+      const res = await fetch(`${API_BASE}/api/dashboard/activity?days=${days}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return [];
+      return res.json();
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 // Payment API Types

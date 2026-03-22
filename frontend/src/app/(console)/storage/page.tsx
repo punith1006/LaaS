@@ -7,7 +7,7 @@ import {
   getStorageVolumes,
   checkStorageName,
   createStorageVolume,
-  deleteStorageVolume,
+  deleteUserFileStore,
   getStorageFiles,
   FileItem as ApiFileItem,
   getBillingData,
@@ -55,7 +55,9 @@ function formatSize(bytes: number): string {
 
 export default function StoragePage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [showDeleteNote, setShowDeleteNote] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [storages, setStorages] = useState<StorageVolume[]>([]);
   const [loadingStorages, setLoadingStorages] = useState(true);
@@ -64,7 +66,6 @@ export default function StoragePage() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -74,6 +75,9 @@ export default function StoragePage() {
 
   // Storage reachability state: null = checking, true = reachable, false = unreachable
   const [storageReachable, setStorageReachable] = useState<boolean | null>(null);
+
+  // Track if storage was just created to avoid race condition with NFS setup
+  const justCreatedRef = useRef(false);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -144,6 +148,12 @@ export default function StoragePage() {
     }
     
     const fetchFiles = async () => {
+      // If storage was just created, add a brief delay to let the host finish NFS export
+      if (justCreatedRef.current) {
+        justCreatedRef.current = false;
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+      
       setLoadingFiles(true);
       try {
         const apiFiles = await getStorageFiles(currentPath);
@@ -264,21 +274,11 @@ export default function StoragePage() {
 
   // Handle storage creation success
   const handleStorageCreated = (volume: StorageVolume) => {
+    // Set optimistically reachable since provisioning just succeeded
+    setStorageReachable(true);
+    // Mark as just created to add delay before first file fetch
+    justCreatedRef.current = true;
     setStorages((prev) => [volume, ...prev]);
-  };
-
-  // Handle storage deletion
-  const handleDeleteStorage = async (id: string) => {
-    setDeletingId(id);
-    try {
-      await deleteStorageVolume(id);
-      setStorages((prev) => prev.filter((s) => s.id !== id));
-      setShowDeleteNote(false);
-    } catch (error) {
-      console.error("Failed to delete storage:", error);
-    } finally {
-      setDeletingId(null);
-    }
   };
 
   // Filter files based on tab and search (files are already filtered by current path from API)
@@ -382,7 +382,7 @@ export default function StoragePage() {
         </div>
         {hasStorage ? (
           <button
-            onClick={() => setShowDeleteNote(true)}
+            onClick={() => setShowDeleteModal(true)}
             style={{
               fontFamily: "var(--font-sans)",
               fontSize: "0.875rem",
@@ -424,138 +424,6 @@ export default function StoragePage() {
           </button>
         )}
       </div>
-
-      {/* Delete Note Modal */}
-      {showDeleteNote && (
-        <div
-          style={{
-            backgroundColor: "var(--bgColor-warning-section)",
-            border: "1px solid var(--borderColor-warning)",
-            borderRadius: "4px",
-            padding: "16px",
-            marginBottom: "24px",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "12px",
-          }}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--fgColor-warning)"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ flexShrink: 0, marginTop: "2px" }}
-          >
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-          <div style={{ flex: 1 }}>
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: "0.875rem",
-                color: "var(--fgColor-default)",
-                margin: 0,
-                marginBottom: "12px",
-                lineHeight: 1.5,
-              }}
-            >
-              To create a new File Store, you must delete the existing one first. 
-              All data will be permanently lost.
-            </p>
-            <div style={{ display: "flex", gap: "12px" }}>
-              <button
-                onClick={() => setShowDeleteNote(false)}
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.8125rem",
-                  fontWeight: 500,
-                  color: "var(--fgColor-default)",
-                  backgroundColor: "transparent",
-                  border: "1px solid var(--borderColor-default)",
-                  borderRadius: "4px",
-                  padding: "0 16px",
-                  height: "32px",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (storages.length > 0) {
-                    handleDeleteStorage(storages[0].id);
-                  }
-                }}
-                disabled={deletingId !== null}
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.8125rem",
-                  fontWeight: 500,
-                  color: "#ffffff",
-                  backgroundColor: "var(--fgColor-critical)",
-                  border: "1px solid var(--fgColor-critical)",
-                  borderRadius: "4px",
-                  padding: "0 16px",
-                  height: "32px",
-                  cursor: deletingId ? "not-allowed" : "pointer",
-                  opacity: deletingId ? 0.6 : 1,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                {deletingId ? (
-                  <>
-                    <div
-                      style={{
-                        width: "12px",
-                        height: "12px",
-                        border: "2px solid #ffffff",
-                        borderTopColor: "transparent",
-                        borderRadius: "50%",
-                        animation: "spin 1s linear infinite",
-                      }}
-                    />
-                    Deleting...
-                  </>
-                ) : (
-                  "Delete Existing"
-                )}
-              </button>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowDeleteNote(false)}
-            style={{
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              padding: "4px",
-              color: "var(--fgColor-muted)",
-            }}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-      )}
 
       {/* Show "No filesystems" state when storage is not provisioned */}
       {!loadingStorages && !hasStorage && (
@@ -1284,6 +1152,35 @@ export default function StoragePage() {
         <CreateStorageModal
           onClose={() => setIsCreateModalOpen(false)}
           onSuccess={handleStorageCreated}
+        />
+      )}
+
+      {/* Delete File Store Modal */}
+      {showDeleteModal && (
+        <DeleteFileStoreModal
+          volumeName={storages[0]?.name || 'File Store'}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setDeleteConfirmText('');
+          }}
+          onConfirm={async () => {
+            setDeleting(true);
+            try {
+              await deleteUserFileStore();
+              setShowDeleteModal(false);
+              setDeleteConfirmText('');
+              setStorages([]);
+              setFiles([]);
+              window.location.reload();
+            } catch (err: unknown) {
+              alert('Delete failed: ' + ((err as Error).message || 'Unknown error'));
+            } finally {
+              setDeleting(false);
+            }
+          }}
+          confirmText={deleteConfirmText}
+          onConfirmTextChange={setDeleteConfirmText}
+          isDeleting={deleting}
         />
       )}
 
@@ -2405,6 +2302,294 @@ function CreateStorageModal({
           }
         }
       `}</style>
+    </>
+  );
+}
+
+// Delete File Store Modal Component (Lambda "Utilitarian Minimalism" style)
+function DeleteFileStoreModal({
+  volumeName,
+  onClose,
+  onConfirm,
+  confirmText,
+  onConfirmTextChange,
+  isDeleting,
+}: {
+  volumeName: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  confirmText: string;
+  onConfirmTextChange: (text: string) => void;
+  isDeleting: boolean;
+}) {
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Dark mode detection
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains("dark"));
+    };
+    checkDarkMode();
+    
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    
+    return () => observer.disconnect();
+  }, []);
+
+  const isConfirmValid = confirmText.toLowerCase() === 'delete';
+
+  return (
+    <>
+      {/* Modal Overlay */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: isDarkMode ? "rgba(11, 11, 11, 0.60)" : "rgba(11, 11, 11, 0.15)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      />
+
+      {/* Modal Container */}
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "100%",
+          maxWidth: "500px",
+          backgroundColor: "var(--bgColor-default)",
+          border: "1px solid var(--borderColor-default)",
+          borderRadius: 0,
+          zIndex: 1001,
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "none",
+        }}
+      >
+        {/* Modal Header */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "24px 32px 0 32px",
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "1.25rem",
+              fontWeight: 600,
+              color: "var(--fgColor-default)",
+              margin: 0,
+            }}
+          >
+            Delete File Store
+          </h2>
+          <button
+            onClick={onClose}
+            style={{
+              width: "24px",
+              height: "24px",
+              backgroundColor: "transparent",
+              border: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: "var(--fgColor-default)",
+              padding: 0,
+            }}
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Modal Content */}
+        <div style={{ padding: "24px 32px" }}>
+          {/* Subheading */}
+          <h3
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "1rem",
+              fontWeight: 500,
+              color: "var(--fgColor-default)",
+              margin: "0 0 16px 0",
+            }}
+          >
+            Delete &apos;{volumeName}&apos;?
+          </h3>
+
+          {/* Description */}
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "0.875rem",
+              lineHeight: "1.5",
+              color: "var(--fgColor-muted)",
+              margin: "0 0 24px 0",
+            }}
+          >
+            After you delete a File Store, its data is permanently deleted and the File Store 
+            can no longer be mounted to an instance. All files, folders, and data within this 
+            allocation will be irreversibly destroyed. Billing for this File Store will stop 
+            immediately.
+          </p>
+
+          {/* Confirmation prompt */}
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "0.875rem",
+              color: "var(--fgColor-default)",
+              margin: "0 0 12px 0",
+            }}
+          >
+            To confirm deletion, enter{" "}
+            <code
+              style={{
+                fontFamily: "monospace",
+                backgroundColor: "var(--bgColor-muted)",
+                padding: "2px 6px",
+                borderRadius: "3px",
+                fontSize: "0.8125rem",
+              }}
+            >
+              delete
+            </code>{" "}
+            below.
+          </p>
+
+          {/* Input field */}
+          <input
+            type="text"
+            value={confirmText}
+            onChange={(e) => onConfirmTextChange(e.target.value)}
+            placeholder="Enter 'delete'"
+            style={{
+              width: "100%",
+              fontFamily: "var(--font-sans)",
+              fontSize: "0.875rem",
+              color: "var(--fgColor-default)",
+              backgroundColor: "transparent",
+              border: "1px solid #818178",
+              borderRadius: "4px",
+              padding: "8px 12px",
+              height: "40px",
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+            onFocus={(e) => {
+              e.target.style.border = "1px solid var(--fgColor-default)";
+            }}
+            onBlur={(e) => {
+              e.target.style.border = "1px solid #818178";
+            }}
+          />
+        </div>
+
+        {/* Modal Footer */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "12px",
+            padding: "0 32px 24px 32px",
+          }}
+        >
+          {/* Cancel button */}
+          <button
+            onClick={onClose}
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+              color: "var(--fgColor-default)",
+              backgroundColor: "transparent",
+              border: "1px solid #818178",
+              borderRadius: "4px",
+              padding: "0 20px",
+              height: "40px",
+              cursor: "pointer",
+              transition: "opacity 0.15s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            Cancel
+          </button>
+
+          {/* Delete button */}
+          <button
+            onClick={onConfirm}
+            disabled={!isConfirmValid || isDeleting}
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+              color: "#ffffff",
+              backgroundColor: "#da3633",
+              border: "1px solid #da3633",
+              borderRadius: "4px",
+              padding: "0 20px",
+              height: "40px",
+              cursor: isConfirmValid && !isDeleting ? "pointer" : "not-allowed",
+              opacity: isConfirmValid && !isDeleting ? 1 : 0.5,
+              transition: "opacity 0.15s ease",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+            }}
+            onMouseEnter={(e) => {
+              if (isConfirmValid && !isDeleting) {
+                e.currentTarget.style.opacity = "0.85";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (isConfirmValid && !isDeleting) {
+                e.currentTarget.style.opacity = "1";
+              }
+            }}
+          >
+            {isDeleting && (
+              <div
+                style={{
+                  width: "14px",
+                  height: "14px",
+                  border: "2px solid #ffffff",
+                  borderTopColor: "transparent",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite",
+                }}
+              />
+            )}
+            {isDeleting ? "Deleting..." : "Delete File Store"}
+          </button>
+        </div>
+      </div>
     </>
   );
 }

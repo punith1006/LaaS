@@ -985,6 +985,7 @@ model SessionEvent {
 // DOMAIN 8: BILLING, WALLET, SUBSCRIPTIONS
 // ============================================================================
 
+// AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
 model Wallet {
   id                       String   @id @default(uuid()) @db.Uuid
   userId                   String   @unique @map("user_id") @db.Uuid
@@ -1011,6 +1012,7 @@ model Wallet {
   @@map("wallets")
 }
 
+// AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
 model WalletHold {
   id             String           @id @default(uuid()) @db.Uuid
   walletId       String           @map("wallet_id") @db.Uuid
@@ -1037,6 +1039,7 @@ model WalletHold {
   @@map("wallet_holds")
 }
 
+// AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
 model WalletTransaction {
   id                String   @id @default(uuid()) @db.Uuid
   walletId          String   @map("wallet_id") @db.Uuid
@@ -1217,6 +1220,7 @@ model PaymentTransaction {
   @@map("payment_transactions")
 }
 
+// AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
 model BillingCharge {
   id                  String   @id @default(uuid()) @db.Uuid
   userId              String   @map("user_id") @db.Uuid
@@ -1779,6 +1783,7 @@ model Notification {
 // DOMAIN 13: AUDIT
 // ============================================================================
 
+// AUDIT: Records in this table must NEVER be deleted — required for security and compliance audit trail
 model AuditLog {
   id           String   @id @default(uuid()) @db.Uuid
   actorId      String?  @map("actor_id") @db.Uuid

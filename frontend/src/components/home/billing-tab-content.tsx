@@ -118,6 +118,31 @@ function generateHourlyData(dailySpend: number, currentRate: number) {
   return data;
 }
 
+// Generate zero-value placeholder data for the chart
+// Used when backend returns empty or no hourlyData to show a visible flat line at zero
+// Always generates a full 24-hour timeline to ensure the chart has enough points to draw a line
+function generateZeroValueData() {
+  const data = [];
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  // Generate all 24 hours (00:00 through 23:00) to ensure full timeline
+  // This guarantees enough points to draw a visible line regardless of current time
+  for (let i = 0; i <= 23; i++) {
+    const hour = i.toString().padStart(2, "0") + ":00";
+    // Mark the current hour as "Now" for visual clarity
+    const timeLabel = i === currentHour ? "Now" : hour;
+    data.push({
+      time: timeLabel,
+      daySpend: 0,
+      rollingAvg: 0,
+      hourSpend: 0,
+    });
+  }
+
+  return data;
+}
+
 // Metric Card Component - Lambda.ai style
 function MetricCard({
   icon,
@@ -402,19 +427,71 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
   };
 
   // Generate chart data from hourly data
+  // Ensures all data points have explicit numeric values (never null/undefined)
+  // so the chart renders visible lines even when all values are zero
   const chartData = useMemo(() => {
     let data;
+    const now = new Date();
+    const currentHour = now.getHours();
     
-    // Use hourly data from API if available
+    // Helper: Generate a full 24-hour timeline with zero values, marking current hour as "Now"
+    const generateFullTimeline = () => {
+      const timeline = [];
+      for (let i = 0; i <= 23; i++) {
+        const hour = i.toString().padStart(2, "0") + ":00";
+        const timeLabel = i === currentHour ? "Now" : hour;
+        timeline.push({
+          time: timeLabel,
+          daySpend: 0,
+          rollingAvg: 0,
+          hourSpend: 0,
+        });
+      }
+      return timeline;
+    };
+    
+    // Use hourly data from API if available and has data points
     if (billingData?.hourlyData && billingData.hourlyData.length > 0) {
-      data = billingData.hourlyData.map((item) => ({
-        time: item.hour,
-        rollingAvg: item.cumulativeSpend, // Cumulative spend up to this hour (blue line)
-        hourSpend: item.hourlyRate, // Actual hourly rate (orange line)
-        daySpend: item.cumulativeSpend, // alias for type compat
-      }));
+      // If backend returns very few points (< 3), pad with full 24-hour timeline
+      if (billingData.hourlyData.length < 3) {
+        const fullTimeline = generateFullTimeline();
+        // Merge backend data into the full timeline
+        billingData.hourlyData.forEach((item) => {
+          // Find the hour index (parse "HH:00" or "Now")
+          let hourIndex = -1;
+          if (item.hour === "Now") {
+            hourIndex = currentHour;
+          } else {
+            const hourMatch = item.hour.match(/^(\d{2}):/);
+            if (hourMatch) {
+              hourIndex = parseInt(hourMatch[1], 10);
+            }
+          }
+          if (hourIndex >= 0 && hourIndex <= 23) {
+            fullTimeline[hourIndex] = {
+              time: fullTimeline[hourIndex].time, // Keep "Now" label if applicable
+              rollingAvg: item.cumulativeSpend ?? 0,
+              hourSpend: item.hourlyRate ?? 0,
+              daySpend: item.cumulativeSpend ?? 0,
+            };
+          }
+        });
+        data = fullTimeline;
+      } else {
+        data = billingData.hourlyData.map((item) => ({
+          time: item.hour,
+          // Ensure all values are explicit numbers, defaulting to 0 for null/undefined
+          rollingAvg: item.cumulativeSpend ?? 0, // Cumulative spend up to this hour (blue line)
+          hourSpend: item.hourlyRate ?? 0, // Actual hourly rate (orange line)
+          daySpend: item.cumulativeSpend ?? 0, // alias for type compat
+        }));
+      }
     }
-    // If current values are 0, show historical sample data for demo
+    // If backend returns empty hourlyData but we have billing context, generate zero-value timeline
+    else if (billingData && (!billingData.hourlyData || billingData.hourlyData.length === 0)) {
+      data = generateZeroValueData();
+    }
+    // If current values are 0 and no billing data, show historical sample data for demo
     else if (currentSpendRate === 0 && dailySpend === 0) {
       data = generateHistoricalSampleData();
     }
@@ -433,27 +510,46 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
     }
     
     return data;
-  }, [billingData?.hourlyData, dailySpend, currentSpendRate]);
+  }, [billingData, dailySpend, currentSpendRate]);
 
   const themeColors = isDark ? COLORS.dark : COLORS.light;
 
   // Calculate proportional Y-axis domains
+  // When all actual data values are 0, use a small Y-axis range so the flat zero line is visible
+  // Only use rolling-average-based scaling when there are actual non-zero data values
   const { leftAxisMax, rightAxisMax } = useMemo(() => {
     if (!chartData || chartData.length === 0) {
-      return { leftAxisMax: 10, rightAxisMax: 1 };
+      return { leftAxisMax: 1, rightAxisMax: 0.5 };
     }
-    const maxCumulative = Math.max(...chartData.map((d) => d.rollingAvg), 1);
-    const maxHourly = Math.max(...chartData.map((d) => d.hourSpend), 0.01);
+    
+    // Get actual max values from chart data
+    const actualMaxCumulative = Math.max(...chartData.map((d) => d.rollingAvg ?? 0));
+    const actualMaxHourly = Math.max(...chartData.map((d) => d.hourSpend ?? 0));
+
+    // Check if ALL actual data values are zero (flat line at zero scenario)
+    const allDataIsZero = actualMaxCumulative === 0 && actualMaxHourly === 0;
+    
+    if (allDataIsZero) {
+      // Use small Y-axis ranges so the flat zero line is visible at the bottom
+      // with reasonable chart height (not squished to invisible bottom edge)
+      return { leftAxisMax: 1, rightAxisMax: 0.5 };
+    }
 
     // Use spendRate (7-day rolling avg) as reference for proportional scaling
-    const rollingAvgDaily = billingData?.spendRate ?? maxCumulative;
+    // Only when there are actual non-zero values
+    const rollingAvgDaily = billingData?.spendRate ?? 0;
     const estimatedHourlyFromDaily = rollingAvgDaily / 24;
-    const rightMax = Math.max(maxHourly, estimatedHourlyFromDaily) * 1.3; // 30% padding
-    const leftMax = Math.max(maxCumulative, rollingAvgDaily) * 1.2; // 20% padding
+    
+    // Ensure minimum visible ranges
+    const MIN_LEFT_AXIS = 10;  // ₹10 minimum for cumulative spend axis
+    const MIN_RIGHT_AXIS = 1;  // ₹1 minimum for hourly rate axis
+    
+    const rawLeftMax = Math.max(actualMaxCumulative, rollingAvgDaily) * 1.2; // 20% padding
+    const rawRightMax = Math.max(actualMaxHourly, estimatedHourlyFromDaily) * 1.3; // 30% padding
 
     return {
-      leftAxisMax: leftMax > 0 ? leftMax : 10,
-      rightAxisMax: rightMax > 0 ? rightMax : 1,
+      leftAxisMax: Math.max(rawLeftMax, MIN_LEFT_AXIS),
+      rightAxisMax: Math.max(rawRightMax, MIN_RIGHT_AXIS),
     };
   }, [chartData, billingData?.spendRate]);
 
@@ -785,7 +881,8 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                     fontSize: 10,
                     fontFamily: "var(--font-sans)",
                   }}
-                  interval={Math.max(0, Math.floor(chartData.length / 6) - 1)}
+                  interval="preserveStartEnd"
+                  minTickGap={30}
                 />
                 <YAxis
                   yAxisId="left"
@@ -825,6 +922,9 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                   strokeWidth={2}
                   fill="url(#daySpendGradient)"
                   animationDuration={1500}
+                  connectNulls={true}
+                  dot={false}
+                  activeDot={{ r: 4, strokeWidth: 0 }}
                 />
                 {/* Hour spend line (orange/yellow) */}
                 <Area
@@ -836,6 +936,9 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                   strokeWidth={2}
                   fill="url(#hourSpendGradient)"
                   animationDuration={1500}
+                  connectNulls={true}
+                  dot={false}
+                  activeDot={{ r: 4, strokeWidth: 0 }}
                 />
               </AreaChart>
             </ResponsiveContainer>

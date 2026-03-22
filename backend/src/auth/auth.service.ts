@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { KeycloakService } from './keycloak.service';
 import { StorageService } from '../storage/storage.service';
+import { AuditService } from '../audit/audit.service';
 
 const OTP_EXPIRY_MINUTES = 10;
 const RESEND_WINDOW_MINUTES = 15;
@@ -28,6 +29,7 @@ export class AuthService {
     private mail: MailService,
     private keycloak: KeycloakService,
     private storage: StorageService,
+    private auditService: AuditService,
   ) {}
 
   async checkEmail(email: string): Promise<void> {
@@ -227,6 +229,20 @@ export class AuthService {
         success: true,
       },
     });
+
+    // Audit log for successful login
+    try {
+      await this.auditService.log({
+        userId: user.id,
+        action: 'auth.login',
+        category: 'auth',
+        status: 'success',
+        details: { authType: user.authType, loginMethod: 'password' },
+        ipAddress: ip ?? undefined,
+      });
+    } catch {
+      // Don't let audit logging failures break the login flow
+    }
 
     return this.issueTokens(user);
   }
@@ -459,6 +475,20 @@ export class AuthService {
         success: true,
       },
     });
+
+    // Audit log for successful OAuth login
+    try {
+      await this.auditService.log({
+        userId: user.id,
+        action: 'auth.login',
+        category: 'auth',
+        status: 'success',
+        details: { authType: user.authType, oauthProvider: user.oauthProvider, loginMethod: 'oauth' },
+        ipAddress: ip ?? undefined,
+      });
+    } catch {
+      // Don't let audit logging failures break the login flow
+    }
 
     const tokens = await this.issueTokens(user);
     return {

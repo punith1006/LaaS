@@ -4,6 +4,9 @@
  * This script ONLY cleans up storage data for the specified user.
  * It does NOT touch wallets, sessions, compute data, or any other users.
  *
+ * AUDIT CRITICAL: BillingCharge and WalletTransaction records are NEVER deleted.
+ * They are preserved for audit purposes and rolling average calculations.
+ *
  * Run: npx ts-node prisma/cleanup-storage.ts
  */
 
@@ -61,7 +64,7 @@ async function cleanupStorage() {
   console.log(`  User storageProvisioningStatus: ${storageVolume.user.storageProvisioningStatus || 'null'}`);
   console.log('');
 
-  // Step 2: Find related BillingCharges
+  // Step 2: Find related BillingCharges (for information only - they will NOT be deleted)
   const billingCharges = await prisma.billingCharge.findMany({
     where: { storageVolumeId: storageVolume.id },
     select: {
@@ -73,6 +76,7 @@ async function cleanupStorage() {
   });
 
   console.log(`Found ${billingCharges.length} BillingCharge record(s) linked to this storage volume:`);
+  console.log('  NOTE: These records will be PRESERVED for audit trail (storageVolumeId will be set to NULL)');
   for (const charge of billingCharges) {
     console.log(`  - ID: ${charge.id}, Type: ${charge.chargeType}, Amount: ₹${Number(charge.amountCents) / 100}, Created: ${charge.createdAt.toISOString()}`);
   }
@@ -99,7 +103,7 @@ async function cleanupStorage() {
   console.log('='.repeat(60));
   console.log('CLEANUP SUMMARY - The following will be deleted/updated:');
   console.log('='.repeat(60));
-  console.log(`1. Delete ${billingCharges.length} BillingCharge record(s)`);
+  console.log(`1. PRESERVED: ${billingCharges.length} BillingCharge record(s) (storageVolumeId set to NULL for audit trail)`);
   console.log(`2. Delete ${storageExtensions.length} StorageExtension record(s)`);
   console.log(`3. Delete 1 UserStorageVolume record (ID: ${storageVolume.id})`);
   console.log(`4. Reset User storage fields for user ID: ${storageVolume.user.id}`);
@@ -114,14 +118,16 @@ async function cleanupStorage() {
   console.log('');
 
   await prisma.$transaction(async (tx) => {
-    // 1. Delete BillingCharges linked to this storage volume
+    // 1. PRESERVE BillingCharges - set storageVolumeId to NULL (NEVER delete billing records)
+    // AUDIT: BillingCharge and WalletTransaction records must NEVER be deleted
     if (billingCharges.length > 0) {
-      const deletedCharges = await tx.billingCharge.deleteMany({
+      const updatedCharges = await tx.billingCharge.updateMany({
         where: { storageVolumeId: storageVolume.id },
+        data: { storageVolumeId: null },
       });
-      console.log(`✓ Deleted ${deletedCharges.count} BillingCharge record(s)`);
+      console.log(`✓ Preserved ${updatedCharges.count} BillingCharge record(s) (storageVolumeId set to NULL)`);
     } else {
-      console.log('✓ No BillingCharge records to delete');
+      console.log('✓ No BillingCharge records to update');
     }
 
     // 2. Delete StorageExtensions linked to this storage volume

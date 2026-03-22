@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -31,5 +32,17 @@ export class DashboardController {
   @Get('health')
   async getPlatformHealth() {
     return this.dashboardService.getPlatformHealth();
+  }
+
+  @Get('activity')
+  @UseGuards(JwtAuthGuard)
+  async getActivity(
+    @Req() req: { user: { id: string } },
+    @Query('days') days?: string,
+  ) {
+    return this.dashboardService.getRecentActivity(
+      req.user.id,
+      parseInt(days || '30', 10),
+    );
   }
 }

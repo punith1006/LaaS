@@ -8,11 +8,13 @@ import { StorageModule } from './storage/storage.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { PaymentModule } from './payment/payment.module';
 import { BillingModule } from './billing/billing.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     PrismaModule,
+    AuditModule,
     StorageModule,
     AuthModule,
     DashboardModule,

@@ -510,6 +510,58 @@ export class StorageService {
   }
 
   /**
+   * Deprovision (destroy) a user's ZFS storage dataset.
+   * Calls the Python host service's /deprovision endpoint.
+   */
+  async deprovisionUserStorage(storageUid: string): Promise<{ ok: boolean; error?: string }> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      return { ok: false, error: 'Storage provisioning URL not configured' };
+    }
+
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/deprovision`;
+    const secret = process.env[SECRET_ENV];
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(secret ? { 'X-Provision-Secret': secret } : {}),
+        },
+        body: JSON.stringify({ storageUid }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const data = await res.json() as { ok?: boolean; error?: string };
+
+      if (!res.ok) {
+        const errorMsg = data.error || `Deprovision failed (${res.status})`;
+        this.logger.error(`Deprovision failed for storageUid=${storageUid}: ${errorMsg}`);
+        return { ok: false, error: errorMsg };
+      }
+
+      this.logger.log(`Storage deprovisioned for storageUid=${storageUid}`);
+      return { ok: true };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      const msg = isTimeout
+        ? 'Deprovision request timed out'
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      this.logger.error(`Deprovision request failed for storageUid=${storageUid}: ${msg}`);
+      return { ok: false, error: msg };
+    }
+  }
+
+  /**
    * Delete a file or folder from the user's storage.
    */
   async deleteFile(storageUid: string, filePath: string): Promise<{ success: boolean; error?: string }> {

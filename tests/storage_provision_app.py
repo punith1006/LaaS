@@ -267,6 +267,130 @@ def provision():
     return jsonify(error=output or f"Storage system error (exit {code})"), 500
 
 
+def _remove_exports_line(storage_uid: str) -> Optional[str]:
+    """Remove /etc/exports line for this storage_uid (idempotent)."""
+    ok, _ = _run_cmd([
+        "sudo", "bash", "-lc",
+        f"sed -i '\\|^/datapool/users/{storage_uid} |d' {EXPORTS_PATH}"
+    ])
+    if not ok:
+        return f"Failed to clean {EXPORTS_PATH}"
+    ok, _ = _run_cmd(["sudo", "exportfs", "-ra"])
+    if not ok:
+        return "Failed to reload NFS exports"
+    return None
+
+
+def _remove_fstab_line(storage_uid: str) -> Optional[str]:
+    """Remove /etc/fstab line for this storage_uid (idempotent)."""
+    ok, _ = _run_cmd([
+        "sudo", "bash", "-lc",
+        f"sed -i '\\|{NFS_EXPORT_CLIENT}:/datapool/users/{storage_uid} |d' {FSTAB_PATH}"
+    ])
+    if not ok:
+        return f"Failed to clean {FSTAB_PATH}"
+    return None
+
+
+def cleanup_nfs_for(storage_uid: str) -> Optional[str]:
+    """
+    Remove NFS export, unmount, and fstab entry for this storage_uid.
+    Returns None on success, or an error string.
+    """
+    mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
+
+    # Unmount (ignore errors — may not be mounted)
+    _run_cmd(["sudo", "umount", mountpoint], timeout=15)
+
+    # Remove exports line
+    err = _remove_exports_line(storage_uid)
+    if err:
+        return err
+
+    # Remove fstab line
+    err = _remove_fstab_line(storage_uid)
+    if err:
+        return err
+
+    return None
+
+
+@app.route("/deprovision", methods=["POST"])
+def deprovision():
+    """
+    Deprovision (destroy) a user's ZFS storage dataset.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_..." }
+    
+    Steps:
+      1. Validate storageUid format
+      2. Check if dataset exists (idempotent: return success if not found)
+      3. If NFS_AUTOMOUNT_ENABLED: unmount, remove exports/fstab entries
+      4. Destroy ZFS dataset
+      5. Verify destruction
+      6. Clean up mount point directory
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+
+    # Validate storageUid BEFORE any destructive action
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "deprovision_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Check if dataset exists (idempotent: if not found, return success)
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if not ok:
+        # Dataset doesn't exist — already deprovisioned, return success
+        log_event(request_id, client_ip, storage_uid, "deprovision_success", "Dataset already absent")
+        return jsonify(ok=True), 200
+
+    # If NFS automount enabled, clean up NFS first
+    if NFS_AUTOMOUNT_ENABLED:
+        nfs_err = cleanup_nfs_for(storage_uid)
+        if nfs_err:
+            log_event(request_id, client_ip, storage_uid, "deprovision_failed", nfs_err)
+            return jsonify(error=nfs_err), 500
+
+    # Destroy ZFS dataset (30s timeout for large datasets)
+    ok, out = _run_cmd(["sudo", "zfs", "destroy", dataset], timeout=30)
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "deprovision_failed", f"zfs destroy failed: {out}")
+        return jsonify(error=f"Failed to destroy dataset: {out}"), 500
+
+    # Verify destruction
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if ok:
+        # Dataset still exists after destroy — unexpected
+        log_event(request_id, client_ip, storage_uid, "deprovision_failed", "Dataset still exists after destroy")
+        return jsonify(error="Dataset destruction verification failed"), 500
+
+    # Clean up mount point directory (ignore errors — may not exist)
+    if NFS_AUTOMOUNT_ENABLED:
+        mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
+        _run_cmd(["sudo", "rmdir", mountpoint])
+
+    log_event(request_id, client_ip, storage_uid, "deprovision_success")
+    return jsonify(ok=True), 200
+
+
 @app.route("/storage/usage/<storage_uid>", methods=["GET"])
 def get_storage_usage(storage_uid: str):
     """

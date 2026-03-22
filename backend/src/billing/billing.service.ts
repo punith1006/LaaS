@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   /**
    * Runs every hour at minute 0.
@@ -239,6 +243,19 @@ export class BillingService {
       this.logger.log(
         `Charged user ${userId}: ${totalChargeCents} paise for ${volumeDetails.length} volume(s)`,
       );
+
+      // Audit log for successful billing charge
+      try {
+        await this.auditService.log({
+          userId,
+          action: 'billing.charge',
+          category: 'billing',
+          status: 'success',
+          details: { totalChargeCents, volumeCount: volumeDetails.length, period: 'hourly' },
+        });
+      } catch {
+        // Don't let audit logging failures break billing
+      }
 
       return 'charged';
     });

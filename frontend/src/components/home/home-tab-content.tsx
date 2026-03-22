@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { User } from "@/types/auth";
-import type { HomeDashboardData } from "@/lib/api";
-import { getHomeDashboardData } from "@/lib/api";
+import type { HomeDashboardData, ActivityLogEntry } from "@/lib/api";
+import { getHomeDashboardData, getRecentActivity } from "@/lib/api";
 
 interface HomeTabContentProps {
   user: User | null;
@@ -133,6 +133,9 @@ function SectionHeader({ title }: { title: string }) {
 export function HomeTabContent({ user }: HomeTabContentProps) {
   const [dashboardData, setDashboardData] = useState<HomeDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activityData, setActivityData] = useState<ActivityLogEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getHomeDashboardData()
@@ -142,6 +145,19 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
       })
       .catch(() => {
         setLoading(false);
+      });
+
+    // Fetch activity data
+    getRecentActivity(30)
+      .then((data) => {
+        setActivityData(data);
+        setActivityLoading(false);
+        // Auto-expand today's date
+        const today = new Date().toISOString().split('T')[0];
+        setExpandedDates(new Set([today]));
+      })
+      .catch(() => {
+        setActivityLoading(false);
       });
   }, []);
 
@@ -192,6 +208,122 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
   };
 
   const storageDisplay = getStorageStatusDisplay();
+
+  // Helper function to group activities by date
+  const groupActivitiesByDate = (activities: ActivityLogEntry[]) => {
+    const groups: Record<string, ActivityLogEntry[]> = {};
+    activities.forEach((activity) => {
+      const date = activity.createdAt.split('T')[0];
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(activity);
+    });
+    // Sort dates descending (most recent first)
+    const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    return sortedDates.map((date) => ({
+      date,
+      activities: groups[date].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    }));
+  };
+
+  // Format date header: "Today, March 23" or "March 22, 2026"
+  const formatDateHeader = (dateStr: string) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const isToday = dateStr === today.toISOString().split('T')[0];
+    const isYesterday = dateStr === yesterday.toISOString().split('T')[0];
+
+    const monthDay = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+    const year = date.getFullYear();
+    const currentYear = today.getFullYear();
+
+    if (isToday) {
+      return `Today, ${monthDay}`;
+    } else if (isYesterday) {
+      return `Yesterday, ${monthDay}`;
+    } else if (year === currentYear) {
+      return monthDay;
+    } else {
+      return `${monthDay}, ${year}`;
+    }
+  };
+
+  // Format time: "12:36 AM"
+  const formatTime = (isoString: string) => {
+    return new Date(isoString).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+
+  // Get human-readable action description
+  const getActionDescription = (activity: ActivityLogEntry) => {
+    const { action, details } = activity;
+    switch (action) {
+      case 'auth.login':
+        return 'Signed in';
+      case 'auth.logout':
+        return 'Signed out';
+      case 'filestore.create':
+        const storeName = details?.name || details?.storageUid || 'File Store';
+        const quota = details?.quotaGb;
+        return quota ? `Created File Store '${storeName}' (${quota} GB)` : `Created File Store '${storeName}'`;
+      case 'filestore.delete':
+        return 'Deleted File Store';
+      case 'file.upload':
+        return `Uploaded file '${details?.fileName || 'unknown'}'`;
+      case 'file.delete':
+        return `Deleted file '${details?.fileName || 'unknown'}'`;
+      case 'file.mkdir':
+        return `Created folder '${details?.folderName || details?.fileName || 'unknown'}'`;
+      case 'file.download':
+        return `Downloaded file '${details?.fileName || 'unknown'}'`;
+      case 'billing.charge':
+        const amount = details?.amount || details?.amountCents ? (details?.amountCents / 100).toFixed(2) : '0.00';
+        return `Billing charge: ₹${amount}`;
+      default:
+        // Fallback: convert action to readable format
+        return action.replace(/\./g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+    }
+  };
+
+  // Get category color
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'auth':
+        return '#3a73ff'; // blue
+      case 'storage':
+        return '#05C004'; // green
+      case 'file':
+        return '#FDA422'; // amber
+      case 'billing':
+        return '#f85149'; // red
+      default:
+        return '#818178'; // muted
+    }
+  };
+
+  // Toggle date expansion
+  const toggleDateExpansion = (date: string) => {
+    setExpandedDates((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(date)) {
+        newSet.delete(date);
+      } else {
+        newSet.add(date);
+      }
+      return newSet;
+    });
+  };
+
+  const groupedActivities = groupActivitiesByDate(activityData);
 
   return (
     <div>
@@ -303,20 +435,197 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
           backgroundColor: "var(--bgColor-mild)",
           border: "1px solid var(--borderColor-default)",
           borderRadius: "4px",
-          padding: "16px",
+          overflow: "hidden",
         }}
       >
-        <div
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: "var(--text-sm)",
-            color: "var(--fgColor-muted)",
-            textAlign: "center",
-            padding: "24px",
-          }}
-        >
-          No recent activity to display.
-        </div>
+        {activityLoading ? (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-sm)",
+              color: "var(--fgColor-muted)",
+              textAlign: "center",
+              padding: "24px",
+            }}
+          >
+            Loading activity...
+          </div>
+        ) : groupedActivities.length === 0 ? (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-sm)",
+              color: "var(--fgColor-muted)",
+              textAlign: "center",
+              padding: "24px",
+            }}
+          >
+            No recent activity to display.
+          </div>
+        ) : (
+          <div>
+            {groupedActivities.map(({ date, activities }, groupIndex) => {
+              const isExpanded = expandedDates.has(date);
+              return (
+                <div
+                  key={date}
+                  style={{
+                    borderBottom:
+                      groupIndex < groupedActivities.length - 1
+                        ? "1px solid var(--borderColor-default)"
+                        : "none",
+                  }}
+                >
+                  {/* Date header - clickable accordion trigger */}
+                  <button
+                    onClick={() => toggleDateExpansion(date)}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "12px 16px",
+                      backgroundColor: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "var(--text-sm)",
+                      fontWeight: 600,
+                      color: "var(--fgColor-default)",
+                      textAlign: "left",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "16px",
+                        fontSize: "10px",
+                        color: "var(--fgColor-muted)",
+                        transition: "transform 0.15s ease",
+                        transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                      }}
+                    >
+                      ▶
+                    </span>
+                    {formatDateHeader(date)}
+                    <span
+                      style={{
+                        fontWeight: 400,
+                        color: "var(--fgColor-muted)",
+                        fontSize: "var(--text-xs)",
+                      }}
+                    >
+                      ({activities.length} {activities.length === 1 ? "event" : "events"})
+                    </span>
+                  </button>
+
+                  {/* Activity entries - collapsible content */}
+                  {isExpanded && (
+                    <div
+                      style={{
+                        padding: "0 16px 12px 16px",
+                      }}
+                    >
+                      {activities.map((activity, actIndex) => (
+                        <div
+                          key={activity.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "12px",
+                            padding: "10px 0",
+                            borderTop:
+                              actIndex > 0 ? "1px solid var(--borderColor-muted)" : "none",
+                          }}
+                        >
+                          {/* Category dot */}
+                          <div
+                            style={{
+                              width: "8px",
+                              height: "8px",
+                              borderRadius: "50%",
+                              backgroundColor: getCategoryColor(activity.category),
+                              marginTop: "6px",
+                              flexShrink: 0,
+                            }}
+                          />
+
+                          {/* Time */}
+                          <div
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: "var(--text-xs)",
+                              color: "var(--fgColor-muted)",
+                              minWidth: "72px",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {formatTime(activity.createdAt)}
+                          </div>
+
+                          {/* Action description */}
+                          <div
+                            style={{
+                              flex: 1,
+                              fontFamily: "var(--font-sans)",
+                              fontSize: "var(--text-sm)",
+                              color: "var(--fgColor-default)",
+                              lineHeight: "1.4",
+                            }}
+                          >
+                            {getActionDescription(activity)}
+                          </div>
+
+                          {/* Status badge */}
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              flexShrink: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: "var(--font-sans)",
+                                fontSize: "var(--text-xs)",
+                                fontWeight: 500,
+                                color:
+                                  activity.status === "success"
+                                    ? "#05C004"
+                                    : activity.status === "failed"
+                                    ? "#f85149"
+                                    : "var(--fgColor-muted)",
+                                textTransform: "capitalize",
+                              }}
+                            >
+                              {activity.status}
+                            </span>
+
+                            {/* IP address (optional) */}
+                            {activity.ipAddress && (
+                              <span
+                                style={{
+                                  fontFamily: "var(--font-mono)",
+                                  fontSize: "var(--text-xs)",
+                                  color: "var(--fgColor-muted)",
+                                }}
+                              >
+                                {activity.ipAddress}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

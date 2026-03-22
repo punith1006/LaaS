@@ -14,12 +14,14 @@ import {
   BadRequestException,
   NotFoundException,
   ServiceUnavailableException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { IsString, IsNotEmpty, IsInt, Min, Max, Length } from 'class-validator';
 import { StorageService } from './storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuditService } from '../audit/audit.service';
 import { randomBytes } from 'crypto';
 
 const MIN_QUOTA_GB = 5;
@@ -55,6 +57,7 @@ export class StorageController {
   constructor(
     private readonly storageService: StorageService,
     private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -168,7 +171,7 @@ export class StorageController {
   @Post('files/mkdir')
   @HttpCode(HttpStatus.CREATED)
   async createFolder(
-    @Req() req: { user: { id: string } },
+    @Req() req: FastifyRequest & { user: { id: string } },
     @Body() body: { path: string; folderName: string },
   ) {
     const userId = req.user.id;
@@ -186,6 +189,21 @@ export class StorageController {
 
     if (!result.success) {
       throw new BadRequestException(result.error || 'Failed to create folder');
+    }
+
+    // Audit log for folder creation
+    try {
+      await this.auditService.log({
+        userId,
+        action: 'file.mkdir',
+        category: 'storage',
+        status: 'success',
+        details: { path: body.path || '/', folderName: body.folderName.trim() },
+        ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+        userAgent: req.headers?.['user-agent'] || undefined,
+      });
+    } catch {
+      // Don't let audit logging failures break the main flow
     }
 
     return result;
@@ -241,6 +259,23 @@ export class StorageController {
       throw new BadRequestException(errors.join('; '));
     }
 
+    // Audit log for file upload
+    if (uploaded.length > 0) {
+      try {
+        await this.auditService.log({
+          userId,
+          action: 'file.upload',
+          category: 'storage',
+          status: 'success',
+          details: { fileName: uploaded.join(', '), path },
+          ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+          userAgent: req.headers?.['user-agent'] || undefined,
+        });
+      } catch {
+        // Don't let audit logging failures break the main flow
+      }
+    }
+
     return { success: true, uploaded, errors: errors.length > 0 ? errors : undefined };
   }
 
@@ -249,7 +284,7 @@ export class StorageController {
    */
   @Get('files/download')
   async downloadFile(
-    @Req() req: { user: { id: string } },
+    @Req() req: FastifyRequest & { user: { id: string } },
     @Query('file') filePath: string,
     @Res() res: FastifyReply,
   ) {
@@ -268,6 +303,21 @@ export class StorageController {
 
     const { buffer, filename } = result;
 
+    // Audit log for file download
+    try {
+      await this.auditService.log({
+        userId,
+        action: 'file.download',
+        category: 'storage',
+        status: 'success',
+        details: { filePath: filePath.trim() },
+        ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+        userAgent: req.headers?.['user-agent'] || undefined,
+      });
+    } catch {
+      // Don't let audit logging failures break the main flow
+    }
+
     return res
       .header('Content-Type', 'application/octet-stream')
       .header('Content-Disposition', `attachment; filename="${filename}"`)
@@ -280,7 +330,7 @@ export class StorageController {
    */
   @Delete('files')
   async deleteFile(
-    @Req() req: { user: { id: string } },
+    @Req() req: FastifyRequest & { user: { id: string } },
     @Query('file') filePath: string,
   ) {
     const userId = req.user.id;
@@ -294,6 +344,21 @@ export class StorageController {
 
     if (!result.success) {
       throw new BadRequestException(result.error || 'Failed to delete file');
+    }
+
+    // Audit log for file deletion
+    try {
+      await this.auditService.log({
+        userId,
+        action: 'file.delete',
+        category: 'storage',
+        status: 'success',
+        details: { filePath: filePath.trim() },
+        ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+        userAgent: req.headers?.['user-agent'] || undefined,
+      });
+    } catch {
+      // Don't let audit logging failures break the main flow
     }
 
     return { success: true };
@@ -337,7 +402,7 @@ export class StorageController {
   @Post('volumes')
   async createVolume(
     @Body() dto: CreateStorageVolumeDto,
-    @Req() req: { user: { id: string; email: string } },
+    @Req() req: FastifyRequest & { user: { id: string; email: string } },
   ) {
     const userId = req.user.id;
     const { name, quotaGb } = dto;
@@ -430,6 +495,21 @@ export class StorageController {
       const monthlyEstimate = quotaGb * pricePerGbMonth;
       const hourlyRate = (quotaGb * 700) / 730 / 100; // (quotaGb * paise) / hoursPerMonth / 100 = Rs/hour
       
+      // Audit log for volume creation
+      try {
+        await this.auditService.log({
+          userId,
+          action: 'filestore.create',
+          category: 'storage',
+          status: 'success',
+          details: { storageUid, name: trimmedName, quotaGb },
+          ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+          userAgent: req.headers?.['user-agent'] || undefined,
+        });
+      } catch {
+        // Don't let audit logging failures break the main flow
+      }
+
       return {
         id: v.id,
         name: v.name,
@@ -452,6 +532,90 @@ export class StorageController {
         'Storage was provisioned but failed to save record. Please contact support.',
       );
     }
+  }
+
+  /**
+   * Delete (wipe) the current user's active storage volume
+   * This destroys the ZFS dataset and cleans up all related records
+   */
+  @Delete('volumes')
+  @HttpCode(HttpStatus.OK)
+  async deleteStorageVolume(@Req() req: FastifyRequest & { user: { id: string } }) {
+    const userId = req.user.id;
+
+    // 1. Find active volume
+    const volumes = await this.prisma.$queryRaw<{ id: string; storage_uid: string }[]>`
+      SELECT id, storage_uid FROM user_storage_volumes
+      WHERE user_id = ${userId}::uuid AND status = 'active'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    if (volumes.length === 0) {
+      throw new NotFoundException('No active storage volume found');
+    }
+
+    const volume = volumes[0];
+
+    // 2. Set status to 'wiping' (prevents concurrent operations)
+    await this.prisma.$executeRaw`
+      UPDATE user_storage_volumes
+      SET status = 'wiping', updated_at = NOW()
+      WHERE id = ${volume.id}::uuid
+    `;
+
+    // 3. Call host to destroy ZFS dataset
+    const result = await this.storageService.deprovisionUserStorage(volume.storage_uid);
+
+    if (!result.ok) {
+      // Revert status on failure
+      await this.prisma.$executeRaw`
+        UPDATE user_storage_volumes
+        SET status = 'active', updated_at = NOW()
+        WHERE id = ${volume.id}::uuid
+      `;
+      throw new InternalServerErrorException(result.error || 'Failed to deprovision storage');
+    }
+
+    // 4. Clean up DB in a transaction
+    // NOTE: BillingCharge records are PRESERVED for historical audit trail and rolling average calculations
+    await this.prisma.$transaction(async (tx) => {
+      // Delete related storage extensions (if any FK constraints exist)
+      await tx.$executeRaw`
+        DELETE FROM storage_extensions WHERE storage_volume_id = ${volume.id}::uuid
+      `;
+
+      // Update volume status to wiped
+      await tx.$executeRaw`
+        UPDATE user_storage_volumes
+        SET status = 'wiped', wiped_at = NOW(), wipe_reason = 'User requested deletion via API', updated_at = NOW()
+        WHERE id = ${volume.id}::uuid
+      `;
+
+      // Reset user storage fields
+      await tx.$executeRaw`
+        UPDATE users
+        SET storage_uid = NULL, storage_provisioning_status = NULL, storage_provisioned_at = NULL, storage_provisioning_error = NULL, updated_at = NOW()
+        WHERE id = ${userId}::uuid
+      `;
+    });
+
+    // Audit log for volume deletion
+    try {
+      await this.auditService.log({
+        userId,
+        action: 'filestore.delete',
+        category: 'storage',
+        status: 'success',
+        details: { storageUid: volume.storage_uid, volumeId: volume.id },
+        ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+        userAgent: req.headers?.['user-agent'] || undefined,
+      });
+    } catch {
+      // Don't let audit logging failures break the main flow
+    }
+
+    return { ok: true, message: 'File Store deleted successfully' };
   }
 
   /**
