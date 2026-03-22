@@ -388,7 +388,7 @@ export function PaymentHistoryTab() {
           backgroundColor: "var(--bgColor-mild)",
           border: "1px solid var(--borderColor-default)",
           borderRadius: "4px",
-          overflow: "hidden",
+          overflow: "visible",
         }}
       >
         {/* Table header */}

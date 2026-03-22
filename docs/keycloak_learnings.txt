@@ -169,3 +169,208 @@ If you tell me:
 What Client ID you see in laas-academy → Clients.
 What Client ID is set in laas → Identity providers → laas-academy.
 I can tell you exactly which one to change.
+
+================================================================================
+4. Understanding Keycloak Session Management (Dual-Realm Architecture)
+================================================================================
+
+Architecture Overview:
+--------------------
+LaaS uses a dual-realm Keycloak setup:
+
+  laas realm (BROKER)
+  ├── Has laas-frontend client (for OAuth: Google, GitHub)
+  ├── Has IdP: laas-academy (for institutional SSO)
+  ├── All user SESSIONS are created here
+  └── User cookies: KEYCLOAK_SESSION, KEYCLOAK_IDENTITY
+
+  laas-academy realm (INSTITUTION IdP)
+  ├── Has laas-realm-broker client (for brokering from laas)
+  ├── Has test users (student accounts)
+  └── Only authenticates users, does NOT create sessions for laas-frontend
+
+Key Insight:
+-----------
+When a user logs in via "Sign in with institution" (LaaS Academy):
+  1. User authenticates against laas-academy realm
+  2. laas-academy verifies credentials
+  3. laas realm receives the assertion
+  4. laas realm CREATES the session (in laas realm!)
+  5. User cookies are set by laas realm, NOT laas-academy
+
+Same for Google OAuth:
+  1. User authenticates against Google
+  2. laas realm receives the callback
+  3. laas realm CREATES the session (in laas realm!)
+
+Bottom Line:
+-----------
+ALL sessions are in the laas realm. The laas-academy realm only
+authenticates users but does NOT maintain sessions for the laas-frontend client.
+
+================================================================================
+5. The "Already Authenticated" Error - Root Cause and Fix
+================================================================================
+
+The Error:
+---------
+"You are already authenticated as different user 'student' in this session.
+Please sign out first."
+
+Why It Happens:
+--------------
+1. User logs in via SSO (session created in laas realm, cookies set)
+2. User signs out from the app (local tokens cleared)
+3. User tries to log in via Google OAuth
+4. Keycloak sees the KEYCLOAK_SESSION cookie for laas realm
+5. Keycloak shows "already authenticated" because a session exists
+
+The Fix Requires TWO Things:
+---------------------------
+
+A. Keycloak Client Configuration (Valid Post Logout Redirect URIs)
+   In laas realm → Clients → laas-frontend → Access settings:
+   - Add: http://localhost:3000/signin to "Valid post logout redirect URIs"
+   This allows the logout endpoint to redirect back to the app.
+
+B. Frontend Sign-Out Code Changes
+   The sign-out must:
+   1. Store the id_token BEFORE clearing localStorage
+   2. Call Keycloak logout endpoint with id_token_hint
+   3. Include post_logout_redirect_uri
+
+Required Code Changes (app-shell.tsx):
+------------------------------------
+```
+const performSignOut = () => {
+  // Get ID token BEFORE clearing storage
+  const idToken = getIdToken();
+  
+  // Clear local tokens
+  localStorage.clear();
+  sessionStorage.clear();
+  
+  // Redirect to Keycloak logout
+  const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+  const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || "laas";
+  const appUrl = window.location.origin;
+  
+  if (keycloakUrl) {
+    let logoutUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/logout`;
+    const params = new URLSearchParams();
+    
+    if (idToken) {
+      params.set("id_token_hint", idToken);
+    }
+    params.set("post_logout_redirect_uri", `${appUrl}/signin`);
+    logoutUrl += `?${params.toString()}`;
+    
+    window.location.href = logoutUrl;
+  }
+};
+```
+
+Required Token Storage (token.ts):
+-------------------------------
+```
+export function saveTokens(tokens: AuthTokens & { idToken?: string }): void {
+  localStorage.setItem(ACCESS_KEY, tokens.accessToken);
+  localStorage.setItem(REFRESH_KEY, tokens.refreshToken);
+  if (tokens.idToken) {
+    localStorage.setItem(ID_TOKEN_KEY, tokens.idToken);
+  }
+}
+
+export function getIdToken(): string | null {
+  return localStorage.getItem(ID_TOKEN_KEY);
+}
+```
+
+Required Backend Change (auth.service.ts):
+---------------------------------------
+In handleOAuthCallback(), return id_token from Keycloak:
+```
+const kcTokens = await this.keycloak.exchangeCode(code, redirectUri);
+const idToken = kcTokens.id_token;  // Store this!
+return {
+  ...tokens,
+  idToken,  // Include in response
+};
+```
+
+Why id_token_hint is Required:
+----------------------------
+- Keycloak logout endpoint REQUIRES id_token_hint to identify which session to terminate
+- Without it, Keycloak returns "Missing parameters: id_token_hint"
+- The id_token is stored in the user's browser during login
+- It's retrieved during logout to terminate the correct session
+
+The Flow After Fix:
+-----------------
+1. User logs in via SSO
+2. Backend returns id_token, frontend stores it in localStorage
+3. User signs out
+4. Frontend retrieves id_token, calls Keycloak logout with id_token_hint
+5. Keycloak terminates the session, clears cookies
+6. User logs in via Google OAuth - works because session is gone
+
+================================================================================
+6. OAuth Buttons - prompt=login Parameter
+================================================================================
+
+Even with proper logout, OAuth buttons should include prompt=login:
+
+```
+function getOAuthUrl(provider: "google" | "github"): string {
+  const params = new URLSearchParams({
+    client_id: KEYCLOAK_CLIENT_ID,
+    redirect_uri: callbackUrl,
+    response_type: "code",
+    scope: "openid email profile",
+    kc_idp_hint: provider,
+    prompt: "login",  // Forces fresh authentication
+  });
+  params.append("_", Date.now().toString());  // Cache bust
+  return `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth?${params}`;
+}
+```
+
+What prompt=login Does:
+---------------------
+- Tells Keycloak to IGNORE any existing session
+- Forces the user to authenticate fresh
+- Acts as a safety net if logout didn't fully terminate the session
+- Works for Google, GitHub, and any OAuth provider
+
+================================================================================
+7. Troubleshooting Keycloak Logout Issues
+================================================================================
+
+Error: "Invalid redirect uri"
+-----------------------------
+Cause: post_logout_redirect_uri is not configured in the client
+Fix: Add the redirect URI to laas-frontend client in laas realm
+
+Error: "Missing parameters: id_token_hint"
+------------------------------------------
+Cause: Logout called without id_token_hint parameter
+Fix: Store id_token during login, use it in logout URL
+
+Error: "Invalid parameter: id_token_hint"
+----------------------------------------
+Cause: id_token doesn't match the session (different realms)
+Fix: Ensure OAuth and SSO both use the laas realm
+
+Error: "Client not found" in laas-academy
+----------------------------------------
+Cause: Trying to logout from laas-academy realm directly
+Fix: Always logout from laas realm where sessions are created
+
+Still Getting "Already Authenticated" After Logout:
+-------------------------------------------------
+1. Clear browser cookies for localhost:8080 manually
+2. Check if id_token is being stored during login
+3. Verify logout URL includes id_token_hint
+4. Use incognito window to test (isolated cookies)
+
+================================================================================

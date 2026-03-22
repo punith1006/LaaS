@@ -98,3 +98,234 @@ You’ll use this username/email and password when testing “Sign in with your 
 | Test password         | (the one you set in step 3) |
 
 If Keycloak is not on `http://localhost:8080`, replace that base URL everywhere in this guide with your Keycloak URL.
+
+---
+
+## 6. Configure Post-Logout Redirect (Required for Sign-Out)
+
+This step is CRITICAL for proper sign-out functionality. Without it, users will get "Invalid redirect uri" errors when signing out.
+
+1. In Keycloak admin, switch to **`laas`** realm (not laas-academy).
+2. Go to **Clients** → **laas-frontend**.
+3. Click on **Access settings** tab.
+4. Find **Valid post logout redirect URIs** field.
+5. Add: `http://localhost:3000/signin`
+6. **Save**.
+
+This allows Keycloak's logout endpoint to redirect users back to your app's sign-in page after signing out.
+
+---
+
+## 7. Configure laas-frontend Client Settings (Complete)
+
+For the complete OAuth + SSO setup, ensure your `laas-frontend` client has these settings:
+
+**General Settings:**
+| Field | Value |
+|-------|-------|
+| Client ID | `laas-frontend` |
+| Name | `LaaS Frontend` |
+| Enabled | ON |
+
+**Access Settings:**
+| Field | Value |
+|-------|-------|
+| Root URL | `http://localhost:3000` |
+| Home URL | `http://localhost:3000/signin` |
+| Valid redirect URIs | `http://localhost:3000/*` |
+| Valid post logout redirect URIs | `http://localhost:3000/signin` |
+| Web origins | `http://localhost:3000` |
+
+**Capability Config:**
+| Field | Value |
+|-------|-------|
+| Client authentication | OFF (for public SPA) |
+| Authorization | OFF |
+| Standard flow | ON (required for OAuth) |
+| Direct access grants | OFF |
+
+---
+
+## 8. Session Management in Dual-Realm Architecture
+
+Understanding how sessions work is crucial for debugging auth issues.
+
+### Architecture Summary
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         laas realm                               │
+│  (BROKER - All sessions created here)                           │
+│                                                                 │
+│  ┌──────────────────┐    ┌──────────────────┐                 │
+│  │  laas-frontend   │    │   Google OAuth   │                 │
+│  │     client       │    │    (google)       │                 │
+│  └──────────────────┘    └──────────────────┘                 │
+│         │                        │                             │
+│         └────────────────────────┼─────────────────────────┐   │
+│                                  │                         │   │
+│                                  ▼                         │   │
+│                    ┌─────────────────────┐                 │   │
+│                    │  KEYCLOAK_SESSION   │                 │   │
+│                    │  KEYCLOAK_IDENTITY  │◄── Browser      │   │
+│                    │  (cookies)          │    Cookies       │   │
+│                    └─────────────────────┘                 │   │
+└──────────────────────────────────────────────────────────────┘   │
+                                │                                  │
+                                │ (user authenticates here)        │
+                                ▼                                  │
+┌─────────────────────────────────────────────────────────────────┐
+│                     laas-academy realm                           │
+│  (INSTITUTION IdP - Only authenticates, does NOT create        │
+│   sessions for laas-frontend)                                   │
+│                                                                 │
+│  ┌──────────────────────┐                                       │
+│  │ laas-realm-broker   │                                       │
+│  │      client         │◄── Used for brokering SSO             │
+│  └──────────────────────┘                                       │
+│                                                                 │
+│  ┌──────────────────────┐                                       │
+│  │   Test Users         │                                       │
+│  │   (student)         │◄── Credentials verified here          │
+│  └──────────────────────┘                                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Points
+
+1. **All sessions are in laas realm** - Whether a user logs in via Google, GitHub, or LaaS Academy SSO, the session is created in the laas realm.
+
+2. **laas-academy is only for authentication** - It verifies credentials but doesn't create sessions for your app.
+
+3. **Sign-out must target laas realm** - Always logout from `laas` realm using the `laas-frontend` client.
+
+4. **id_token_hint is required** - To logout, you must provide the `id_token` that was issued during login.
+
+---
+
+## 9. Frontend Code Requirements for Proper Sign-Out
+
+### Required Environment Variables (.env.local)
+
+```bash
+NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8080
+NEXT_PUBLIC_KEYCLOAK_REALM=laas
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=laas-frontend
+```
+
+### Required Token Storage (src/lib/token.ts)
+
+```typescript
+const ID_TOKEN_KEY = "laas_id_token";
+
+export function saveTokens(tokens: AuthTokens & { idToken?: string }): void {
+  localStorage.setItem(ACCESS_KEY, tokens.accessToken);
+  localStorage.setItem(REFRESH_KEY, tokens.refreshToken);
+  if (tokens.idToken) {
+    localStorage.setItem(ID_TOKEN_KEY, tokens.idToken);
+  }
+}
+
+export function getIdToken(): string | null {
+  return localStorage.getItem(ID_TOKEN_KEY);
+}
+```
+
+### Sign-Out Flow (src/components/app-shell.tsx)
+
+```typescript
+const performSignOut = () => {
+  // Get ID token BEFORE clearing storage
+  const idToken = getIdToken();
+  
+  // Clear local tokens
+  localStorage.clear();
+  sessionStorage.clear();
+  
+  // Build Keycloak logout URL
+  const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+  const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || "laas";
+  const appUrl = window.location.origin;
+  
+  if (keycloakUrl) {
+    let logoutUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/logout`;
+    const params = new URLSearchParams();
+    
+    if (idToken) {
+      params.set("id_token_hint", idToken);
+    }
+    params.set("post_logout_redirect_uri", `${appUrl}/signin`);
+    logoutUrl += `?${params.toString()}`;
+    
+    window.location.href = logoutUrl;
+  } else {
+    router.push("/signin");
+  }
+};
+```
+
+### OAuth Buttons with prompt=login (src/components/auth/oauth-buttons.tsx)
+
+```typescript
+function getOAuthUrl(provider: "google" | "github"): string {
+  const callbackUrl = `${window.location.origin}/callback`;
+
+  if (KEYCLOAK_URL && KEYCLOAK_REALM && KEYCLOAK_CLIENT_ID) {
+    sessionStorage.clear();  // Clear any lingering session data
+    
+    const params = new URLSearchParams({
+      client_id: KEYCLOAK_CLIENT_ID,
+      redirect_uri: callbackUrl,
+      response_type: "code",
+      scope: "openid email profile",
+      kc_idp_hint: provider,
+      prompt: "login",  // Forces fresh authentication
+    });
+    params.append("_", Date.now().toString());  // Cache bust
+    return `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth?${params.toString()}`;
+  }
+
+  return "/dashboard";
+}
+```
+
+---
+
+## 10. Troubleshooting
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Invalid redirect uri" | Post-logout redirect not configured | Add `http://localhost:3000/signin` to Valid post logout redirect URIs |
+| "Missing parameters: id_token_hint" | Logout called without id_token | Store id_token during login, use in logout URL |
+| "Invalid parameter: id_token_hint" | id_token from wrong realm | Ensure both OAuth and SSO use laas realm |
+| "Client not found" in laas-academy | Trying to logout from wrong realm | Always logout from laas realm |
+| "Already authenticated" after sign-out | Session not terminated | Verify id_token is stored, check logout URL |
+| Blank page after sign-out | post_logout_redirect_uri not whitelisted | Configure redirect URI in client settings |
+
+---
+
+## 11. Testing the Complete Flow
+
+### Test 1: SSO → Sign Out → Google OAuth
+1. Clear all cookies for localhost:8080
+2. Go to app → Sign in with institution → LaaS Academy
+3. Login with student credentials
+4. Click Sign Out
+5. Should redirect to Keycloak logout, then to /signin
+6. Click Google Sign In
+7. Should show Google login (NOT "already authenticated" error)
+
+### Test 2: Google OAuth → Sign Out → SSO
+1. Clear all cookies for localhost:8080
+2. Go to app → Google Sign In
+3. Complete Google authentication
+4. Click Sign Out
+5. Should redirect to Keycloak logout, then to /signin
+6. Click Sign in with institution → LaaS Academy
+7. Should show LaaS Academy login (NOT "already authenticated" error)
+
+### Test 3: Same Account Re-login
+1. Login via any method
+2. Sign Out
+3. Login again via same method
+4. Should work without any errors

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutModal } from "./sign-out-modal";
+import { getIdToken } from "@/lib/token";
 import { getBillingData, getPlatformHealth, PlatformHealth } from "@/lib/api";
 
 /**
@@ -105,31 +106,48 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   /**
    * Perform graceful sign-out
-   * Clears local tokens and redirects to sign-in
+   * Clears local tokens AND terminates Keycloak SSO session in the laas realm
+   * The session exists in laas realm (the broker), not laas-academy
    */
   const performSignOut = () => {
+    // Get ID token for Keycloak logout BEFORE clearing storage
+    const idToken = getIdToken();
+    
     // Store dark mode preference before clearing
     const darkMode = localStorage.getItem("darkMode");
     
-    // Clear ALL localStorage (including tokens)
+    // Clear all local/session storage
     localStorage.clear();
+    sessionStorage.clear();
     
-    // Restore dark mode preference
+    // Restore dark mode preference if needed
     if (darkMode) {
       localStorage.setItem("darkMode", darkMode);
     }
 
-    // Clear ALL sessionStorage
-    sessionStorage.clear();
-
     // Close the modal
     setIsSignOutModalOpen(false);
 
-    // App-only sign-out: Clear local tokens and redirect to sign-in
-    // This doesn't terminate the Keycloak SSO session, but that's fine because:
-    // 1. OAuth buttons use prompt=login to force fresh authentication
-    // 2. The user can always logout from Keycloak directly if needed
-    router.push("/signin");
+    // Terminate Keycloak SSO session in laas realm (where the session actually exists)
+    const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+    const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || "laas";
+    
+    if (keycloakUrl) {
+      const appUrl = window.location.origin;
+      // Logout from the laas realm (the broker realm where OAuth/SSO sessions are created)
+      let logoutUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/logout`;
+      const params = new URLSearchParams();
+      
+      if (idToken) {
+        params.set("id_token_hint", idToken);
+      }
+      params.set("post_logout_redirect_uri", `${appUrl}/signin`);
+      logoutUrl += `?${params.toString()}`;
+      
+      window.location.href = logoutUrl;
+    } else {
+      router.push("/signin");
+    }
   };
 
   return (
