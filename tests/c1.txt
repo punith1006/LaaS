@@ -43,11 +43,11 @@ docker run -d \
   -v /usr/lib/fake_sysconf.so:/usr/lib/fake_sysconf.so \
   -v /tmp/vgpulock-3:/tmp/vgpulock \
   -v /usr/bin/nvidia-smi:/usr/bin/nvidia-smi.real \
-  -v /tmp/nvidia-smi-wrapper:/usr/bin/nvidia-smi \
+  -v /etc/laas/nvidia-smi-wrapper:/usr/bin/nvidia-smi \
   -v /usr/bin/passwd:/usr/bin/passwd.real \
-  -v /tmp/passwd-wrapper:/usr/bin/passwd \
-  -v /tmp/supervisord-hami.conf:/etc/supervisord.conf \
-  -v /tmp/bash.bashrc.orig:/etc/bash.bashrc \
+  -v /etc/laas/passwd-wrapper:/usr/bin/passwd \
+  -v /etc/laas/supervisord-hami.conf:/etc/supervisord.conf \
+  -v /etc/laas/bash.bashrc:/etc/bash.bashrc \
   -v /var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:ro \
   -v /var/lib/lxcfs/proc/meminfo:/proc/meminfo:ro \
   -v /var/lib/lxcfs/proc/stat:/proc/stat:ro \

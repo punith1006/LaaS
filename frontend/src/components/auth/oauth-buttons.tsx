@@ -13,6 +13,9 @@ function getOAuthUrl(provider: "google" | "github"): string {
   const callbackUrl = `${window.location.origin}/callback`;
 
   if (KEYCLOAK_URL && KEYCLOAK_REALM && KEYCLOAK_CLIENT_ID) {
+    // Clear any lingering session data before OAuth
+    sessionStorage.clear();
+    
     const params = new URLSearchParams({
       client_id: KEYCLOAK_CLIENT_ID,
       redirect_uri: callbackUrl,

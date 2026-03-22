@@ -28,6 +28,9 @@ function getSsoUrl(institution: Institution): string {
   const callbackUrl = `${window.location.origin}/callback`;
 
   if (KEYCLOAK_URL && KEYCLOAK_REALM && KEYCLOAK_CLIENT_ID) {
+    // Clear any lingering session data before OAuth
+    sessionStorage.clear();
+    
     const params = new URLSearchParams({
       client_id: KEYCLOAK_CLIENT_ID,
       redirect_uri: callbackUrl,
@@ -36,6 +39,8 @@ function getSsoUrl(institution: Institution): string {
       kc_idp_hint: institution.idpAlias || institution.id,
       prompt: "login", // Force Keycloak to show login page instead of using existing session
     });
+    // Add a cache-busting parameter to prevent browser caching
+    params.append("_", Date.now().toString());
     return `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth?${params.toString()}`;
   }
 

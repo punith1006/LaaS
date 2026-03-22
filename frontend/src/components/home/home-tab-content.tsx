@@ -147,7 +147,6 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
 
   const quotaGb = dashboardData?.storage.quotaGb ?? user?.storageQuotaGb ?? 5;
   const usedGb = dashboardData?.storage.usedGb ?? 0;
-  const storageStatus = dashboardData?.storage.status || user?.storageProvisioningStatus || "N/A";
   const isInstitution = user?.authType === "university_sso";
 
   // Quick stats from API
@@ -158,17 +157,35 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
     totalNotebooks: 0,
   };
 
-  // Format storage status for display
+  // Format storage status for display with live health check
   const getStorageStatusDisplay = () => {
-    switch (storageStatus) {
-      case "provisioned":
-        return { text: "Live", color: "#3fb950" };
+    const dbStatus = dashboardData?.storage?.status || user?.storageProvisioningStatus || "N/A";
+    const healthStatus = dashboardData?.storage?.healthStatus;
+
+    // If DB says provisioned, use live health check result
+    if (dbStatus === "provisioned") {
+      if (healthStatus === "live") {
+        return { text: "Live", color: "#3fb950" };        // Green - service healthy
+      } else if (healthStatus === "unreachable") {
+        return { text: "Unreachable", color: "#f85149" };  // Red - service down
+      }
+      // healthStatus is null (no check performed) - fall back to DB status
+      return { text: "Live", color: "#3fb950" };
+    }
+
+    // Non-provisioned states from DB
+    switch (dbStatus) {
       case "pending":
-        return { text: "Provisioning", color: "#d29922" };
+      case "provisioning":
+        return { text: "Provisioning", color: "#d29922" }; // Amber
       case "failed":
-        return { text: "Error", color: "#f85149" };
+      case "error":
+        return { text: "Error", color: "#f85149" };        // Red
+      case "wiping":
+      case "wiped":
+        return { text: "Inactive", color: "#8b949e" };     // Gray
       default:
-        return { text: "Inactive", color: "#8b949e" };
+        return { text: "Inactive", color: "#8b949e" };     // Gray
     }
   };
 

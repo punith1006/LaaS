@@ -181,6 +181,32 @@ export class StorageService {
   }
 
   /**
+   * Check if the Python storage service is healthy and reachable.
+   * Returns null if the service is not configured.
+   */
+  async checkStorageHealth(): Promise<{ healthy: boolean; error?: string } | null> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      return null;
+    }
+
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/health`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout - fast fail
+
+    try {
+      const res = await fetch(url, { method: 'GET', signal: controller.signal });
+      clearTimeout(timeoutId);
+      return { healthy: res.ok, error: res.ok ? undefined : 'Service unhealthy' };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      return { healthy: false, error: err instanceof Error ? err.message : 'Unreachable' };
+    }
+  }
+
+  /**
    * Fetch live storage usage (used/quota bytes) from the Python service.
    * Returns null if the service is not configured or the dataset is not found.
    */

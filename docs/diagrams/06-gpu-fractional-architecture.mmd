@@ -1,0 +1,39 @@
+%% LaaS Architecture - GPU Fractional Desktop (Key Differentiator)
+%% Clean impactful diagram showing GPU sharing
+
+graph TD
+    GPU["RTX 5090<br/>(32GB VRAM)"]
+    
+    subgraph CONTAINERS["Concurrent Containers"]
+        C1["Container 1<br/>Pro: 4GB"]
+        C2["Container 2<br/>Power: 8GB"]
+        C3["Container 3<br/>Pro: 4GB"]
+        C4["Container 4<br/>Max: 16GB"]
+    end
+    
+    subgraph ENFORCEMENT["Enforcement Stack"]
+        L1["HAMi-core<br/>(libvgpu.so · CUDA interception)"]
+        L2["CUDA MPS<br/>(VRAM pinning · SM partitioning)"]
+        L3["Selkies EGL<br/>(VirtualGL · WebRTC · NVENC)"]
+    end
+    
+    TIERS["Tiers: Pro 4GB · Power 8GB<br/>Max 16GB · Full 32GB"]
+
+    GPU --> CONTAINERS
+    CONTAINERS --> L1
+    L1 --> L2
+    L2 --> L3
+    GPU -.- TIERS
+
+    %% Warm color theme
+    style GPU fill:#C9E4DE,stroke:#8B7355,stroke-width:3px,color:#2C2C2C
+    style CONTAINERS fill:#FDF8F0,stroke:#8B7355,color:#2C2C2C
+    style C1 fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style C2 fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style C3 fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style C4 fill:#F4D3D3,stroke:#8B7355,color:#2C2C2C
+    style ENFORCEMENT fill:#FDF8F0,stroke:#8B7355,color:#2C2C2C
+    style L1 fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style L2 fill:#D4C4A8,stroke:#8B7355,color:#2C2C2C
+    style L3 fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style TIERS fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C

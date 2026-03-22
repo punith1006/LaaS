@@ -4,8 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutModal } from "./sign-out-modal";
-import { clearTokens, getIdToken } from "@/lib/token";
-import { getBillingData } from "@/lib/api";
+import { getBillingData, getPlatformHealth, PlatformHealth } from "@/lib/api";
 
 /**
  * Base screen template — Utilitarian minimalism (Design\template.txt).
@@ -21,6 +20,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [hasActiveInstances, setHasActiveInstances] = useState(false);
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [platformHealth, setPlatformHealth] = useState<PlatformHealth | null>(null);
+  const [showHealthTooltip, setShowHealthTooltip] = useState(false);
 
   // Load dark mode preference from localStorage on mount
   useEffect(() => {
@@ -41,6 +42,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setCreditBalance(null);
       });
   }, []);
+
+  // Fetch platform health on mount and poll every 30 seconds
+  useEffect(() => {
+    const fetchHealth = async () => {
+      const health = await getPlatformHealth();
+      setPlatformHealth(health);
+    };
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Helper functions for status indicator
+  const getStatusColor = () => {
+    if (!platformHealth) return "#8b949e"; // Gray - loading
+    switch (platformHealth.overall) {
+      case "operational": return "#22c55e"; // Green
+      case "degraded": return "#d29922";    // Amber
+      case "outage": return "#f85149";      // Red
+      default: return "#8b949e";
+    }
+  };
+
+  const getStatusLabel = () => {
+    if (!platformHealth) return "Checking...";
+    switch (platformHealth.overall) {
+      case "operational": return "All Systems Operational";
+      case "degraded": return "Some Services Degraded";
+      case "outage": return "Service Disruption";
+      default: return "Checking...";
+    }
+  };
 
   const toggleDarkMode = () => {
     const newMode = !isDarkMode;
@@ -72,20 +105,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   /**
    * Perform graceful sign-out
-   * Clears ALL session data, cache, and user info
-   * Also logs out from Keycloak to prevent session conflicts
+   * Clears local tokens and redirects to sign-in
    */
   const performSignOut = () => {
-    // Get ID token before clearing
-    const idToken = getIdToken();
-
-    // Store dark mode preference temporarily
+    // Store dark mode preference before clearing
     const darkMode = localStorage.getItem("darkMode");
     
     // Clear ALL localStorage (including tokens)
     localStorage.clear();
     
-    // Restore dark mode preference (optional - remove if you want complete reset)
+    // Restore dark mode preference
     if (darkMode) {
       localStorage.setItem("darkMode", darkMode);
     }
@@ -96,18 +125,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Close the modal
     setIsSignOutModalOpen(false);
 
-    // Redirect to Keycloak logout to clear SSO session
-    const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
-    const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
-    
-    if (keycloakUrl && keycloakRealm && idToken) {
-      // Use Keycloak's logout endpoint with id_token_hint (no redirect - Keycloak will show logout page)
-      const logoutUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/logout?id_token_hint=${encodeURIComponent(idToken)}`;
-      window.location.href = logoutUrl;
-    } else {
-      // Fallback: just redirect to sign-in page
-      router.push("/signin");
-    }
+    // App-only sign-out: Clear local tokens and redirect to sign-in
+    // This doesn't terminate the Keycloak SSO session, but that's fine because:
+    // 1. OAuth buttons use prompt=login to force fresh authentication
+    // 2. The user can always logout from Keycloak directly if needed
+    router.push("/signin");
   };
 
   return (
@@ -175,9 +197,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Credits Remaining: {creditBalance !== null ? `₹${creditBalance.toFixed(2)}` : "—"}
           </div>
 
-          {/* Status indicator */}
+          {/* Status indicator with tooltip */}
           <div
-            className="flex items-center"
+            className="flex items-center relative"
             style={{
               fontFamily: "ui-monospace, monospace",
               fontSize: "1rem",
@@ -187,7 +209,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               color: "var(--fgColor-default)",
               padding: "8px",
               gap: "8px",
+              cursor: "default",
             }}
+            onMouseEnter={() => setShowHealthTooltip(true)}
+            onMouseLeave={() => setShowHealthTooltip(false)}
           >
             Status
             <span
@@ -195,9 +220,92 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 width: "10px",
                 height: "10px",
                 borderRadius: "50%",
-                backgroundColor: "#22c55e",
+                backgroundColor: getStatusColor(),
+                transition: "background-color 0.3s ease",
               }}
             />
+            
+            {/* Hover tooltip */}
+            {showHealthTooltip && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: "8px",
+                  backgroundColor: "var(--bgColor-default, #0d1117)",
+                  border: "1px solid var(--borderColor-default, #30363d)",
+                  borderRadius: "8px",
+                  padding: "12px 16px",
+                  minWidth: "260px",
+                  zIndex: 9999,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                }}
+              >
+                {/* Overall status header */}
+                <div style={{
+                  fontFamily: "ui-monospace, monospace",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  color: getStatusColor(),
+                  marginBottom: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}>
+                  <span style={{
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    backgroundColor: getStatusColor(),
+                  }} />
+                  {getStatusLabel()}
+                </div>
+                
+                {/* Per-service status list */}
+                {platformHealth?.services.map((service, i) => (
+                  <div key={i} style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "6px 0",
+                    borderTop: i === 0 ? "1px solid var(--borderColor-default, #30363d)" : "none",
+                    borderBottom: "1px solid var(--borderColor-default, #21262d)",
+                  }}>
+                    <span style={{
+                      fontFamily: "var(--font-sans, sans-serif)",
+                      fontSize: "0.8rem",
+                      color: "var(--fgColor-muted, #8b949e)",
+                      textTransform: "none",
+                    }}>
+                      {service.message}
+                    </span>
+                    <span style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      backgroundColor: service.status === 'healthy' ? '#22c55e' : '#f85149',
+                      flexShrink: 0,
+                      marginLeft: "12px",
+                    }} />
+                  </div>
+                ))}
+
+                {/* If no data yet */}
+                {!platformHealth && (
+                  <div style={{
+                    fontFamily: "var(--font-sans, sans-serif)",
+                    fontSize: "0.8rem",
+                    color: "var(--fgColor-muted, #8b949e)",
+                    textTransform: "none",
+                  }}>
+                    Checking service health...
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Mode toggle */}

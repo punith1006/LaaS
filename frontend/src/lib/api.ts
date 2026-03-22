@@ -218,6 +218,7 @@ export interface HomeDashboardData {
     quotaGb: number;
     usedGb: number;
     status: string;
+    healthStatus?: string | null; // 'live' | 'unreachable' | null
   };
   quickStats: {
     totalSessions: number;
@@ -314,6 +315,31 @@ export async function getBillingData(): Promise<BillingData | null> {
     return res.json();
   }
   return null;
+}
+
+// Platform Health API Types
+export interface PlatformHealth {
+  overall: 'operational' | 'degraded' | 'outage';
+  services: {
+    name: string;
+    status: 'healthy' | 'unhealthy';
+    message: string;
+  }[];
+}
+
+export async function getPlatformHealth(): Promise<PlatformHealth | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/dashboard/health`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 // Storage API Types

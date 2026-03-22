@@ -26,4 +26,10 @@ export class DashboardController {
   ): Promise<BillingData> {
     return this.dashboardService.getBillingData(req.user.id);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('health')
+  async getPlatformHealth() {
+    return this.dashboardService.getPlatformHealth();
+  }
 }

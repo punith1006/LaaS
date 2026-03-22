@@ -1,0 +1,32 @@
+%% LaaS Architecture - File Store (Simplified)
+%% Clean vertical pipeline with 7 nodes
+
+graph TD
+    BROWSER["Browser<br/>(File Store UI)"]
+    BACKEND["NestJS Backend<br/>(Storage Module)"]
+    FLASK["Python Flask<br/>(100.100.66.101:9999)"]
+    ZFS["ZFS Dataset<br/>(/datapool/users/uid)"]
+    NFS["NFS Export"]
+    MOUNT["Compute Node Mount<br/>(/mnt/nfs/users/uid)"]
+    CONTAINER["Container Volume<br/>(/home/ubuntu)"]
+    
+    OPS["Operations: List · Mkdir<br/>Upload · Download · Delete"]
+
+    BROWSER -->|"REST + JWT"| BACKEND
+    BACKEND -->|"X-Provision-Secret"| FLASK
+    FLASK -->|"ZFS/OS commands"| ZFS
+    ZFS --> NFS
+    NFS --> MOUNT
+    MOUNT -->|"Bind mount"| CONTAINER
+    
+    BROWSER -.- OPS
+
+    %% Warm color theme
+    style BROWSER fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style BACKEND fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style FLASK fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style ZFS fill:#D4C4A8,stroke:#8B7355,color:#2C2C2C
+    style NFS fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style MOUNT fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style CONTAINER fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style OPS fill:#FDF8F0,stroke:#8B7355,color:#2C2C2C

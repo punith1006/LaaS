@@ -18,6 +18,7 @@ export interface HomeDashboardData {
     quotaGb: number;
     usedGb: number;
     status: string;
+    healthStatus: string | null; // 'live' | 'unreachable' | null
   };
   quickStats: {
     totalSessions: number;
@@ -151,6 +152,15 @@ export class DashboardService {
       }
     }
 
+    // Check storage service health if storage is provisioned
+    let healthStatus: string | null = null;
+    if (user.storageProvisioningStatus === 'provisioned' && user.storageUid) {
+      const health = await this.storageService.checkStorageHealth();
+      if (health) {
+        healthStatus = health.healthy ? 'live' : 'unreachable';
+      }
+    }
+
     // Get recent activity (placeholder - can be expanded)
     const recentActivity: ActivityItem[] = [];
 
@@ -170,6 +180,7 @@ export class DashboardService {
         quotaGb,
         usedGb,
         status: user.storageProvisioningStatus ?? 'unknown',
+        healthStatus,
       },
       quickStats: {
         totalSessions,
@@ -439,5 +450,57 @@ export class DashboardService {
       storageUsagePercent,
       hourlyData, // Today's hourly spend data for the chart
     };
+  }
+
+  /**
+   * Get platform-wide health status for the header STATUS indicator.
+   * Checks multiple backend services and returns customer-friendly status.
+   */
+  async getPlatformHealth(): Promise<{
+    overall: 'operational' | 'degraded' | 'outage';
+    services: {
+      name: string;
+      status: 'healthy' | 'unhealthy';
+      message: string;
+    }[];
+  }> {
+    const services: { name: string; status: 'healthy' | 'unhealthy'; message: string }[] = [];
+
+    // 1. Database check — simple query with timeout
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      services.push({ name: 'Database', status: 'healthy', message: 'Database is responsive' });
+    } catch {
+      services.push({ name: 'Database', status: 'unhealthy', message: 'Database connectivity issue' });
+    }
+
+    // 2. Storage service check — reuse existing method
+    try {
+      const health = await this.storageService.checkStorageHealth();
+      if (health?.healthy) {
+        services.push({ name: 'Storage', status: 'healthy', message: 'Storage service is online' });
+      } else {
+        services.push({ name: 'Storage', status: 'unhealthy', message: 'Storage service is not reachable' });
+      }
+    } catch {
+      services.push({ name: 'Storage', status: 'unhealthy', message: 'Storage service is not reachable' });
+    }
+
+    // 3. Compute service check — check if the compute/GPU host is reachable
+    // For now, skip this one since we don't have a compute health endpoint yet
+    // In future, add: services.push(...)
+
+    // Determine overall status
+    const unhealthyCount = services.filter(s => s.status === 'unhealthy').length;
+    let overall: 'operational' | 'degraded' | 'outage';
+    if (unhealthyCount === 0) {
+      overall = 'operational';
+    } else if (unhealthyCount < services.length) {
+      overall = 'degraded';
+    } else {
+      overall = 'outage';
+    }
+
+    return { overall, services };
   }
 }

@@ -1,0 +1,37 @@
+%% LaaS Architecture - Billing & Payment Flow
+%% Clean sequence diagram for credit purchase
+
+sequenceDiagram
+    autonumber
+    
+    participant Browser
+    participant Backend
+    participant Razorpay
+    participant Database
+
+    rect rgb(245, 230, 211)
+        Note over Browser,Database: Credit Purchase Flow
+        Browser->>Backend: Create order (₹500)
+        Backend->>Razorpay: Create Razorpay order
+        Razorpay-->>Backend: Order ID
+        Backend-->>Browser: Order details + key
+    end
+
+    rect rgb(232, 213, 183)
+        Note over Browser,Razorpay: Payment UI
+        Browser->>Razorpay: Open checkout
+        Razorpay-->>Browser: Payment success
+    end
+
+    rect rgb(201, 228, 222)
+        Note over Browser,Database: Verification & Credit
+        Browser->>Backend: Verify payment
+        Backend->>Razorpay: Verify signature
+        Razorpay-->>Backend: Valid
+        Backend->>Database: Credit wallet
+        Backend->>Database: Log transaction
+        Backend->>Database: Generate invoice
+        Backend-->>Browser: New balance
+    end
+
+    Note over Browser,Database: Session billing deducted from wallet on session end
