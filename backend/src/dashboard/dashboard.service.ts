@@ -412,6 +412,42 @@ export class DashboardService {
       );
     });
 
+    // Project active session spend across ALL hours the session was running today
+    // This distributes unbilled cost proportionally, showing accurate hourly rates
+    for (const session of activeSessions) {
+      if (!session.startedAt || !session.computeConfig) continue;
+
+      // Find last billing charge for this session to know what's already billed
+      const lastCharge = await this.prisma.billingCharge.findFirst({
+        where: { sessionId: session.id, chargeType: 'compute' },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const billedUntil = lastCharge ? lastCharge.createdAt : session.startedAt;
+      const rateCentsPerHour = session.computeConfig.basePricePerHourCents;
+
+      // Distribute across each hour the session was active (unbilled portion)
+      const startHour = billedUntil < todayStart ? 0 : billedUntil.getHours();
+
+      for (let h = startHour; h <= currentHour; h++) {
+        // Calculate how many seconds of this hour are covered by the unbilled period
+        const hourStart = new Date(todayStart);
+        hourStart.setHours(h, 0, 0, 0);
+        const hourEnd = new Date(todayStart);
+        hourEnd.setHours(h + 1, 0, 0, 0);
+
+        const effectiveStart = billedUntil > hourStart ? billedUntil : hourStart;
+        const effectiveEnd = now < hourEnd ? now : hourEnd;
+
+        const secondsInHour = Math.max(0, (effectiveEnd.getTime() - effectiveStart.getTime()) / 1000);
+        const costCents = Math.round((secondsInHour / 3600) * rateCentsPerHour);
+
+        if (costCents > 0) {
+          chargesByHour.set(h, (chargesByHour.get(h) ?? 0) + costCents);
+        }
+      }
+    }
+
     // Build hourly data from 00:00 to current hour
     const hourlyData: HourlySpendData[] = [];
     let cumulativeSpend = 0;

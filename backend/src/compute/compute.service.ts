@@ -8,7 +8,7 @@ import {
   HttpException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import * as crypto from 'crypto';
@@ -1438,6 +1438,256 @@ export class ComputeService {
           payload: { reason: 'container_exited', durationSeconds, finalCostCents },
         },
       });
+    });
+  }
+
+  // ============================================================================
+  // HOURLY COMPUTE BILLING (Cron job)
+  // Bills running sessions incrementally every hour, deducts from wallet
+  // ============================================================================
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async processHourlyComputeBilling(): Promise<void> {
+    const billingHour = new Date();
+    // Round down to the start of current hour for idempotency key
+    billingHour.setMinutes(0, 0, 0);
+
+    this.logger.log(`Starting hourly compute billing cycle for ${billingHour.toISOString()}`);
+
+    try {
+      // Find all sessions with status = 'running' and startedAt != null
+      const runningSessions = await this.prisma.session.findMany({
+        where: {
+          status: 'running',
+          startedAt: { not: null },
+        },
+        include: {
+          computeConfig: true,
+        },
+      });
+
+      if (runningSessions.length === 0) {
+        this.logger.debug('No running sessions to bill');
+        return;
+      }
+
+      this.logger.log(`Processing hourly billing for ${runningSessions.length} running session(s)`);
+
+      let successCount = 0;
+      let skipCount = 0;
+      let errorCount = 0;
+
+      for (const session of runningSessions) {
+        try {
+          const result = await this.processSessionHourlyBilling(
+            {
+              id: session.id,
+              userId: session.userId,
+              instanceName: session.instanceName || session.id,
+              startedAt: session.startedAt,
+              computeConfigId: session.computeConfigId,
+              computeConfig: session.computeConfig,
+            },
+            billingHour,
+          );
+          if (result === 'charged') successCount++;
+          else if (result === 'skipped') skipCount++;
+        } catch (error) {
+          errorCount++;
+          this.logger.error(`Failed hourly billing for session ${session.id}: ${error.message}`);
+        }
+      }
+
+      this.logger.log(
+        `Compute billing cycle complete: ${successCount} charged, ${skipCount} skipped, ${errorCount} errors`,
+      );
+    } catch (error) {
+      this.logger.error(`Compute billing cycle failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Process hourly billing for a single running session.
+   * Bills INCREMENTALLY from the last billing charge (or session start) to now.
+   */
+  private async processSessionHourlyBilling(
+    session: {
+      id: string;
+      userId: string;
+      instanceName: string;
+      startedAt: Date | null;
+      computeConfigId: string;
+      computeConfig: { basePricePerHourCents: number } | null;
+    },
+    billingHour: Date,
+  ): Promise<'charged' | 'skipped'> {
+    if (!session.startedAt || !session.computeConfig) {
+      return 'skipped';
+    }
+
+    const startedAt = session.startedAt; // Capture for TypeScript narrowing
+    const rateCentsPerHour = session.computeConfig.basePricePerHourCents;
+    if (rateCentsPerHour <= 0) {
+      return 'skipped';
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Idempotency check: has this session already been charged for this hour?
+      const existingCharge = await tx.billingCharge.findFirst({
+        where: {
+          sessionId: session.id,
+          chargeType: 'compute',
+          createdAt: {
+            gte: billingHour,
+            lt: new Date(billingHour.getTime() + 3600000), // +1 hour
+          },
+        },
+      });
+
+      if (existingCharge) {
+        this.logger.debug(
+          `Session ${session.id} already charged for ${billingHour.toISOString()}, skipping`,
+        );
+        return 'skipped';
+      }
+
+      // 2. Find the LAST hourly BillingCharge for this session (if any) to determine last billed time
+      const lastCharge = await tx.billingCharge.findFirst({
+        where: {
+          sessionId: session.id,
+          chargeType: 'compute',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // 3. Calculate billable duration: from lastBilledAt (or startedAt if no prior charge) to now
+      const billedUntil = lastCharge ? lastCharge.createdAt : startedAt;
+      const now = new Date();
+      const unbilledSeconds = Math.max(0, Math.floor((now.getTime() - billedUntil.getTime()) / 1000));
+
+      // Only bill if there's at least 60 seconds of unbilled time (avoid micro-charges)
+      if (unbilledSeconds < 60) {
+        this.logger.debug(`Session ${session.id} has only ${unbilledSeconds}s unbilled, skipping`);
+        return 'skipped';
+      }
+
+      // 4. Calculate cost: (billableDurationSeconds / 3600) * basePricePerHourCents
+      const chargeCents = Math.round((unbilledSeconds / 3600) * rateCentsPerHour);
+
+      if (chargeCents <= 0) {
+        return 'skipped';
+      }
+
+      // 5. Get user's wallet
+      const wallet = await tx.wallet.findFirst({
+        where: { userId: session.userId },
+      });
+
+      if (!wallet) {
+        this.logger.warn(`No wallet found for user ${session.userId}, still creating charge record`);
+      }
+
+      const currentBalance = Number(wallet?.balanceCents ?? 0);
+      let walletTransactionId: string | null = null;
+
+      // 6. If wallet exists and has sufficient funds, deduct and create transaction
+      if (wallet && currentBalance >= chargeCents) {
+        const newBalance = BigInt(wallet.balanceCents) - BigInt(chargeCents);
+
+        // Create WalletTransaction
+        const walletTxn = await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            userId: session.userId,
+            txnType: 'debit',
+            amountCents: BigInt(chargeCents),
+            balanceAfterCents: newBalance,
+            referenceType: 'compute_billing',
+            referenceId: session.id,
+            description: `Hourly compute: ${session.instanceName || session.id}`,
+          },
+        });
+        walletTransactionId = walletTxn.id;
+
+        // Deduct from wallet
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            balanceCents: newBalance,
+            lifetimeSpentCents: { increment: chargeCents },
+          },
+        });
+
+        this.logger.log(
+          `Charged session ${session.id}: ${chargeCents} paise for ${unbilledSeconds}s (${(unbilledSeconds / 60).toFixed(1)} min)`,
+        );
+      } else if (wallet) {
+        // Insufficient funds - still create the charge record but log warning
+        this.logger.warn(
+          `Session ${session.id} user has insufficient funds (${currentBalance} < ${chargeCents}), creating charge record without deduction`,
+        );
+      }
+
+      // 7. Create BillingCharge record
+      await tx.billingCharge.create({
+        data: {
+          userId: session.userId,
+          chargeType: 'compute',
+          sessionId: session.id,
+          computeConfigId: session.computeConfigId,
+          durationSeconds: unbilledSeconds,
+          rateCentsPerHour: rateCentsPerHour,
+          amountCents: BigInt(chargeCents),
+          currency: 'INR',
+          walletTransactionId,
+        },
+      });
+
+      // 8. Update session's cumulative cost
+      await tx.session.update({
+        where: { id: session.id },
+        data: {
+          cumulativeCostCents: { increment: chargeCents },
+          costLastUpdatedAt: now,
+        },
+      });
+
+      // 9. Release/reduce WalletHold if one exists for this session
+      // (Convert hold amount to actual charge, release excess)
+      const activeHold = await tx.walletHold.findFirst({
+        where: { sessionId: session.id, status: 'active' },
+      });
+
+      if (activeHold) {
+        // Release the hold since we've now billed the user
+        // Create a new hold for the next hour
+        await tx.walletHold.update({
+          where: { id: activeHold.id },
+          data: {
+            status: 'captured',
+            releasedAt: now,
+            releaseReason: 'hourly_billing_captured',
+            capturedAmount: BigInt(chargeCents),
+          },
+        });
+
+        // Create new hold for next hour (if wallet has funds)
+        if (wallet && currentBalance - chargeCents >= rateCentsPerHour) {
+          await tx.walletHold.create({
+            data: {
+              walletId: wallet.id,
+              userId: session.userId,
+              sessionId: session.id,
+              amountCents: BigInt(rateCentsPerHour),
+              holdReason: 'compute_session_hold',
+              status: 'active',
+              expiresAt: new Date(Date.now() + 3600000),
+            },
+          });
+        }
+      }
+
+      return 'charged';
     });
   }
 

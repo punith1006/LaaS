@@ -302,7 +302,7 @@ function CustomTooltip({
           const isHourly = entry.dataKey === "hourSpend";
           const formattedLabel = isHourly
             ? `rate ₹${entry.value.toFixed(2)} / hr`
-            : `avg ₹${entry.value.toFixed(2)} / day`;
+            : `spent ₹${entry.value.toFixed(2)} today`;
           return (
             <div
               key={index}
@@ -912,12 +912,12 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                 <Tooltip
                   content={<CustomTooltip isDark={isDark} />}
                 />
-                {/* Rolling average area (blue) */}
+                {/* Cumulative spend area (blue) */}
                 <Area
                   yAxisId="left"
                   type="monotone"
                   dataKey="rollingAvg"
-                  name="Rolling avg"
+                  name="Cumulative spend"
                   stroke={themeColors.daySpend}
                   strokeWidth={2}
                   fill="url(#daySpendGradient)"
@@ -969,7 +969,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                   color: "var(--fgColor-muted)",
                 }}
               >
-                Rolling avg
+                Cumulative spend
               </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
