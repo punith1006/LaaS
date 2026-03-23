@@ -21,26 +21,6 @@ interface ComputeConfig {
 // Hardcoded compute configurations matching the spec
 const COMPUTE_CONFIGS: ComputeConfig[] = [
   {
-    id: "starter",
-    name: "Starter",
-    vcpu: 2,
-    ramGb: 4,
-    vramGb: null,
-    smPercent: null,
-    pricePerHour: 15,
-    bestFor: "Scripting, text editing, light dev",
-  },
-  {
-    id: "standard",
-    name: "Standard",
-    vcpu: 4,
-    ramGb: 8,
-    vramGb: null,
-    smPercent: null,
-    pricePerHour: 30,
-    bestFor: "MATLAB, office, full-stack dev",
-  },
-  {
     id: "pro",
     name: "Pro",
     vcpu: 4,
@@ -110,7 +90,6 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        fontFamily: "var(--font-sans)",
         fontSize: "0.75rem",
         fontWeight: 600,
         color: "var(--fgColor-muted)",
@@ -322,7 +301,7 @@ export default function LaunchInstancePage() {
   const router = useRouter();
   
   // State
-  const [selectedConfig, setSelectedConfig] = useState<string>("power");
+  const [selectedConfig, setSelectedConfig] = useState<string>("pro");
   const [selectedMode, setSelectedMode] = useState<"gui" | "cli">("gui");
   const [storageType, setStorageType] = useState<"stateful" | "ephemeral">("stateful");
   const [instanceName, setInstanceName] = useState<string>(generateInstanceName());
@@ -356,7 +335,6 @@ export default function LaunchInstancePage() {
 
   // Get selected config object
   const currentConfig = COMPUTE_CONFIGS.find((c) => c.id === selectedConfig);
-  const isGpuConfig = currentConfig && currentConfig.vramGb !== null;
 
   // Handle instance name change
   const handleNameChange = (value: string) => {
@@ -423,8 +401,8 @@ export default function LaunchInstancePage() {
             display: "inline-flex",
             alignItems: "center",
             gap: "6px",
-            fontFamily: "var(--font-sans)",
             fontSize: "0.875rem",
+            fontWeight: 400,
             color: "var(--fgColor-muted)",
             textDecoration: "none",
             marginBottom: "24px",
@@ -452,7 +430,6 @@ export default function LaunchInstancePage() {
         <div style={{ marginBottom: "32px" }}>
           <h1
             style={{
-              fontFamily: "var(--font-sans)",
               fontSize: "2rem",
               fontWeight: 700,
               color: "var(--fgColor-default)",
@@ -464,8 +441,8 @@ export default function LaunchInstancePage() {
           </h1>
           <p
             style={{
-              fontFamily: "var(--font-sans)",
               fontSize: "0.875rem",
+              fontWeight: 400,
               color: "var(--fgColor-muted)",
               marginTop: "8px",
               lineHeight: "1.375rem",
@@ -489,14 +466,13 @@ export default function LaunchInstancePage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
+              gridTemplateColumns: "repeat(2, 1fr)",
               gap: "16px",
             }}
             className="compute-grid"
           >
             {COMPUTE_CONFIGS.map((config) => {
               const isSelected = selectedConfig === config.id;
-              const isGpu = config.vramGb !== null;
 
               return (
                 <button
@@ -518,8 +494,7 @@ export default function LaunchInstancePage() {
                   {/* Config Name */}
                   <div
                     style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: "1rem",
+                      fontSize: "1.125rem",
                       fontWeight: 600,
                       color: "var(--fgColor-default)",
                       marginBottom: "12px",
@@ -529,37 +504,22 @@ export default function LaunchInstancePage() {
                     }}
                   >
                     <span>{config.name}</span>
-                    {isGpu ? (
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "4px",
-                          padding: "2px 6px",
-                          backgroundColor: "var(--bgColor-muted)",
-                          borderRadius: "2px",
-                          fontSize: "0.625rem",
-                          fontWeight: 500,
-                          color: "var(--fgColor-accent)",
-                        }}
-                      >
-                        <GpuChipIcon size={10} />
-                        GPU
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          padding: "2px 6px",
-                          backgroundColor: "var(--bgColor-muted)",
-                          borderRadius: "2px",
-                          fontSize: "0.625rem",
-                          fontWeight: 500,
-                          color: "var(--fgColor-muted)",
-                        }}
-                      >
-                        CPU Only
-                      </span>
-                    )}
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "2px 6px",
+                        backgroundColor: "var(--bgColor-muted)",
+                        borderRadius: "2px",
+                        fontSize: "0.625rem",
+                        fontWeight: 500,
+                        color: "var(--fgColor-accent)",
+                      }}
+                    >
+                      <GpuChipIcon size={10} />
+                      GPU
+                    </span>
                   </div>
 
                   {/* Specs Grid */}
@@ -568,30 +528,24 @@ export default function LaunchInstancePage() {
                       display: "grid",
                       gridTemplateColumns: "1fr 1fr",
                       gap: "4px 12px",
-                      fontFamily: "var(--font-mono, monospace)",
-                      fontSize: "0.8125rem",
+                      fontSize: "0.875rem",
+                      fontWeight: 400,
                       color: "var(--fgColor-muted)",
                       marginBottom: "12px",
                     }}
                   >
                     <div>{config.vcpu} vCPU</div>
                     <div>{config.ramGb} GB RAM</div>
-                    {config.vramGb !== null ? (
-                      <>
-                        <div style={{ color: "var(--fgColor-accent)" }}>{config.vramGb} GB VRAM</div>
-                        <div>{config.smPercent}% SM</div>
-                      </>
-                    ) : (
-                      <div style={{ gridColumn: "span 2", opacity: 0.6 }}>—</div>
-                    )}
+                    <div style={{ color: "var(--fgColor-accent)" }}>{config.vramGb} GB VRAM</div>
+                    <div>{config.smPercent}% SM</div>
                   </div>
 
                   {/* GPU Model for GPU configs */}
                   {config.gpuModel && (
                     <div
                       style={{
-                        fontFamily: "var(--font-sans)",
                         fontSize: "0.75rem",
+                        fontWeight: 400,
                         color: "var(--fgColor-accent)",
                         marginBottom: "8px",
                       }}
@@ -603,8 +557,7 @@ export default function LaunchInstancePage() {
                   {/* Price */}
                   <div
                     style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: "1.25rem",
+                      fontSize: "1.5rem",
                       fontWeight: 700,
                       color: "var(--fgColor-default)",
                       marginBottom: "8px",
@@ -616,8 +569,8 @@ export default function LaunchInstancePage() {
                   {/* Best For */}
                   <div
                     style={{
-                      fontFamily: "var(--font-sans)",
                       fontSize: "0.75rem",
+                      fontWeight: 400,
                       color: "var(--fgColor-muted)",
                       fontStyle: "italic",
                       lineHeight: "1.3",
@@ -667,8 +620,7 @@ export default function LaunchInstancePage() {
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <span
                   style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "1rem",
+                    fontSize: "1.125rem",
                     fontWeight: 600,
                     color: "var(--fgColor-default)",
                   }}
@@ -681,8 +633,8 @@ export default function LaunchInstancePage() {
               </div>
               <div
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "0.75rem",
+                  fontWeight: 400,
                   color: "var(--fgColor-muted)",
                   marginTop: "4px",
                 }}
@@ -732,8 +684,7 @@ export default function LaunchInstancePage() {
                 </span>
                 <span
                   style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "1rem",
+                    fontSize: "1.125rem",
                     fontWeight: 600,
                     color: "var(--fgColor-default)",
                   }}
@@ -743,8 +694,8 @@ export default function LaunchInstancePage() {
               </div>
               <div
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "0.875rem",
+                  fontWeight: 400,
                   color: "var(--fgColor-muted)",
                   lineHeight: "1.4",
                 }}
@@ -774,8 +725,7 @@ export default function LaunchInstancePage() {
                 </span>
                 <span
                   style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "1rem",
+                    fontSize: "1.125rem",
                     fontWeight: 600,
                     color: "var(--fgColor-default)",
                   }}
@@ -785,8 +735,8 @@ export default function LaunchInstancePage() {
               </div>
               <div
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "0.875rem",
+                  fontWeight: 400,
                   color: "var(--fgColor-muted)",
                   lineHeight: "1.4",
                 }}
@@ -869,8 +819,7 @@ export default function LaunchInstancePage() {
                 </span>
                 <span
                   style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "1rem",
+                    fontSize: "1.125rem",
                     fontWeight: 600,
                     color: "var(--fgColor-default)",
                   }}
@@ -880,8 +829,8 @@ export default function LaunchInstancePage() {
               </div>
               <div
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "0.875rem",
+                  fontWeight: 400,
                   color: "var(--fgColor-muted)",
                   lineHeight: "1.4",
                 }}
@@ -911,8 +860,7 @@ export default function LaunchInstancePage() {
                 </span>
                 <span
                   style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "1rem",
+                    fontSize: "1.125rem",
                     fontWeight: 600,
                     color: "var(--fgColor-default)",
                   }}
@@ -922,8 +870,8 @@ export default function LaunchInstancePage() {
               </div>
               <div
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "0.875rem",
+                  fontWeight: 400,
                   color: "var(--fgColor-muted)",
                   lineHeight: "1.4",
                 }}
@@ -952,7 +900,6 @@ export default function LaunchInstancePage() {
               <div>
                 <div
                   style={{
-                    fontFamily: "var(--font-sans)",
                     fontSize: "0.875rem",
                     fontWeight: 600,
                     color: "var(--fgColor-default)",
@@ -963,22 +910,22 @@ export default function LaunchInstancePage() {
                 </div>
                 <div
                   style={{
-                    fontFamily: "var(--font-sans)",
                     fontSize: "0.875rem",
+                    fontWeight: 400,
                     color: "var(--fgColor-default)",
                     lineHeight: "1.5",
                     marginBottom: "12px",
                   }}
                 >
-                  Your File Store will be mounted at <code style={{ fontFamily: "var(--font-mono, monospace)", backgroundColor: "var(--bgColor-muted)", padding: "2px 6px", borderRadius: "3px", fontSize: "0.8125rem" }}>/home/ubuntu</code>. All files, datasets, model checkpoints, and configurations persist across sessions. Switch between Starter and Full Machine without losing a byte — your work follows you wherever you go.
+                  Your File Store will be mounted at <code style={{ backgroundColor: "var(--bgColor-muted)", padding: "2px 6px", borderRadius: "3px", fontSize: "0.8125rem" }}>/home/ubuntu</code>. All files, datasets, model checkpoints, and configurations persist across sessions. Switch between Starter and Full Machine without losing a byte — your work follows you wherever you go.
                 </div>
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: "6px",
-                    fontFamily: "var(--font-sans)",
                     fontSize: "0.875rem",
+                    fontWeight: 400,
                     color: infoBoxColors.green.text,
                   }}
                 >
@@ -1007,7 +954,6 @@ export default function LaunchInstancePage() {
               <div>
                 <div
                   style={{
-                    fontFamily: "var(--font-sans)",
                     fontSize: "0.875rem",
                     fontWeight: 600,
                     color: "var(--fgColor-default)",
@@ -1018,8 +964,8 @@ export default function LaunchInstancePage() {
                 </div>
                 <div
                   style={{
-                    fontFamily: "var(--font-sans)",
                     fontSize: "0.875rem",
+                    fontWeight: 400,
                     color: "var(--fgColor-default)",
                     lineHeight: "1.5",
                     marginBottom: "16px",
@@ -1033,11 +979,11 @@ export default function LaunchInstancePage() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: "6px",
-                    fontFamily: "var(--font-sans)",
                     fontSize: "0.875rem",
                     fontWeight: 500,
-                    color: "var(--fgColor-inverse)",
-                    backgroundColor: "var(--bgColor-inverse)",
+                    color: "var(--bgColor-default)",
+                    backgroundColor: "var(--fgColor-default)",
+                    border: "1px solid var(--fgColor-default)",
                     padding: "0 16px",
                     height: "36px",
                     borderRadius: "4px",
@@ -1071,7 +1017,6 @@ export default function LaunchInstancePage() {
               <div>
                 <div
                   style={{
-                    fontFamily: "var(--font-sans)",
                     fontSize: "0.875rem",
                     fontWeight: 600,
                     color: "var(--fgColor-default)",
@@ -1082,8 +1027,8 @@ export default function LaunchInstancePage() {
                 </div>
                 <div
                   style={{
-                    fontFamily: "var(--font-sans)",
                     fontSize: "0.875rem",
+                    fontWeight: 400,
                     color: "var(--fgColor-default)",
                     lineHeight: "1.5",
                   }}
@@ -1115,8 +1060,8 @@ export default function LaunchInstancePage() {
               style={{
                 width: "100%",
                 maxWidth: "400px",
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
+                fontWeight: 400,
                 color: "var(--fgColor-default)",
                 backgroundColor: "transparent",
                 border: nameError
@@ -1132,8 +1077,8 @@ export default function LaunchInstancePage() {
             {nameError && (
               <div
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "0.75rem",
+                  fontWeight: 400,
                   color: "var(--fgColor-critical)",
                   marginTop: "4px",
                 }}
@@ -1143,8 +1088,8 @@ export default function LaunchInstancePage() {
             )}
             <div
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.75rem",
+                fontWeight: 400,
                 color: "var(--fgColor-muted)",
                 marginTop: "6px",
               }}
@@ -1188,8 +1133,8 @@ export default function LaunchInstancePage() {
           <div>
             <div
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
+                fontWeight: 400,
                 color: "var(--fgColor-default)",
                 marginBottom: "2px",
               }}
@@ -1198,8 +1143,8 @@ export default function LaunchInstancePage() {
             </div>
             <div
               style={{
-                fontFamily: "var(--font-mono, monospace)",
                 fontSize: "0.75rem",
+                fontWeight: 400,
                 color: "var(--fgColor-muted)",
               }}
             >
@@ -1212,7 +1157,6 @@ export default function LaunchInstancePage() {
           <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
             <div
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "1.5rem",
                 fontWeight: 700,
                 color: "var(--fgColor-default)",
@@ -1224,12 +1168,11 @@ export default function LaunchInstancePage() {
               onClick={handleLaunchClick}
               disabled={!canLaunch}
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: 500,
-                color: "var(--fgColor-inverse)",
-                backgroundColor: "var(--bgColor-inverse)",
-                border: "none",
+                color: "var(--bgColor-default)",
+                backgroundColor: "var(--fgColor-default)",
+                border: "1px solid var(--fgColor-default)",
                 borderRadius: "4px",
                 padding: "0 24px",
                 height: "40px",
@@ -1290,7 +1233,6 @@ export default function LaunchInstancePage() {
             >
               <h2
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "1.25rem",
                   fontWeight: 600,
                   color: "var(--fgColor-default)",
@@ -1324,8 +1266,8 @@ export default function LaunchInstancePage() {
             <div
               style={{
                 padding: "24px",
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
+                fontWeight: 400,
                 color: "var(--fgColor-default)",
                 lineHeight: "1.6",
               }}
@@ -1361,7 +1303,6 @@ export default function LaunchInstancePage() {
                 onClick={() => setShowReviewModal(false)}
                 disabled={isLaunching}
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "0.875rem",
                   fontWeight: 500,
                   color: "var(--fgColor-default)",
@@ -1380,12 +1321,11 @@ export default function LaunchInstancePage() {
                 onClick={handleConfirmLaunch}
                 disabled={isLaunching}
                 style={{
-                  fontFamily: "var(--font-sans)",
                   fontSize: "0.875rem",
                   fontWeight: 500,
-                  color: "var(--fgColor-inverse)",
-                  backgroundColor: "var(--bgColor-inverse)",
-                  border: "none",
+                  color: "var(--bgColor-default)",
+                  backgroundColor: "var(--fgColor-default)",
+                  border: "1px solid var(--fgColor-default)",
                   borderRadius: "4px",
                   padding: "0 20px",
                   height: "40px",
@@ -1401,7 +1341,7 @@ export default function LaunchInstancePage() {
                     style={{
                       width: "14px",
                       height: "14px",
-                      border: "2px solid var(--fgColor-inverse)",
+                      border: "2px solid var(--bgColor-default)",
                       borderTopColor: "transparent",
                       borderRadius: "50%",
                       animation: "spin 1s linear infinite",
@@ -1427,12 +1367,7 @@ export default function LaunchInstancePage() {
       {/* Responsive grid styles */}
       <style>{`
         .compute-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
-        @media (max-width: 1024px) {
-          .compute-grid {
-            grid-template-columns: repeat(2, 1fr) !important;
-          }
+          grid-template-columns: repeat(2, 1fr);
         }
         @media (max-width: 640px) {
           .compute-grid {

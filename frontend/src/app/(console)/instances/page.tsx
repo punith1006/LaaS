@@ -156,8 +156,8 @@ function StatusBadge({ status }: { status: Instance["status"] }) {
         display: "inline-flex",
         alignItems: "center",
         gap: "6px",
-        fontFamily: "var(--font-sans)",
-        fontSize: "0.8125rem",
+        fontSize: "0.875rem",
+        fontWeight: 400,
         color: "var(--fgColor-default)",
       }}
     >
@@ -217,7 +217,6 @@ export default function InstancesPage() {
         <div>
           <h1
             style={{
-              fontFamily: "var(--font-sans)",
               fontSize: "2rem",
               fontWeight: 700,
               color: "var(--fgColor-default)",
@@ -230,8 +229,8 @@ export default function InstancesPage() {
           </h1>
           <p
             style={{
-              fontFamily: "var(--font-sans)",
               fontSize: "0.875rem",
+              fontWeight: 400,
               color: "var(--fgColor-muted)",
               margin: 0,
               maxWidth: "560px",
@@ -244,7 +243,6 @@ export default function InstancesPage() {
         <button
           onClick={handleLaunchInstance}
           style={{
-            fontFamily: "var(--font-sans)",
             fontSize: "0.875rem",
             fontWeight: 500,
             color: "var(--fgColor-inverse)",
@@ -284,7 +282,6 @@ export default function InstancesPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: activeTab === tab.id ? 500 : 400,
                 color: activeTab === tab.id ? "var(--fgColor-default)" : "var(--fgColor-muted)",
@@ -325,7 +322,6 @@ export default function InstancesPage() {
             </div>
             <h3
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "1rem",
                 fontWeight: 600,
                 color: "var(--fgColor-default)",
@@ -337,8 +333,8 @@ export default function InstancesPage() {
             </h3>
             <p
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
+                fontWeight: 400,
                 color: "var(--fgColor-muted)",
                 margin: 0,
                 marginBottom: "4px",
@@ -350,8 +346,8 @@ export default function InstancesPage() {
             </p>
             <p
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
+                fontWeight: 400,
                 color: "var(--fgColor-muted)",
                 margin: 0,
                 marginBottom: "24px",
@@ -364,7 +360,6 @@ export default function InstancesPage() {
             <button
               onClick={handleLaunchInstance}
               style={{
-                fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: 500,
                 color: "var(--fgColor-default)",
@@ -389,7 +384,6 @@ export default function InstancesPage() {
               style={{
                 width: "100%",
                 borderCollapse: "collapse",
-                fontFamily: "var(--font-sans)",
               }}
             >
               <thead>
@@ -403,7 +397,7 @@ export default function InstancesPage() {
                       textAlign: "left",
                       padding: "12px 16px",
                       fontSize: "0.75rem",
-                      fontWeight: 500,
+                      fontWeight: 600,
                       color: "var(--fgColor-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
@@ -416,7 +410,7 @@ export default function InstancesPage() {
                       textAlign: "left",
                       padding: "12px 16px",
                       fontSize: "0.75rem",
-                      fontWeight: 500,
+                      fontWeight: 600,
                       color: "var(--fgColor-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
@@ -429,7 +423,7 @@ export default function InstancesPage() {
                       textAlign: "left",
                       padding: "12px 16px",
                       fontSize: "0.75rem",
-                      fontWeight: 500,
+                      fontWeight: 600,
                       color: "var(--fgColor-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
@@ -442,7 +436,7 @@ export default function InstancesPage() {
                       textAlign: "left",
                       padding: "12px 16px",
                       fontSize: "0.75rem",
-                      fontWeight: 500,
+                      fontWeight: 600,
                       color: "var(--fgColor-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
@@ -455,7 +449,7 @@ export default function InstancesPage() {
                       textAlign: "left",
                       padding: "12px 16px",
                       fontSize: "0.75rem",
-                      fontWeight: 500,
+                      fontWeight: 600,
                       color: "var(--fgColor-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
@@ -468,7 +462,7 @@ export default function InstancesPage() {
                       textAlign: "left",
                       padding: "12px 16px",
                       fontSize: "0.75rem",
-                      fontWeight: 500,
+                      fontWeight: 600,
                       color: "var(--fgColor-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
@@ -481,7 +475,7 @@ export default function InstancesPage() {
                       textAlign: "right",
                       padding: "12px 16px",
                       fontSize: "0.75rem",
-                      fontWeight: 500,
+                      fontWeight: 600,
                       color: "var(--fgColor-muted)",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
@@ -504,8 +498,8 @@ export default function InstancesPage() {
                       style={{
                         padding: "12px 16px",
                         fontSize: "0.875rem",
-                        color: "var(--fgColor-default)",
                         fontWeight: 500,
+                        color: "var(--fgColor-default)",
                       }}
                     >
                       {instance.name}
@@ -514,6 +508,7 @@ export default function InstancesPage() {
                       style={{
                         padding: "12px 16px",
                         fontSize: "0.875rem",
+                        fontWeight: 400,
                         color: "var(--fgColor-default)",
                       }}
                     >
@@ -523,6 +518,7 @@ export default function InstancesPage() {
                       style={{
                         padding: "12px 16px",
                         fontSize: "0.875rem",
+                        fontWeight: 400,
                         color: "var(--fgColor-default)",
                       }}
                     >
@@ -535,6 +531,7 @@ export default function InstancesPage() {
                       style={{
                         padding: "12px 16px",
                         fontSize: "0.875rem",
+                        fontWeight: 400,
                         color: "var(--fgColor-muted)",
                       }}
                     >
@@ -544,6 +541,7 @@ export default function InstancesPage() {
                       style={{
                         padding: "12px 16px",
                         fontSize: "0.875rem",
+                        fontWeight: 400,
                         color: "var(--fgColor-default)",
                       }}
                     >
@@ -565,9 +563,8 @@ export default function InstancesPage() {
                           <button
                             disabled
                             style={{
-                              fontFamily: "var(--font-sans)",
-                              fontSize: "0.8125rem",
-                              fontWeight: 400,
+                              fontSize: "0.875rem",
+                              fontWeight: 500,
                               color: "var(--fgColor-muted)",
                               backgroundColor: "transparent",
                               border: "1px solid var(--borderColor-default)",
@@ -584,9 +581,8 @@ export default function InstancesPage() {
                           <button
                             disabled
                             style={{
-                              fontFamily: "var(--font-sans)",
-                              fontSize: "0.8125rem",
-                              fontWeight: 400,
+                              fontSize: "0.875rem",
+                              fontWeight: 500,
                               color: "var(--fgColor-muted)",
                               backgroundColor: "transparent",
                               border: "1px solid var(--borderColor-default)",
@@ -602,9 +598,8 @@ export default function InstancesPage() {
                         <button
                           disabled
                           style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: "0.8125rem",
-                            fontWeight: 400,
+                            fontSize: "0.875rem",
+                            fontWeight: 500,
                             color: "var(--fgColor-muted)",
                             backgroundColor: "transparent",
                             border: "1px solid var(--borderColor-default)",
