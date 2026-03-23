@@ -18,6 +18,7 @@
   --fgColor-muted: #636363;
   --fgColor-inverse: #F0EFE2;
   --borderColor-default: #BFBEB4;
+  --fgColor-accent: #6236F4;
 
   /* Info/Alert colors */
   --bgColor-info: #cedeff;
@@ -75,6 +76,7 @@ body {
   --fgColor-muted: #818178;
   --fgColor-inverse: #0B0B0B;
   --borderColor-default: #2E2E2E;
+  --fgColor-accent: #7565F6;
 
   /* Info/Alert colors - dark theme */
   --bgColor-info: #00094a;

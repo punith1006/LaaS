@@ -423,7 +423,7 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
           flexWrap: "wrap",
         }}
       >
-        <QuickActionButton label="Launch Compute" href="#" />
+        <QuickActionButton label="Launch Compute" href="/instances" />
         <QuickActionButton label="Manage Storage" href="/storage" />
         <QuickActionButton label="API Keys" href="#" />
       </div>

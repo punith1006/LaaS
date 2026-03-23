@@ -481,7 +481,7 @@ export default function LaunchInstancePage() {
                   style={{
                     backgroundColor: "var(--bgColor-default)",
                     border: isSelected
-                      ? "2px solid var(--fgColor-accent)"
+                      ? "2px solid var(--fgColor-default)"
                       : "1px solid var(--borderColor-default)",
                     borderRadius: "4px",
                     padding: isSelected ? "15px" : "16px",
@@ -514,7 +514,7 @@ export default function LaunchInstancePage() {
                         borderRadius: "2px",
                         fontSize: "0.625rem",
                         fontWeight: 500,
-                        color: "var(--fgColor-accent)",
+                        color: "var(--fgColor-muted)",
                       }}
                     >
                       <GpuChipIcon size={10} />
@@ -536,7 +536,7 @@ export default function LaunchInstancePage() {
                   >
                     <div>{config.vcpu} vCPU</div>
                     <div>{config.ramGb} GB RAM</div>
-                    <div style={{ color: "var(--fgColor-accent)" }}>{config.vramGb} GB VRAM</div>
+                    <div style={{ color: "var(--fgColor-default)" }}>{config.vramGb} GB VRAM</div>
                     <div>{config.smPercent}% SM</div>
                   </div>
 
@@ -546,7 +546,7 @@ export default function LaunchInstancePage() {
                       style={{
                         fontSize: "0.75rem",
                         fontWeight: 400,
-                        color: "var(--fgColor-accent)",
+                        color: "var(--fgColor-muted)",
                         marginBottom: "8px",
                       }}
                     >
@@ -600,9 +600,9 @@ export default function LaunchInstancePage() {
               display: "flex",
               alignItems: "center",
               gap: "16px",
-              padding: "16px",
+              padding: "15px",
               backgroundColor: "var(--bgColor-default)",
-              border: "1px solid var(--borderColor-default)",
+              border: "2px solid var(--fgColor-default)",
               borderRadius: "4px",
             }}
           >
@@ -669,7 +669,7 @@ export default function LaunchInstancePage() {
               style={{
                 backgroundColor: "var(--bgColor-default)",
                 border: selectedMode === "gui"
-                  ? "2px solid var(--fgColor-accent)"
+                  ? "2px solid var(--fgColor-default)"
                   : "1px solid var(--borderColor-default)",
                 borderRadius: "4px",
                 padding: selectedMode === "gui" ? "15px" : "16px",
@@ -704,19 +704,16 @@ export default function LaunchInstancePage() {
               </div>
             </button>
 
-            {/* CLI Terminal */}
-            <button
-              onClick={() => setSelectedMode("cli")}
+            {/* CLI Terminal - Coming Soon */}
+            <div
               style={{
                 backgroundColor: "var(--bgColor-default)",
-                border: selectedMode === "cli"
-                  ? "2px solid var(--fgColor-accent)"
-                  : "1px solid var(--borderColor-default)",
+                border: "1px solid var(--borderColor-default)",
                 borderRadius: "4px",
-                padding: selectedMode === "cli" ? "15px" : "16px",
-                cursor: "pointer",
+                padding: "16px",
+                cursor: "not-allowed",
                 textAlign: "left",
-                transition: "border-color 0.15s ease",
+                opacity: 0.5,
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
@@ -732,6 +729,20 @@ export default function LaunchInstancePage() {
                 >
                   CLI Terminal
                 </span>
+                <span
+                  style={{
+                    fontSize: "0.6rem",
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    color: "var(--fgColor-muted)",
+                    backgroundColor: "var(--borderColor-default)",
+                    padding: "2px 6px",
+                    borderRadius: "3px",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  Coming Soon
+                </span>
               </div>
               <div
                 style={{
@@ -743,7 +754,7 @@ export default function LaunchInstancePage() {
               >
                 SSH access with JupyterLab available via browser. Optimized for scripting, training jobs, and headless workloads.
               </div>
-            </button>
+            </div>
           </div>
         </div>
 
@@ -804,7 +815,7 @@ export default function LaunchInstancePage() {
               style={{
                 backgroundColor: "var(--bgColor-default)",
                 border: storageType === "stateful"
-                  ? "2px solid var(--fgColor-accent)"
+                  ? "2px solid var(--fgColor-default)"
                   : "1px solid var(--borderColor-default)",
                 borderRadius: "4px",
                 padding: storageType === "stateful" ? "15px" : "16px",
@@ -845,7 +856,7 @@ export default function LaunchInstancePage() {
               style={{
                 backgroundColor: "var(--bgColor-default)",
                 border: storageType === "ephemeral"
-                  ? "2px solid var(--fgColor-accent)"
+                  ? "2px solid var(--fgColor-default)"
                   : "1px solid var(--borderColor-default)",
                 borderRadius: "4px",
                 padding: storageType === "ephemeral" ? "15px" : "16px",

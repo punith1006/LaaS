@@ -97,6 +97,26 @@ enum TicketPriority {
   critical
 }
 
+enum StorageMode {
+  stateful
+  ephemeral
+}
+
+enum SessionTerminationReason {
+  user_requested
+  idle_timeout
+  resource_exhaustion
+  spend_limit_exceeded
+  node_failure
+  node_maintenance
+  admin_terminated
+  session_expired
+  booking_expired
+  error_unrecoverable
+  network_disconnect
+  quota_exceeded
+}
+
 // ============================================================================
 // DOMAIN 0: CORE AUTH & IDENTITY
 // ============================================================================
@@ -737,6 +757,8 @@ model Node {
   status                NodeStatus
   lastHeartbeatAt       DateTime?  @map("last_heartbeat_at")
   metadata              Json?
+  lastResourceSyncAt    DateTime?  @map("last_resource_sync_at")
+  currentSessionCount   Int        @default(0) @map("current_session_count")
   createdAt             DateTime   @default(now()) @map("created_at")
   updatedAt             DateTime   @updatedAt @map("updated_at")
   createdBy             String?    @map("created_by") @db.Uuid
@@ -744,6 +766,7 @@ model Node {
 
   // Relations
   nodeBaseImages NodeBaseImage[]
+  nodeResourceReservations  NodeResourceReservation[]
 
   // Domain 7: Sessions and Bookings
   bookings Booking[]
@@ -751,6 +774,7 @@ model Node {
 
   @@index([status])
   @@index([lastHeartbeatAt])
+  @@index([lastResourceSyncAt])
   @@map("nodes")
 }
 
@@ -816,6 +840,9 @@ model ComputeConfig {
   gpuVramMb             Int         @default(0) @map("gpu_vram_mb")
   gpuExclusive          Boolean     @default(false) @map("gpu_exclusive")
   hamiSmPercent         Int?        @map("hami_sm_percent")
+  gpuModel              String?     @map("gpu_model")
+  maxConcurrentPerNode  Int         @default(1) @map("max_concurrent_per_node")
+  bestFor               String?     @map("best_for")
   basePricePerHourCents Int         @map("base_price_per_hour_cents")
   currency              String      @default("INR")
   sortOrder             Int         @default(0) @map("sort_order")
@@ -932,8 +959,34 @@ model Session {
   autoPreserveFiles   Boolean       @default(false) @map("auto_preserve_files")
   avgRttMs            Int?          @map("avg_rtt_ms")
   avgPacketLossRatio  Decimal?      @map("avg_packet_loss_ratio")
-  terminationReason   String?       @map("termination_reason")
-  resourceSnapshot    Json?         @map("resource_snapshot")
+  terminationReason             SessionTerminationReason? @map("termination_reason")
+  resourceSnapshot              Json?         @map("resource_snapshot")
+  
+  // User-facing instance name
+  instanceName                  String?       @map("instance_name") @db.VarChar(256)
+  
+  // Storage persistence mode
+  storageMode                   StorageMode   @default(ephemeral) @map("storage_mode")
+  
+  // Cumulative cost tracking (denormalized from BillingCharge for fast queries)
+  cumulativeCostCents           BigInt        @default(0) @map("cumulative_cost_cents")
+  costLastUpdatedAt             DateTime?     @map("cost_last_updated_at")
+  
+  // Resource allocation snapshot at launch time (for billing accuracy even if config changes)
+  allocatedVcpu                 Int?          @map("allocated_vcpu")
+  allocatedMemoryMb             Int?          @map("allocated_memory_mb")
+  allocatedGpuVramMb            Int?          @map("allocated_gpu_vram_mb")
+  allocatedHamiSmPercent        Int?          @map("allocated_hami_sm_percent")
+  allocationSnapshotAt          DateTime?     @map("allocation_snapshot_at")
+  
+  // Duration tracking (computed: endedAt - startedAt in seconds)
+  durationSeconds               Int?          @map("duration_seconds")
+  
+  // Enhanced termination tracking
+  terminatedBy                  String?       @map("terminated_by") @db.Uuid
+  terminatedAt                  DateTime?     @map("terminated_at")
+  terminationDetails            Json?         @map("termination_details")
+  
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
   createdBy           String?       @map("created_by") @db.Uuid
@@ -950,6 +1003,7 @@ model Session {
   billingCharges BillingCharge[]
   walletHolds    WalletHold[]
   userFiles      UserFile[]
+  nodeResourceReservation   NodeResourceReservation?
 
   // Domain 9: Academic / LMS
   labSubmissions LabSubmission[]
@@ -962,6 +1016,8 @@ model Session {
   @@index([nodeId, status])
   @@index([startedAt])
   @@index([computeConfigId])
+  @@index([storageMode])
+  @@index([instanceName])
   @@map("sessions")
 }
 
@@ -979,6 +1035,35 @@ model SessionEvent {
   @@index([sessionId])
   @@index([createdAt])
   @@map("session_events")
+}
+
+// AUDIT: Records must NEVER be deleted — required for resource allocation audit trail
+model NodeResourceReservation {
+  id                    String    @id @default(uuid()) @db.Uuid
+  nodeId                String    @map("node_id") @db.Uuid
+  sessionId             String    @unique @map("session_id") @db.Uuid
+
+  reservedVcpu          Int       @map("reserved_vcpu")
+  reservedMemoryMb      Int       @map("reserved_memory_mb")
+  reservedGpuVramMb     Int       @map("reserved_gpu_vram_mb")
+  reservedHamiSmPercent Int?      @map("reserved_hami_sm_percent")
+
+  reservedAt            DateTime  @default(now()) @map("reserved_at")
+  releasedAt            DateTime? @map("released_at")
+  status                String    @default("reserved") @map("status") // reserved, released, failed
+
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  node    Node    @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@unique([nodeId, sessionId])
+  @@index([nodeId, status])
+  @@index([sessionId])
+  @@index([releasedAt])
+  @@map("node_resource_reservations")
 }
 
 // ============================================================================

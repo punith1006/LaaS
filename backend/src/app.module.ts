@@ -9,6 +9,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { PaymentModule } from './payment/payment.module';
 import { BillingModule } from './billing/billing.module';
 import { AuditModule } from './audit/audit.module';
+import { ComputeModule } from './compute/compute.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AuditModule } from './audit/audit.module';
     DashboardModule,
     PaymentModule,
     BillingModule,
+    ComputeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
