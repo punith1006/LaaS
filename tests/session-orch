@@ -1,0 +1,5 @@
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+SESSION_SECRET=laas-session-secret-dev python3 app.py

@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ComputeService } from './compute.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { LaunchSessionDto } from './compute.dto';
+import { LaunchSessionDto, RestartSessionDto } from './compute.dto';
 
 @Controller('api/compute')
 @UseGuards(JwtAuthGuard)
@@ -91,6 +91,60 @@ export class ComputeController {
   ) {
     const userId = req.user.id;
     return this.computeService.terminateSession(userId, id);
+  }
+
+  /**
+   * Restart a running session
+   * Calls orchestration service to restart the container
+   */
+  @Post('sessions/:id/restart')
+  @HttpCode(HttpStatus.OK)
+  async restartSession(
+    @Req() req: { user: { id: string } },
+    @Param('id') id: string,
+    @Body() _dto: RestartSessionDto,
+  ) {
+    const userId = req.user.id;
+    return this.computeService.restartSession(userId, id);
+  }
+
+  /**
+   * Get container logs for a session
+   * Returns the last 100 lines of container logs
+   */
+  @Get('sessions/:id/logs')
+  async getSessionLogs(
+    @Req() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    const userId = req.user.id;
+    return this.computeService.getSessionLogs(userId, id);
+  }
+
+  /**
+   * Get connection info for a session
+   * Returns session URL, username, and decrypted password if session is ready
+   */
+  @Get('sessions/:id/connection')
+  async getSessionConnection(
+    @Req() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    const userId = req.user.id;
+    return this.computeService.getSessionConnection(userId, id);
+  }
+
+  /**
+   * Get all events for a session
+   * Returns chronological list of session lifecycle events
+   */
+  @Get('sessions/:id/events')
+  async getSessionEvents(
+    @Req() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    const userId = req.user.id;
+    return this.computeService.getSessionEvents(userId, id);
   }
 
   // ============================================================================

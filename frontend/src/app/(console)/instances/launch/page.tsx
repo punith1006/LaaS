@@ -4,67 +4,14 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-
-// Compute configuration types
-interface ComputeConfig {
-  id: string;
-  name: string;
-  vcpu: number;
-  ramGb: number;
-  vramGb: number | null;
-  smPercent: number | null;
-  pricePerHour: number;
-  bestFor: string;
-  gpuModel?: string;
-}
-
-// Hardcoded compute configurations matching the spec
-const COMPUTE_CONFIGS: ComputeConfig[] = [
-  {
-    id: "pro",
-    name: "Pro",
-    vcpu: 4,
-    ramGb: 8,
-    vramGb: 4,
-    smPercent: 16,
-    pricePerHour: 60,
-    bestFor: "Blender, ML inference, CV",
-    gpuModel: "RTX 4090",
-  },
-  {
-    id: "power",
-    name: "Power",
-    vcpu: 6,
-    ramGb: 16,
-    vramGb: 8,
-    smPercent: 33,
-    pricePerHour: 100,
-    bestFor: "Simulation, 3D render, training",
-    gpuModel: "RTX 4090",
-  },
-  {
-    id: "max",
-    name: "Max",
-    vcpu: 8,
-    ramGb: 16,
-    vramGb: 16,
-    smPercent: 66,
-    pricePerHour: 150,
-    bestFor: "Large model training, DL research",
-    gpuModel: "RTX 4090",
-  },
-  {
-    id: "full",
-    name: "Full Machine",
-    vcpu: 16,
-    ramGb: 48,
-    vramGb: 24,
-    smPercent: 100,
-    pricePerHour: 300,
-    bestFor: "Exclusive research, max performance",
-    gpuModel: "RTX 4090",
-  },
-];
+import {
+  getComputeConfigs,
+  getStorageStatus,
+  getBillingData,
+  launchComputeSession,
+  type ComputeConfigResponse,
+  type StorageStatus,
+} from "@/lib/api";
 
 // Generate random instance name
 function generateInstanceName(): string {
@@ -300,18 +247,84 @@ function CheckIcon({ size = 16 }: { size?: number }) {
 export default function LaunchInstancePage() {
   const router = useRouter();
   
-  // State
-  const [selectedConfig, setSelectedConfig] = useState<string>("pro");
+  // API data state
+  const [configs, setConfigs] = useState<ComputeConfigResponse[]>([]);
+  const [configsLoading, setConfigsLoading] = useState(true);
+  const [configsError, setConfigsError] = useState<string | null>(null);
+  const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+  
+  // Form state
+  const [selectedConfig, setSelectedConfig] = useState<string>("");
   const [selectedMode, setSelectedMode] = useState<"gui" | "cli">("gui");
   const [storageType, setStorageType] = useState<"stateful" | "ephemeral">("stateful");
   const [instanceName, setInstanceName] = useState<string>(generateInstanceName());
   const [nameError, setNameError] = useState<string | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   
-  // Mock hasFileStore - toggle to test both states
-  const [hasFileStore, setHasFileStore] = useState<boolean>(true);
+  // Derived state
+  const hasFileStore = storageStatus?.hasStorage && storageStatus?.reachable;
+
+  // Fetch compute configs on mount
+  useEffect(() => {
+    const fetchConfigs = async () => {
+      setConfigsLoading(true);
+      setConfigsError(null);
+      try {
+        const data = await getComputeConfigs();
+        if (data && data.configs && data.configs.length > 0) {
+          setConfigs(data.configs);
+          // Select first available config by default
+          const firstAvailable = data.configs.find(c => c.available);
+          if (firstAvailable) {
+            setSelectedConfig(firstAvailable.id);
+          } else if (data.configs.length > 0) {
+            setSelectedConfig(data.configs[0].id);
+          }
+        } else {
+          setConfigsError("No compute configurations available");
+        }
+      } catch (err) {
+        console.error("Failed to fetch configs:", err);
+        setConfigsError("Failed to load compute configurations. Please try again.");
+      } finally {
+        setConfigsLoading(false);
+      }
+    };
+    fetchConfigs();
+  }, []);
+
+  // Fetch storage status on mount
+  useEffect(() => {
+    const fetchStorageStatus = async () => {
+      try {
+        const status = await getStorageStatus();
+        setStorageStatus(status);
+      } catch (err) {
+        console.error("Failed to fetch storage status:", err);
+        setStorageStatus({ hasStorage: false, reachable: false, serviceHealthy: false });
+      }
+    };
+    fetchStorageStatus();
+  }, []);
+
+  // Fetch wallet balance on mount
+  useEffect(() => {
+    const fetchWalletBalance = async () => {
+      try {
+        const billing = await getBillingData();
+        if (billing) {
+          setWalletBalance(billing.creditBalance || 0);
+        }
+      } catch (err) {
+        console.error("Failed to fetch wallet balance:", err);
+      }
+    };
+    fetchWalletBalance();
+  }, []);
 
   // Dark mode detection
   useEffect(() => {
@@ -326,15 +339,35 @@ export default function LaunchInstancePage() {
 
   // Auto-select storage type based on file store availability
   useEffect(() => {
-    if (hasFileStore) {
-      setStorageType("stateful");
-    } else {
-      setStorageType("ephemeral");
+    if (storageStatus !== null) {
+      if (hasFileStore) {
+        setStorageType("stateful");
+      } else {
+        setStorageType("ephemeral");
+      }
     }
-  }, [hasFileStore]);
+  }, [hasFileStore, storageStatus]);
 
   // Get selected config object
-  const currentConfig = COMPUTE_CONFIGS.find((c) => c.id === selectedConfig);
+  const currentConfig = configs.find((c) => c.id === selectedConfig);
+  
+  // Helper function to get price in rupees
+  const getPricePerHour = (config: ComputeConfigResponse | undefined): number => {
+    if (!config) return 0;
+    return config.basePricePerHourCents / 100;
+  };
+  
+  // Helper function to get RAM in GB
+  const getRamGb = (config: ComputeConfigResponse | undefined): number => {
+    if (!config) return 0;
+    return Math.round(config.memoryMb / 1024);
+  };
+  
+  // Helper function to get VRAM in GB
+  const getVramGb = (config: ComputeConfigResponse | undefined): number => {
+    if (!config) return 0;
+    return Math.round(config.gpuVramMb / 1024);
+  };
 
   // Handle instance name change
   const handleNameChange = (value: string) => {
@@ -342,24 +375,52 @@ export default function LaunchInstancePage() {
     setNameError(validateInstanceName(value));
   };
 
+  // Wallet balance validation
+  const pricePerHour = getPricePerHour(currentConfig);
+  const hasInsufficientBalance = walletBalance < pricePerHour;
+  
+  // Check if selected config is available
+  const isConfigAvailable = currentConfig?.available ?? false;
+
   // Check if launch is valid
-  const canLaunch = currentConfig && !nameError && instanceName.length >= 3;
+  const canLaunch = 
+    currentConfig && 
+    !nameError && 
+    instanceName.length >= 3 && 
+    isConfigAvailable &&
+    !hasInsufficientBalance &&
+    (storageType === "ephemeral" || hasFileStore);
 
   // Handle launch click - open review modal
   const handleLaunchClick = () => {
     if (!canLaunch) return;
+    setLaunchError(null);
     setShowReviewModal(true);
   };
 
-  // Handle confirm launch
-  const handleConfirmLaunch = () => {
+  // Handle confirm launch - call real API
+  const handleConfirmLaunch = async () => {
+    if (!currentConfig) return;
+    
     setIsLaunching(true);
-    // Mock launch - redirect after 1.5s
-    setTimeout(() => {
+    setLaunchError(null);
+    
+    try {
+      const result = await launchComputeSession({
+        computeConfigId: selectedConfig,
+        instanceName: instanceName.toLowerCase(),
+        interfaceMode: selectedMode,
+        storageType: storageType,
+      });
+      
+      // Redirect to instances page with session info
+      router.push(`/instances?session=${result.sessionId}&launched=true`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to launch instance";
+      setLaunchError(message);
+    } finally {
       setIsLaunching(false);
-      setShowReviewModal(false);
-      router.push("/instances");
-    }, 1500);
+    }
   };
 
   // Colors for info boxes
@@ -463,125 +524,216 @@ export default function LaunchInstancePage() {
           }}
         >
           <SectionHeader>Compute Configuration</SectionHeader>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap: "16px",
-            }}
-            className="compute-grid"
-          >
-            {COMPUTE_CONFIGS.map((config) => {
-              const isSelected = selectedConfig === config.id;
-
-              return (
-                <button
-                  key={config.id}
-                  onClick={() => setSelectedConfig(config.id)}
+          
+          {/* Loading state */}
+          {configsLoading && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, 1fr)",
+                gap: "16px",
+              }}
+              className="compute-grid"
+            >
+              {[1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
                   style={{
                     backgroundColor: "var(--bgColor-default)",
-                    border: isSelected
-                      ? "2px solid var(--fgColor-default)"
-                      : "1px solid var(--borderColor-default)",
+                    border: "1px solid var(--borderColor-default)",
                     borderRadius: "4px",
-                    padding: isSelected ? "15px" : "16px",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    transition: "border-color 0.15s ease",
-                    position: "relative",
+                    padding: "16px",
+                    height: "180px",
+                    animation: "pulse 1.5s ease-in-out infinite",
                   }}
                 >
-                  {/* Config Name */}
-                  <div
+                  <div style={{ height: "24px", width: "60%", backgroundColor: "var(--borderColor-default)", borderRadius: "4px", marginBottom: "12px" }} />
+                  <div style={{ height: "16px", width: "80%", backgroundColor: "var(--borderColor-default)", borderRadius: "4px", marginBottom: "8px" }} />
+                  <div style={{ height: "16px", width: "70%", backgroundColor: "var(--borderColor-default)", borderRadius: "4px", marginBottom: "8px" }} />
+                  <div style={{ height: "32px", width: "40%", backgroundColor: "var(--borderColor-default)", borderRadius: "4px", marginBottom: "8px" }} />
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Error state */}
+          {!configsLoading && configsError && (
+            <div
+              style={{
+                padding: "24px",
+                textAlign: "center",
+                color: "var(--fgColor-critical)",
+              }}
+            >
+              <div style={{ marginBottom: "12px" }}>
+                <WarningIcon size={32} />
+              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 500, marginBottom: "8px" }}>
+                {configsError}
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  fontSize: "0.875rem",
+                  fontWeight: 500,
+                  color: "var(--fgColor-default)",
+                  backgroundColor: "transparent",
+                  border: "1px solid var(--borderColor-default)",
+                  borderRadius: "4px",
+                  padding: "8px 16px",
+                  cursor: "pointer",
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          
+          {/* Configs grid */}
+          {!configsLoading && !configsError && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, 1fr)",
+                gap: "16px",
+              }}
+              className="compute-grid"
+            >
+              {configs.map((config) => {
+                const isSelected = selectedConfig === config.id;
+                const isAvailable = config.available;
+
+                return (
+                  <button
+                    key={config.id}
+                    onClick={() => setSelectedConfig(config.id)}
+                    disabled={!isAvailable}
                     style={{
-                      fontSize: "1.125rem",
-                      fontWeight: 600,
-                      color: "var(--fgColor-default)",
-                      marginBottom: "12px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
+                      backgroundColor: "var(--bgColor-default)",
+                      border: isSelected
+                        ? "2px solid var(--fgColor-default)"
+                        : "1px solid var(--borderColor-default)",
+                      borderRadius: "4px",
+                      padding: isSelected ? "15px" : "16px",
+                      cursor: isAvailable ? "pointer" : "not-allowed",
+                      textAlign: "left",
+                      transition: "border-color 0.15s ease",
+                      position: "relative",
+                      opacity: isAvailable ? 1 : 0.5,
                     }}
                   >
-                    <span>{config.name}</span>
-                    <span
+                    {/* Unavailable badge */}
+                    {!isAvailable && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "8px",
+                          right: "8px",
+                          fontSize: "0.625rem",
+                          fontWeight: 600,
+                          color: "var(--fgColor-critical)",
+                          backgroundColor: "var(--bgColor-critical-muted)",
+                          padding: "2px 6px",
+                          borderRadius: "2px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Unavailable
+                      </span>
+                    )}
+                    
+                    {/* Config Name */}
+                    <div
                       style={{
-                        display: "inline-flex",
+                        fontSize: "1.125rem",
+                        fontWeight: 600,
+                        color: "var(--fgColor-default)",
+                        marginBottom: "12px",
+                        display: "flex",
                         alignItems: "center",
-                        gap: "4px",
-                        padding: "2px 6px",
-                        backgroundColor: "var(--bgColor-muted)",
-                        borderRadius: "2px",
-                        fontSize: "0.625rem",
-                        fontWeight: 500,
-                        color: "var(--fgColor-muted)",
+                        justifyContent: "space-between",
                       }}
                     >
-                      <GpuChipIcon size={10} />
-                      GPU
-                    </span>
-                  </div>
+                      <span>{config.name}</span>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          padding: "2px 6px",
+                          backgroundColor: "var(--bgColor-muted)",
+                          borderRadius: "2px",
+                          fontSize: "0.625rem",
+                          fontWeight: 500,
+                          color: "var(--fgColor-muted)",
+                        }}
+                      >
+                        <GpuChipIcon size={10} />
+                        GPU
+                      </span>
+                    </div>
 
-                  {/* Specs Grid */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: "4px 12px",
-                      fontSize: "0.875rem",
-                      fontWeight: 400,
-                      color: "var(--fgColor-muted)",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    <div>{config.vcpu} vCPU</div>
-                    <div>{config.ramGb} GB RAM</div>
-                    <div style={{ color: "var(--fgColor-default)" }}>{config.vramGb} GB VRAM</div>
-                    <div>{config.smPercent}% SM</div>
-                  </div>
+                    {/* Specs Grid */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "4px 12px",
+                        fontSize: "0.875rem",
+                        fontWeight: 400,
+                        color: "var(--fgColor-muted)",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      <div>{config.vcpu} vCPU</div>
+                      <div>{getRamGb(config)} GB RAM</div>
+                      <div style={{ color: "var(--fgColor-default)" }}>{getVramGb(config)} GB VRAM</div>
+                      <div>{config.hamiSmPercent}% SM</div>
+                    </div>
 
-                  {/* GPU Model for GPU configs */}
-                  {config.gpuModel && (
+                    {/* GPU Model for GPU configs */}
+                    {config.gpuModel && (
+                      <div
+                        style={{
+                          fontSize: "0.75rem",
+                          fontWeight: 400,
+                          color: "var(--fgColor-muted)",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        {config.gpuModel}
+                      </div>
+                    )}
+
+                    {/* Price */}
+                    <div
+                      style={{
+                        fontSize: "1.5rem",
+                        fontWeight: 700,
+                        color: "var(--fgColor-default)",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      ₹{getPricePerHour(config)}/hr
+                    </div>
+
+                    {/* Best For */}
                     <div
                       style={{
                         fontSize: "0.75rem",
                         fontWeight: 400,
                         color: "var(--fgColor-muted)",
-                        marginBottom: "8px",
+                        fontStyle: "italic",
+                        lineHeight: "1.3",
                       }}
                     >
-                      {config.gpuModel}
+                      {config.bestFor || "General purpose GPU workloads"}
                     </div>
-                  )}
-
-                  {/* Price */}
-                  <div
-                    style={{
-                      fontSize: "1.5rem",
-                      fontWeight: 700,
-                      color: "var(--fgColor-default)",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    ₹{config.pricePerHour}/hr
-                  </div>
-
-                  {/* Best For */}
-                  <div
-                    style={{
-                      fontSize: "0.75rem",
-                      fontWeight: 400,
-                      color: "var(--fgColor-muted)",
-                      fontStyle: "italic",
-                      lineHeight: "1.3",
-                    }}
-                  >
-                    {config.bestFor}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* SECTION 3: OPERATING SYSTEM */}
@@ -770,36 +922,7 @@ export default function LaunchInstancePage() {
         >
           <SectionHeader>Storage</SectionHeader>
           
-          {/* Dev toggle for testing */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              marginBottom: "16px",
-              padding: "8px 12px",
-              backgroundColor: "var(--bgColor-muted)",
-              borderRadius: "4px",
-              fontSize: "0.75rem",
-              color: "var(--fgColor-muted)",
-            }}
-          >
-            <span>Dev: hasFileStore</span>
-            <button
-              onClick={() => setHasFileStore(!hasFileStore)}
-              style={{
-                padding: "2px 8px",
-                fontSize: "0.75rem",
-                backgroundColor: hasFileStore ? infoBoxColors.green.text : "var(--fgColor-muted)",
-                color: "#fff",
-                border: "none",
-                borderRadius: "2px",
-                cursor: "pointer",
-              }}
-            >
-              {hasFileStore ? "true" : "false"}
-            </button>
-          </div>
+          {/* hasFileStore will come from API */}
 
           <div
             style={{
@@ -1159,8 +1282,8 @@ export default function LaunchInstancePage() {
                 color: "var(--fgColor-muted)",
               }}
             >
-              {currentConfig?.vcpu || 0} vCPU · {currentConfig?.ramGb || 0} GB RAM
-              {currentConfig?.vramGb && ` · ${currentConfig.vramGb} GB VRAM`}
+              {currentConfig?.vcpu || 0} vCPU · {getRamGb(currentConfig)} GB RAM
+              {currentConfig && getVramGb(currentConfig) > 0 && ` · ${getVramGb(currentConfig)} GB VRAM`}
             </div>
           </div>
 
@@ -1173,7 +1296,7 @@ export default function LaunchInstancePage() {
                 color: "var(--fgColor-default)",
               }}
             >
-              ₹{currentConfig?.pricePerHour || 0}/hr
+              ₹{pricePerHour}/hr
             </div>
             <button
               onClick={handleLaunchClick}
@@ -1284,7 +1407,7 @@ export default function LaunchInstancePage() {
               }}
             >
               <p style={{ margin: "0 0 16px 0" }}>
-                You will be billed at <strong>₹{currentConfig?.pricePerHour}/hr</strong> for this instance whether the GPU is actively in use or not.
+                You will be billed at <strong>₹{pricePerHour}/hr</strong> for this instance whether the GPU is actively in use or not.
               </p>
               <p style={{ margin: "0 0 16px 0" }}>
                 I have read and agree to the following end user licensing agreements: <strong>NVIDIA CUDA EULA</strong> and <strong>cuDNN Supplement</strong>.
@@ -1299,6 +1422,27 @@ export default function LaunchInstancePage() {
                 By clicking <strong>&quot;Confirm and Launch&quot;</strong>, you agree to LaaS Terms of Service and Acceptable Use Policy.
               </p>
             </div>
+            
+            {/* Launch Error Display */}
+            {launchError && (
+              <div
+                style={{
+                  margin: "0 24px 16px",
+                  padding: "12px 16px",
+                  backgroundColor: "var(--bgColor-critical-muted)",
+                  borderLeft: "3px solid var(--fgColor-critical)",
+                  borderRadius: "4px",
+                  fontSize: "0.875rem",
+                  color: "var(--fgColor-critical)",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                }}
+              >
+                <WarningIcon size={18} />
+                <span>{launchError}</span>
+              </div>
+            )}
 
             {/* Modal Footer */}
             <div
@@ -1383,6 +1527,14 @@ export default function LaunchInstancePage() {
         @media (max-width: 640px) {
           .compute-grid {
             grid-template-columns: 1fr !important;
+          }
+        }
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.5;
           }
         }
       `}</style>

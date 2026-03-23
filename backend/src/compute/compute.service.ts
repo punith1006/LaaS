@@ -8,7 +8,10 @@ import {
   HttpException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { randomUUID } from 'crypto';
+import * as crypto from 'crypto';
 import {
   LaunchSessionDto,
   ResourceSummary,
@@ -19,6 +22,10 @@ import {
   NodeResourceStatus,
   AdminSessionResponse,
   AdminSessionListResponse,
+  LaunchSessionResponse,
+  SessionEventResponse,
+  ConnectionResponse,
+  SessionLogsResponse,
 } from './compute.dto';
 
 // Statuses that consume resources (session is considered "active" for resource purposes)
@@ -34,7 +41,70 @@ const ALREADY_ENDED_STATUSES = ['stopping', 'ended', 'failed', 'terminated_idle'
 export class ComputeService {
   private readonly logger = new Logger(ComputeService.name);
 
+  // Track active polling sessions to avoid duplicates
+  private readonly activePollingMap = new Map<string, boolean>();
+
   constructor(private readonly prisma: PrismaService) {}
+
+  // ============================================================================
+  // ORCHESTRATION HTTP CLIENT HELPER
+  // ============================================================================
+
+  private async callOrchestration(
+    path: string,
+    method: 'GET' | 'POST' = 'GET',
+    body?: unknown,
+  ): Promise<unknown> {
+    const baseUrl = process.env.SESSION_ORCHESTRATION_URL || 'http://100.100.66.101:9998';
+    const secret = process.env.SESSION_ORCHESTRATION_SECRET;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (secret) headers['X-Session-Secret'] = secret;
+    headers['X-Request-Id'] = randomUUID();
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Orchestration ${method} ${path} failed: ${res.status} ${text}`);
+      }
+      return await res.json();
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
+  }
+
+  // ============================================================================
+  // AES-256-GCM ENCRYPTION HELPERS
+  // ============================================================================
+
+  private encryptPassword(password: string): { encrypted: string; iv: string; tag: string } {
+    const key = Buffer.from(process.env.SESSION_CREDENTIAL_KEY || '', 'hex');
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    let encrypted = cipher.update(password, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    const tag = cipher.getAuthTag().toString('hex');
+    return { encrypted, iv: iv.toString('hex'), tag };
+  }
+
+  private decryptPassword(encrypted: string, iv: string, tag: string): string {
+    const key = Buffer.from(process.env.SESSION_CREDENTIAL_KEY || '', 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'hex'));
+    decipher.setAuthTag(Buffer.from(tag, 'hex'));
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  }
 
   // ============================================================================
   // HELPER: Get allocatable resources from node
@@ -163,8 +233,9 @@ export class ComputeService {
   // (c) launchSession - Launch a new compute session with serializable transaction
   // ============================================================================
 
-  async launchSession(userId: string, dto: LaunchSessionDto) {
-    return this.prisma.$transaction(
+  async launchSession(userId: string, dto: LaunchSessionDto): Promise<LaunchSessionResponse> {
+    // Phase 1: Transaction - create session, reservation, wallet hold
+    const txResult = await this.prisma.$transaction(
       async (tx) => {
         // 1. Validate config exists and is active
         const config = await tx.computeConfig.findUnique({ where: { id: dto.computeConfigId } });
@@ -267,7 +338,16 @@ export class ComputeService {
           );
         }
 
-        // 6. If stateful storage, check user has active File Store
+        // 6. Get user for email and storage UID
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          select: { email: true, storageUid: true },
+        });
+        if (!user) {
+          throw new NotFoundException('User not found');
+        }
+
+        // 7. If stateful storage, check user has active File Store
         let nfsMountPath: string | null = null;
         if (dto.storageType === 'stateful') {
           const volume = await tx.userStorageVolume.findFirst({
@@ -281,10 +361,10 @@ export class ComputeService {
           nfsMountPath = volume.nfsExportPath;
         }
 
-        // 7. Determine session type
+        // 8. Determine session type
         const sessionType = dto.interfaceMode === 'gui' ? 'stateful_desktop' : 'ephemeral_cli';
 
-        // 8. Create session with full allocation snapshot
+        // 9. Create session with full allocation snapshot
         const session = await tx.session.create({
           data: {
             userId,
@@ -292,7 +372,7 @@ export class ComputeService {
             nodeId: node.id,
             sessionType: sessionType as any,
             instanceName: dto.instanceName,
-            containerName: dto.instanceName,
+            containerName: null, // Will be set after orchestration responds
             storageMode: dto.storageType as any,
             status: 'pending',
             nfsMountPath,
@@ -321,7 +401,7 @@ export class ComputeService {
           include: { computeConfig: true },
         });
 
-        // 9. Create NodeResourceReservation
+        // 10. Create NodeResourceReservation
         await tx.nodeResourceReservation.create({
           data: {
             nodeId: node.id,
@@ -334,7 +414,7 @@ export class ComputeService {
           },
         });
 
-        // 10. Update node allocated counters
+        // 11. Update node allocated counters
         await tx.node.update({
           where: { id: node.id },
           data: {
@@ -345,7 +425,7 @@ export class ComputeService {
           },
         });
 
-        // 11. Create wallet hold for 1 hour
+        // 12. Create wallet hold for 1 hour
         await tx.walletHold.create({
           data: {
             walletId: wallet.id,
@@ -358,14 +438,298 @@ export class ComputeService {
           },
         });
 
-        this.logger.log(
-          `Session launched: userId=${userId} sessionId=${session.id} config=${config.slug} instanceName=${dto.instanceName}`,
+        // Create session_created event
+      await tx.sessionEvent.create({
+        data: {
+          sessionId: session.id,
+          eventType: 'session_created',
+          payload: {
+            instanceName: dto.instanceName,
+            configSlug: config.slug,
+            configName: config.name,
+            interfaceMode: dto.interfaceMode,
+            storageType: dto.storageType,
+          },
+        },
+      });
+
+      this.logger.log(
+          `Session created: userId=${userId} sessionId=${session.id} config=${config.slug} instanceName=${dto.instanceName}`,
         );
 
-        return session;
+        return { session, config, node, user };
       },
       { isolationLevel: 'Serializable', timeout: 15000 },
     );
+
+    const { session, config, node, user } = txResult;
+
+    // Phase 2: Call orchestration service to launch the container
+    try {
+      const orchResponse = await this.callOrchestration('/sessions/launch', 'POST', {
+        session_id: session.id,
+        user_id: userId,
+        user_email: user.email,
+        tier_slug: config.slug,
+        vcpu: config.vcpu,
+        memory_mb: config.memoryMb,
+        vram_mb: config.gpuVramMb,
+        hami_sm_percent: config.hamiSmPercent ?? 17,
+        storage_type: dto.storageType,
+        storage_uid: dto.storageType === 'stateful' ? user.storageUid : null,
+        node_hostname: node.hostname,
+      }) as { containerName: string; launchId: string; sessionId: string };
+
+      // Update session with container name and status = starting
+      await this.prisma.session.update({
+        where: { id: session.id },
+        data: {
+          containerName: orchResponse.containerName,
+          status: 'starting',
+        },
+      });
+
+      // Create session event for launch initiated
+      await this.prisma.sessionEvent.create({
+        data: {
+          sessionId: session.id,
+          eventType: 'launch_initiated',
+          payload: {
+            containerName: orchResponse.containerName,
+            launchId: orchResponse.launchId,
+          },
+        },
+      });
+
+      // Phase 3: Start background polling loop
+      this.startEventPolling(session.id, orchResponse.containerName, node);
+
+      this.logger.log(
+        `Session launching: sessionId=${session.id} containerName=${orchResponse.containerName}`,
+      );
+
+      return {
+        sessionId: session.id,
+        containerName: orchResponse.containerName,
+        status: 'starting',
+        instanceName: session.instanceName,
+      };
+    } catch (err) {
+      // Orchestration failed - mark session as failed and release resources
+      this.logger.error(`Orchestration launch failed for session ${session.id}: ${err}`);
+      await this.releaseSessionResources(session.id, 'orchestration_launch_failed');
+
+      throw new ServiceUnavailableException(
+        'Failed to launch session on compute node. Please try again.',
+      );
+    }
+  }
+
+  // ============================================================================
+  // BACKGROUND EVENT POLLING FOR SESSION LAUNCH
+  // ============================================================================
+
+  private startEventPolling(
+    sessionId: string,
+    containerName: string,
+    node: { id: string; hostname: string; ipCompute: string | null },
+  ): void {
+    // Prevent duplicate polling
+    if (this.activePollingMap.get(sessionId)) {
+      this.logger.warn(`Polling already active for session ${sessionId}`);
+      return;
+    }
+    this.activePollingMap.set(sessionId, true);
+
+    const pollIntervalMs = 2000;
+    const timeoutMs = 120000;
+    const startTime = Date.now();
+    let lastEventCount = 0;
+
+    const poll = async () => {
+      // Check if polling was cancelled
+      if (!this.activePollingMap.get(sessionId)) {
+        return;
+      }
+
+      // Check timeout
+      if (Date.now() - startTime > timeoutMs) {
+        this.logger.warn(`Session ${sessionId} launch timed out after ${timeoutMs}ms`);
+        await this.handleLaunchFailure(sessionId, 'Launch timed out after 120 seconds');
+        this.activePollingMap.delete(sessionId);
+        return;
+      }
+
+      try {
+        const eventsData = (await this.callOrchestration(
+          `/sessions/${containerName}/events`,
+        )) as {
+          events: Array<{ step: string; message: string; ts: string; status: string }>;
+          currentStep: string | null;
+          overallStatus: 'launching' | 'ready' | 'failed';
+          connectionInfo: {
+            nginxPort: number;
+            selkiesPort: number;
+            displayNumber: number;
+            password: string;
+            username: string;
+            sessionUrl: string;
+          } | null;
+        };
+
+        // Create SessionEvent records for new events
+        if (eventsData.events.length > lastEventCount) {
+          const newEvents = eventsData.events.slice(lastEventCount);
+          for (const event of newEvents) {
+            await this.prisma.sessionEvent.create({
+              data: {
+                sessionId,
+                eventType: `launch_${event.step}`,
+                payload: {
+                  message: event.message,
+                  status: event.status,
+                  ts: event.ts,
+                },
+              },
+            });
+          }
+          lastEventCount = eventsData.events.length;
+        }
+
+        // Handle completion states
+        if (eventsData.overallStatus === 'ready' && eventsData.connectionInfo) {
+          // Session is ready!
+          const connInfo = eventsData.connectionInfo;
+          const { encrypted, iv, tag } = this.encryptPassword(connInfo.password);
+
+          // Build session URL using node IP
+          const nodeIp = node.ipCompute || '100.100.66.101';
+          const sessionUrl = `http://${nodeIp}:${connInfo.nginxPort}/`;
+
+          // Get current resource snapshot
+          const currentSession = await this.prisma.session.findUnique({
+            where: { id: sessionId },
+            select: { resourceSnapshot: true },
+          });
+          const existingSnapshot = (currentSession?.resourceSnapshot as Record<string, unknown>) || {};
+
+          await this.prisma.session.update({
+            where: { id: sessionId },
+            data: {
+              status: 'running',
+              startedAt: new Date(),
+              nginxPort: connInfo.nginxPort,
+              selkiesPort: connInfo.selkiesPort,
+              displayNumber: connInfo.displayNumber,
+              sessionUrl,
+              resourceSnapshot: {
+                ...existingSnapshot,
+                encryptedPassword: encrypted,
+                encryptedPasswordIv: iv,
+                encryptedPasswordTag: tag,
+              },
+            },
+          });
+
+          await this.prisma.sessionEvent.create({
+            data: {
+              sessionId,
+              eventType: 'session_ready',
+              payload: {
+                sessionUrl,
+                nginxPort: connInfo.nginxPort,
+                selkiesPort: connInfo.selkiesPort,
+                displayNumber: connInfo.displayNumber,
+              },
+            },
+          });
+
+          this.logger.log(`Session ${sessionId} is now running at ${sessionUrl}`);
+          this.activePollingMap.delete(sessionId);
+          return;
+        }
+
+        if (eventsData.overallStatus === 'failed') {
+          // Get the failure reason from the last event
+          const lastEvent = eventsData.events[eventsData.events.length - 1];
+          const reason = lastEvent?.message || 'Launch failed';
+          await this.handleLaunchFailure(sessionId, reason);
+          this.activePollingMap.delete(sessionId);
+          return;
+        }
+
+        // Continue polling
+        setTimeout(poll, pollIntervalMs);
+      } catch (err) {
+        this.logger.warn(`Event polling error for session ${sessionId}: ${err}`);
+        // Continue polling on transient errors
+        setTimeout(poll, pollIntervalMs);
+      }
+    };
+
+    // Start the first poll
+    setTimeout(poll, pollIntervalMs);
+  }
+
+  private async handleLaunchFailure(sessionId: string, reason: string): Promise<void> {
+    this.logger.error(`Session ${sessionId} launch failed: ${reason}`);
+    await this.releaseSessionResources(sessionId, reason);
+
+    await this.prisma.sessionEvent.create({
+      data: {
+        sessionId,
+        eventType: 'launch_failed',
+        payload: { reason },
+      },
+    });
+  }
+
+  private async releaseSessionResources(sessionId: string, reason: string): Promise<void> {
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { nodeResourceReservation: true, computeConfig: true },
+    });
+
+    if (!session) return;
+
+    const now = new Date();
+
+    // Update session to failed
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        status: 'failed',
+        endedAt: now,
+        terminationReason: reason as any,
+      },
+    });
+
+    // Release NodeResourceReservation
+    if (session.nodeResourceReservation) {
+      await this.prisma.nodeResourceReservation.update({
+        where: { id: session.nodeResourceReservation.id },
+        data: { status: 'released', releasedAt: now },
+      });
+    }
+
+    // Decrement node counters
+    if (session.nodeId && session.computeConfig) {
+      await this.prisma.node.update({
+        where: { id: session.nodeId },
+        data: {
+          allocatedVcpu: { decrement: session.allocatedVcpu ?? session.computeConfig.vcpu },
+          allocatedMemoryMb: { decrement: session.allocatedMemoryMb ?? session.computeConfig.memoryMb },
+          allocatedGpuVramMb: { decrement: session.allocatedGpuVramMb ?? session.computeConfig.gpuVramMb },
+          currentSessionCount: { decrement: 1 },
+        },
+      });
+    }
+
+    // Release wallet holds
+    await this.prisma.walletHold.updateMany({
+      where: { sessionId, status: 'active' },
+      data: { status: 'released', releasedAt: now, releaseReason: 'session_failed' },
+    });
   }
 
   // ============================================================================
@@ -576,7 +940,7 @@ export class ComputeService {
   // ============================================================================
 
   async terminateSession(userId: string, sessionId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Find session and verify ownership
       const session = await tx.session.findFirst({
         where: { id: sessionId, userId },
@@ -593,7 +957,7 @@ export class ComputeService {
       // 2. Check if already ended (idempotent)
       if (ALREADY_ENDED_STATUSES.includes(session.status)) {
         this.logger.debug(`Session ${sessionId} already in terminal state: ${session.status}`);
-        return session;
+        return { updatedSession: session, containerName: null };
       }
 
       // 3. Verify session is in terminable status
@@ -646,22 +1010,36 @@ export class ComputeService {
         });
       }
 
-      // 8. Release active wallet holds
-      await tx.walletHold.updateMany({
-        where: { sessionId, status: 'active' },
-        data: {
-          status: 'released',
-          releasedAt: now,
-          releaseReason: 'session_terminated',
-        },
-      });
-
-      // 9. Calculate final cost (minimum 1 minute)
+      // 8. Calculate final cost (minimum 1 minute)
       let finalCostCents = 0;
       if (durationSeconds !== null && durationSeconds > 0) {
         const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
         const rateCentsPerMinute = session.computeConfig.basePricePerHourCents / 60;
         finalCostCents = Math.ceil(durationMinutes * rateCentsPerMinute);
+      }
+
+      // 9. Handle wallet holds - capture if we're billing, release if no charge
+      if (finalCostCents > 0) {
+        // Capture the hold since we're billing the user
+        await tx.walletHold.updateMany({
+          where: { sessionId, status: 'active' },
+          data: {
+            status: 'captured',
+            releasedAt: now,
+            releaseReason: 'session_billing_captured',
+            capturedAmount: BigInt(finalCostCents),
+          },
+        });
+      } else {
+        // Release the hold since there's no charge (session never started or 0 duration)
+        await tx.walletHold.updateMany({
+          where: { sessionId, status: 'active' },
+          data: {
+            status: 'released',
+            releasedAt: now,
+            releaseReason: 'session_terminated_no_charge',
+          },
+        });
       }
 
       // 10. Create BillingCharge record
@@ -724,12 +1102,44 @@ export class ComputeService {
         },
       });
 
+      // 13. Create session terminated event
+      await tx.sessionEvent.create({
+        data: {
+          sessionId,
+          eventType: 'session_terminated',
+          payload: {
+            terminatedBy: userId,
+            terminationReason: 'user_requested',
+            durationSeconds,
+            finalCostCents,
+          },
+        },
+      });
+
       this.logger.log(
         `Session terminated: userId=${userId} sessionId=${sessionId} duration=${durationSeconds}s cost=${finalCostCents} paise`,
       );
 
-      return updatedSession;
+      // 14. Call orchestration to stop container (after transaction commits we handle this)
+      // Store containerName for post-transaction orchestration call
+      return { updatedSession, containerName: session.containerName };
     });
+
+    // After transaction: call orchestration to stop the container
+    if (result.containerName) {
+      try {
+        await this.callOrchestration(`/sessions/${result.containerName}/stop`, 'POST');
+        this.logger.log(`Container ${result.containerName} stopped via orchestration`);
+      } catch (err) {
+        // Log but don't fail - container may already be gone (404) or orchestration may be down
+        this.logger.warn(`Failed to stop container ${result.containerName} via orchestration: ${err}`);
+      }
+    }
+
+    // Cancel any active polling for this session
+    this.activePollingMap.delete(sessionId);
+
+    return result.updatedSession;
   }
 
   // ============================================================================
@@ -873,5 +1283,310 @@ export class ComputeService {
       sessions: formattedSessions,
       total: formattedSessions.length,
     };
+  }
+
+  // ============================================================================
+  // SESSION STATUS RECONCILIATION (Cron job)
+  // ============================================================================
+
+  @Cron('*/30 * * * * *') // Every 30 seconds
+  async reconcileSessionStatuses(): Promise<void> {
+    // Query sessions with active statuses
+    const activeSessions = await this.prisma.session.findMany({
+      where: { status: { in: ['starting', 'running', 'reconnecting'] } },
+      include: { computeConfig: true },
+    });
+
+    if (activeSessions.length === 0) return;
+
+    this.logger.debug(`Reconciling ${activeSessions.length} active sessions`);
+
+    for (const session of activeSessions) {
+      if (!session.containerName) continue;
+
+      try {
+        const statusData = (await this.callOrchestration(
+          `/sessions/${session.containerName}/status`,
+        )) as { containerName: string; status: string; running: boolean };
+
+        // Container is running but session is 'starting' - promote to running
+        if (statusData.running && session.status === 'starting') {
+          // This shouldn't happen normally (polling handles it), but just in case
+          this.logger.log(`Promoting session ${session.id} to running (reconciliation)`);
+          await this.prisma.session.update({
+            where: { id: session.id },
+            data: { status: 'running', startedAt: session.startedAt ?? new Date() },
+          });
+        }
+
+        // Container exited but session is still 'running' - mark as ended
+        if (!statusData.running && statusData.status === 'exited' && session.status === 'running') {
+          this.logger.log(`Session ${session.id} container exited unexpectedly, settling billing`);
+          // Settle billing and mark as ended
+          await this.settleSessionBilling(session.id, session.userId);
+        }
+      } catch (err) {
+        // 404 means container not found - if session is active, mark as failed
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes('404')) {
+          this.logger.warn(`Container ${session.containerName} not found for active session ${session.id}`);
+          await this.releaseSessionResources(session.id, 'container_not_found');
+        } else {
+          this.logger.warn(`Reconciliation error for session ${session.id}: ${errMsg}`);
+        }
+      }
+    }
+  }
+
+  private async settleSessionBilling(sessionId: string, userId: string): Promise<void> {
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { computeConfig: true, nodeResourceReservation: true },
+    });
+
+    if (!session || !session.startedAt) return;
+
+    const now = new Date();
+    const durationSeconds = Math.floor((now.getTime() - session.startedAt.getTime()) / 1000);
+    const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
+    const rateCentsPerMinute = session.computeConfig.basePricePerHourCents / 60;
+    const finalCostCents = Math.ceil(durationMinutes * rateCentsPerMinute);
+
+    await this.prisma.$transaction(async (tx) => {
+      // Update session to ended
+      await tx.session.update({
+        where: { id: sessionId },
+        data: {
+          status: 'ended',
+          endedAt: now,
+          durationSeconds,
+          cumulativeCostCents: BigInt(finalCostCents),
+          costLastUpdatedAt: now,
+          terminationReason: 'error_unrecoverable',
+        },
+      });
+
+      // Release reservation
+      if (session.nodeResourceReservation) {
+        await tx.nodeResourceReservation.update({
+          where: { id: session.nodeResourceReservation.id },
+          data: { status: 'released', releasedAt: now },
+        });
+      }
+
+      // Decrement node counters
+      if (session.nodeId) {
+        await tx.node.update({
+          where: { id: session.nodeId },
+          data: {
+            allocatedVcpu: { decrement: session.allocatedVcpu ?? session.computeConfig.vcpu },
+            allocatedMemoryMb: { decrement: session.allocatedMemoryMb ?? session.computeConfig.memoryMb },
+            allocatedGpuVramMb: { decrement: session.allocatedGpuVramMb ?? session.computeConfig.gpuVramMb },
+            currentSessionCount: { decrement: 1 },
+          },
+        });
+      }
+
+      // Release wallet holds
+      await tx.walletHold.updateMany({
+        where: { sessionId, status: 'active' },
+        data: { status: 'released', releasedAt: now, releaseReason: 'session_ended' },
+      });
+
+      // Create billing charge
+      const wallet = await tx.wallet.findUnique({ where: { userId } });
+      if (finalCostCents > 0 && wallet) {
+        const newBalance = BigInt(wallet.balanceCents) - BigInt(finalCostCents);
+        const walletTxn = await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            userId,
+            txnType: 'debit',
+            amountCents: BigInt(finalCostCents),
+            balanceAfterCents: newBalance,
+            referenceType: 'compute_billing',
+            referenceId: sessionId,
+            description: `Compute session: ${session.instanceName || session.id}`,
+          },
+        });
+
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balanceCents: newBalance, lifetimeSpentCents: { increment: finalCostCents } },
+        });
+
+        await tx.billingCharge.create({
+          data: {
+            userId,
+            chargeType: 'compute',
+            sessionId,
+            computeConfigId: session.computeConfigId,
+            durationSeconds,
+            rateCentsPerHour: session.computeConfig.basePricePerHourCents,
+            amountCents: BigInt(finalCostCents),
+            currency: 'INR',
+            walletTransactionId: walletTxn.id,
+          },
+        });
+      }
+
+      // Create event
+      await tx.sessionEvent.create({
+        data: {
+          sessionId,
+          eventType: 'session_ended',
+          payload: { reason: 'container_exited', durationSeconds, finalCostCents },
+        },
+      });
+    });
+  }
+
+  // ============================================================================
+  // NEW ENDPOINTS: Restart, Logs, Connection, Events
+  // ============================================================================
+
+  async restartSession(userId: string, sessionId: string): Promise<{ ok: boolean; message: string }> {
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId, userId },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    if (session.status !== 'running') {
+      throw new ConflictException(`Session cannot be restarted from status: ${session.status}`);
+    }
+
+    if (!session.containerName) {
+      throw new BadRequestException('Session has no container to restart');
+    }
+
+    try {
+      await this.callOrchestration(`/sessions/${session.containerName}/restart`, 'POST');
+
+      await this.prisma.sessionEvent.create({
+        data: {
+          sessionId,
+          eventType: 'session_restarted',
+          payload: { restartedBy: userId },
+        },
+      });
+
+      this.logger.log(`Session ${sessionId} restarted by user ${userId}`);
+      return { ok: true, message: 'Session restart initiated' };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to restart session ${sessionId}: ${errMsg}`);
+      throw new ServiceUnavailableException('Failed to restart session');
+    }
+  }
+
+  async getSessionLogs(userId: string, sessionId: string): Promise<SessionLogsResponse> {
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId, userId },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    if (!session.containerName) {
+      throw new BadRequestException('Session has no container');
+    }
+
+    try {
+      const logsData = (await this.callOrchestration(
+        `/sessions/${session.containerName}/logs`,
+      )) as { containerName: string; logs: string; tail: number };
+
+      return {
+        containerName: logsData.containerName,
+        logs: logsData.logs,
+        tail: logsData.tail,
+      };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes('404')) {
+        throw new NotFoundException('Container not found');
+      }
+      this.logger.error(`Failed to get logs for session ${sessionId}: ${errMsg}`);
+      throw new ServiceUnavailableException('Failed to retrieve session logs');
+    }
+  }
+
+  async getSessionConnection(userId: string, sessionId: string): Promise<ConnectionResponse> {
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId, userId },
+      select: {
+        id: true,
+        status: true,
+        sessionUrl: true,
+        resourceSnapshot: true,
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    if (session.status === 'running') {
+      const snapshot = session.resourceSnapshot as Record<string, unknown> | null;
+      if (
+        snapshot?.encryptedPassword &&
+        snapshot?.encryptedPasswordIv &&
+        snapshot?.encryptedPasswordTag
+      ) {
+        try {
+          const password = this.decryptPassword(
+            snapshot.encryptedPassword as string,
+            snapshot.encryptedPasswordIv as string,
+            snapshot.encryptedPasswordTag as string,
+          );
+          return {
+            status: 'ready',
+            sessionUrl: session.sessionUrl || undefined,
+            username: 'ubuntu',
+            password,
+          };
+        } catch (err) {
+          this.logger.error(`Failed to decrypt password for session ${sessionId}: ${err}`);
+          return { status: 'unavailable' };
+        }
+      }
+      // No encrypted password - session is running but credentials not yet available
+      return { status: 'launching' };
+    }
+
+    if (session.status === 'starting' || session.status === 'pending') {
+      return { status: 'launching' };
+    }
+
+    // ended, failed, stopping, etc.
+    return { status: 'unavailable' };
+  }
+
+  async getSessionEvents(userId: string, sessionId: string): Promise<SessionEventResponse[]> {
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId, userId },
+      select: { id: true },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    const events = await this.prisma.sessionEvent.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return events.map((e) => ({
+      id: e.id,
+      sessionId: e.sessionId,
+      eventType: e.eventType,
+      payload: e.payload as Record<string, unknown> | null,
+      createdAt: e.createdAt,
+    }));
   }
 }

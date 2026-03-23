@@ -174,3 +174,39 @@ export interface AdminSessionListResponse {
   sessions: AdminSessionResponse[];
   total: number;
 }
+
+// ============================================================================
+// SESSION ORCHESTRATION TYPES
+// ============================================================================
+
+export interface LaunchSessionResponse {
+  sessionId: string;
+  containerName: string | null;
+  status: string;
+  instanceName: string | null;
+}
+
+export interface SessionEventResponse {
+  id: string;
+  sessionId: string;
+  eventType: string;
+  payload: Record<string, unknown> | null;
+  createdAt: Date;
+}
+
+export interface ConnectionResponse {
+  status: 'ready' | 'launching' | 'unavailable';
+  sessionUrl?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface SessionLogsResponse {
+  containerName: string;
+  logs: string;
+  tail: number;
+}
+
+export class RestartSessionDto {
+  // Empty class for typing - no additional fields needed
+}

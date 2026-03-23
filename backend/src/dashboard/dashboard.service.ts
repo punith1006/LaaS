@@ -553,30 +553,196 @@ export class DashboardService {
   }
 
   /**
-   * Get recent activity (audit logs) for the current user.
+   * Get recent activity (audit logs + session events + billing) for the current user.
    * Used for the Recent Activity section on the Home page.
    */
   async getRecentActivity(userId: string, days: number = 30) {
     const since = new Date();
     since.setDate(since.getDate() - days);
 
+    // Fetch audit logs
     const logs = await this.prisma.auditLog.findMany({
       where: {
         actorId: userId,
         createdAt: { gte: since },
       },
       orderBy: { createdAt: 'desc' },
-      take: 200, // reasonable limit
+      take: 100,
     });
 
-    return logs.map((log) => ({
+    // Fetch session events with session info
+    const sessionEvents = await this.prisma.sessionEvent.findMany({
+      where: {
+        session: { userId },
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        session: {
+          select: {
+            instanceName: true,
+            computeConfig: {
+              select: { name: true, slug: true },
+            },
+          },
+        },
+      },
+    });
+
+    // Fetch billing charges
+    const billingCharges = await this.prisma.billingCharge.findMany({
+      where: {
+        userId,
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        session: {
+          select: { instanceName: true },
+        },
+        computeConfig: {
+          select: { name: true },
+        },
+      },
+    });
+
+    // Fetch wallet transactions (credits added)
+    const walletTransactions = await this.prisma.walletTransaction.findMany({
+      where: {
+        userId,
+        createdAt: { gte: since },
+        txnType: 'credit', // Only show credits, debits are shown as billing charges
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    // Map audit logs to activity items
+    const auditActivities = logs.map((log) => ({
       id: log.id,
       action: log.action,
       category: log.resourceType,
-      status: log.actionReason,
-      details: log.newData,
+      status: log.actionReason ?? 'success',
+      details: log.newData as Record<string, any> | null,
       ipAddress: log.clientIp,
       createdAt: log.createdAt.toISOString(),
     }));
+
+    // Map session events to activity items
+    const sessionActivities = sessionEvents.map((event) => {
+      const instanceName = event.session?.instanceName || 'Instance';
+      const configName = event.session?.computeConfig?.name || '';
+      const payload = event.payload as Record<string, any> | null;
+
+      // Determine action and description based on event type
+      let action: string;
+      let description: string;
+      let status = 'success';
+
+      switch (event.eventType) {
+        case 'session_created':
+          action = 'session.created';
+          description = `Launched instance ${instanceName}${configName ? ` (${configName})` : ''}`;
+          break;
+        case 'launch_initiated':
+          action = 'session.scheduling';
+          description = `Scheduling instance ${instanceName}`;
+          break;
+        case 'session_ready':
+          action = 'session.running';
+          description = `Instance ${instanceName} is now running`;
+          break;
+        case 'session_terminated':
+          action = 'session.terminated';
+          const cost = payload?.finalCostCents ? `₹${(payload.finalCostCents / 100).toFixed(2)}` : '';
+          description = `Terminated instance ${instanceName}${cost ? ` — ${cost}` : ''}`;
+          break;
+        case 'launch_failed':
+          action = 'session.failed';
+          status = 'failed';
+          description = `Instance ${instanceName} failed: ${payload?.reason || 'Unknown error'}`;
+          break;
+        case 'session_ended':
+          action = 'session.ended';
+          description = `Instance ${instanceName} ended`;
+          break;
+        case 'session_restarted':
+          action = 'session.restarted';
+          description = `Restarted instance ${instanceName}`;
+          break;
+        default:
+          // Handle launch step events (launch_creating, launch_starting, etc.)
+          if (event.eventType.startsWith('launch_')) {
+            return null; // Skip intermediate launch step events to reduce noise
+          }
+          action = `session.${event.eventType}`;
+          description = `Session event: ${event.eventType}`;
+      }
+
+      return {
+        id: event.id,
+        action,
+        category: 'session',
+        status,
+        details: payload,
+        ipAddress: event.clientIp,
+        createdAt: event.createdAt.toISOString(),
+      };
+    }).filter((item): item is NonNullable<typeof item> => item !== null);
+
+    // Map billing charges to activity items
+    const billingActivities = billingCharges.map((charge) => {
+      const amountRupees = (Number(charge.amountCents) / 100).toFixed(2);
+      const instanceName = charge.session?.instanceName || 'Session';
+      const configName = charge.computeConfig?.name || '';
+
+      return {
+        id: charge.id,
+        action: 'billing.charge',
+        category: 'billing',
+        status: 'success',
+        details: {
+          amountCents: Number(charge.amountCents),
+          durationSeconds: charge.durationSeconds,
+          chargeType: charge.chargeType,
+          instanceName,
+          configName,
+        },
+        ipAddress: null,
+        createdAt: charge.createdAt.toISOString(),
+      };
+    });
+
+    // Map wallet transactions (credits) to activity items
+    const walletActivities = walletTransactions.map((txn) => {
+      const amountRupees = (Number(txn.amountCents) / 100).toFixed(2);
+
+      return {
+        id: txn.id,
+        action: 'wallet.credit',
+        category: 'billing',
+        status: 'success',
+        details: {
+          amountCents: Number(txn.amountCents),
+          description: txn.description,
+          referenceType: txn.referenceType,
+        },
+        ipAddress: null,
+        createdAt: txn.createdAt.toISOString(),
+      };
+    });
+
+    // Combine all activities and sort by date (most recent first)
+    const allActivities = [
+      ...auditActivities,
+      ...sessionActivities,
+      ...billingActivities,
+      ...walletActivities,
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Return top 200
+    return allActivities.slice(0, 200);
   }
 }

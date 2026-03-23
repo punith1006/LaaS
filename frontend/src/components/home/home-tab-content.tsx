@@ -285,9 +285,32 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
         return `Created folder '${details?.folderName || details?.fileName || 'unknown'}'`;
       case 'file.download':
         return `Downloaded file '${details?.fileName || 'unknown'}'`;
+      // Session lifecycle events
+      case 'session.created':
+        const configName = details?.configName || '';
+        const instName = details?.instanceName || 'Instance';
+        return `Launched instance ${instName}${configName ? ` (${configName})` : ''}`;
+      case 'session.scheduling':
+        return `Scheduling instance ${details?.instanceName || 'Instance'}`;
+      case 'session.running':
+        return `Instance ${details?.instanceName || 'Instance'} is now running`;
+      case 'session.terminated':
+        const termCost = details?.finalCostCents ? `₹${(details.finalCostCents / 100).toFixed(2)}` : '';
+        return `Terminated instance ${details?.instanceName || 'Instance'}${termCost ? ` — ${termCost}` : ''}`;
+      case 'session.failed':
+        return `Instance ${details?.instanceName || 'Instance'} failed`;
+      case 'session.ended':
+        return `Instance ${details?.instanceName || 'Instance'} ended`;
+      case 'session.restarted':
+        return `Restarted instance ${details?.instanceName || 'Instance'}`;
+      // Billing events
       case 'billing.charge':
-        const amount = details?.amount || details?.amountCents ? (details?.amountCents / 100).toFixed(2) : '0.00';
-        return `Billing charge: ₹${amount}`;
+        const chargeAmount = details?.amountCents ? `₹${(details.amountCents / 100).toFixed(2)}` : '₹0.00';
+        const chargeName = details?.instanceName || 'Session';
+        return `Billed ${chargeAmount} for ${chargeName}`;
+      case 'wallet.credit':
+        const creditAmount = details?.amountCents ? `₹${(details.amountCents / 100).toFixed(2)}` : '₹0.00';
+        return `Added ${creditAmount} to wallet`;
       default:
         // Fallback: convert action to readable format
         return action.replace(/\./g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -305,6 +328,8 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
         return '#FDA422'; // amber
       case 'billing':
         return '#f85149'; // red
+      case 'session':
+        return '#a371f7'; // purple
       default:
         return '#818178'; // muted
     }

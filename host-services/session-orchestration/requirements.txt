@@ -1,0 +1,5 @@
+# LaaS Session Orchestration Service Dependencies
+# Python 3.9+ required
+
+Flask>=2.3.0,<4.0.0
+Werkzeug>=2.3.0,<4.0.0

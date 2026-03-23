@@ -668,6 +668,102 @@ export async function getRecentActivity(days: number = 30): Promise<ActivityLogE
   return [];
 }
 
+// Compute API Types
+export interface ComputeConfigResponse {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  tier: string | null;
+  sessionType: string;
+  vcpu: number;
+  memoryMb: number;
+  gpuVramMb: number;
+  gpuModel: string | null;
+  hamiSmPercent: number | null;
+  basePricePerHourCents: number;
+  currency: string;
+  bestFor: string | null;
+  sortOrder: number;
+  available: boolean;
+  maxLaunchable: number;
+}
+
+export interface ResourceValues {
+  vramMb: number;
+  vcpu: number;
+  ramMb: number;
+}
+
+export interface ResourceSummary {
+  total: ResourceValues;
+  used: ResourceValues;
+  available: ResourceValues;
+}
+
+export interface ComputeConfigsResponse {
+  configs: ComputeConfigResponse[];
+  resources: ResourceSummary;
+  runningInstances: number;
+}
+
+export interface LaunchSessionRequest {
+  computeConfigId: string;
+  instanceName: string;
+  interfaceMode: 'gui' | 'cli';
+  storageType: 'stateful' | 'ephemeral';
+}
+
+export interface LaunchSessionResponse {
+  sessionId: string;
+  containerName: string | null;
+  status: string;
+  instanceName: string | null;
+}
+
+// Compute API Functions
+export async function getComputeConfigs(): Promise<ComputeConfigsResponse | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  if (API_BASE) {
+    try {
+      const res = await fetch(`${API_BASE}/api/compute/configs`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function launchComputeSession(
+  data: LaunchSessionRequest
+): Promise<LaunchSessionResponse> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE}/api/compute/sessions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const msg = Array.isArray(errData.message) ? errData.message[0] : errData.message;
+    throw new Error(msg || 'Failed to launch instance');
+  }
+
+  return res.json();
+}
+
 // Payment API Types
 export interface CreateOrderResponse {
   orderId: string;
