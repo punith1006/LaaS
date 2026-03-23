@@ -50,7 +50,7 @@ const navSections: NavSection[] = [
     id: "manage",
     label: "MANAGE",
     items: [
-      { id: "instances", label: "Instances" },
+      { id: "instances", label: "Instances", href: "/instances" },
       { id: "storage", label: "Storage", href: "/storage" },
     ],
   },
@@ -130,6 +130,7 @@ function NavContent() {
     if (pathname === "/home" || pathname.startsWith("/home")) return "home";
     if (pathname === "/billing" || pathname.startsWith("/billing")) return "billing";
     if (pathname === "/storage" || pathname.startsWith("/storage")) return "storage";
+    if (pathname === "/instances" || pathname.startsWith("/instances")) return "instances";
     // Add more route matching as needed
     return "home";
   };
