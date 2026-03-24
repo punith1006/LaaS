@@ -22,4 +22,46 @@ export class MailService {
       context: { firstName },
     });
   }
+
+  async sendSpendLimitWarningEmail(
+    to: string,
+    context: {
+      firstName: string;
+      currentSpendRupees: string;
+      limitRupees: string;
+      percentUsed: number;
+      period: string;
+      remainingRupees: string;
+    },
+  ): Promise<void> {
+    await this.mailer.sendMail({
+      to,
+      subject: 'LaaS: Your spend is approaching your limit',
+      template: 'spend-limit-warning',
+      context,
+    });
+  }
+
+  async sendSpendLimitEnforcedEmail(
+    to: string,
+    context: {
+      firstName: string;
+      limitRupees: string;
+      totalSpentRupees: string;
+      period: string;
+      terminatedCount: number;
+      terminatedSessions: Array<{
+        name: string;
+        config: string;
+        uptime: string;
+      }>;
+    },
+  ): Promise<void> {
+    await this.mailer.sendMail({
+      to,
+      subject: 'LaaS: Spend limit reached — compute instances terminated',
+      template: 'spend-limit-enforced',
+      context,
+    });
+  }
 }

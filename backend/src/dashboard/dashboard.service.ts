@@ -144,12 +144,17 @@ export class DashboardService {
 
     // Storage quota from UserStorageVolume.quotaBytes (real DB data)
     const quotaBytes = storageVolume?.quotaBytes ?? BigInt(0);
-    const quotaGb = Math.round((Number(quotaBytes) / (1024 ** 3)) * 100) / 100;
+    const quotaGb = Math.round((Number(quotaBytes) / 1024 ** 3) * 100) / 100;
 
     // Live storage used from ZFS via Python service (real-time, no DB caching)
-    let usedGb = Math.round((Number(storageVolume?.usedBytes ?? BigInt(0)) / (1024 ** 3)) * 100) / 100;
+    let usedGb =
+      Math.round(
+        (Number(storageVolume?.usedBytes ?? BigInt(0)) / 1024 ** 3) * 100,
+      ) / 100;
     if (user.storageUid && quotaGb > 0) {
-      const liveUsage = await this.storageService.getStorageUsage(user.storageUid);
+      const liveUsage = await this.storageService.getStorageUsage(
+        user.storageUid,
+      );
       if (liveUsage) {
         usedGb = liveUsage.usedGb;
       }
@@ -168,7 +173,7 @@ export class DashboardService {
     if (healthStatus === 'live' && user.storageUid) {
       const usage = await this.storageService.getStorageUsage(user.storageUid);
       if (usage === null) {
-        healthStatus = 'not_found';  // Service up but dataset missing
+        healthStatus = 'not_found'; // Service up but dataset missing
       }
     }
 
@@ -226,13 +231,16 @@ export class DashboardService {
 
     // Allocated quota from the actual storage volume record (DB is source of truth for quota)
     const quotaBytes = storageVolume?.quotaBytes ?? BigInt(0);
-    const allocatedGb = Math.round((Number(quotaBytes) / (1024 * 1024 * 1024)) * 100) / 100;
+    const allocatedGb =
+      Math.round((Number(quotaBytes) / (1024 * 1024 * 1024)) * 100) / 100;
 
     // Fetch LIVE storage usage from ZFS via Python service (no DB caching)
     let storageUsedGb = 0;
     let storageUsagePercent = 0;
     if (user.storageUid) {
-      const liveUsage = await this.storageService.getStorageUsage(user.storageUid);
+      const liveUsage = await this.storageService.getStorageUsage(
+        user.storageUid,
+      );
       if (liveUsage) {
         storageUsedGb = liveUsage.usedGb;
         storageUsagePercent = liveUsage.usagePercent;
@@ -268,16 +276,27 @@ export class DashboardService {
     });
 
     // Fetch spend limit fields via raw SQL (Prisma client may not have these after schema migration)
-    const walletRaw = await this.prisma.$queryRaw<Array<{
-      spend_limit_cents: number | null;
-      spend_limit_enabled: boolean;
-    }>>`
-      SELECT spend_limit_cents, spend_limit_enabled
+    const walletRaw = await this.prisma.$queryRaw<
+      Array<{
+        spend_limit_cents: number | null;
+        spend_limit_enabled: boolean;
+        spend_limit_period: string | null;
+        spend_limit_start_date: Date | null;
+        spend_limit_end_date: Date | null;
+      }>
+    >`
+      SELECT spend_limit_cents, spend_limit_enabled, spend_limit_period, spend_limit_start_date, spend_limit_end_date
       FROM wallets
       WHERE user_id = ${userId}::uuid
       LIMIT 1
     `;
-    const walletExtra = walletRaw[0] ?? { spend_limit_cents: null, spend_limit_enabled: false };
+    const walletExtra = walletRaw[0] ?? {
+      spend_limit_cents: null,
+      spend_limit_enabled: false,
+      spend_limit_period: null,
+      spend_limit_start_date: null,
+      spend_limit_end_date: null,
+    };
 
     // Get active sessions for current spend rate calculation
     const activeSessions = await this.prisma.session.findMany({
@@ -291,17 +310,22 @@ export class DashboardService {
     });
 
     // Calculate current compute spend rate from active sessions
-    const computeSpendRateCentsPerHour = activeSessions.reduce((total, session) => {
-      return total + (session.computeConfig?.basePricePerHourCents ?? 0);
-    }, 0);
+    const computeSpendRateCentsPerHour = activeSessions.reduce(
+      (total, session) => {
+        return total + (session.computeConfig?.basePricePerHourCents ?? 0);
+      },
+      0,
+    );
 
     // Fetch user's active storage volumes for storage billing calculation
     // Use raw SQL to access pricePerGbCentsMonth and allocationType
-    const activeVolumes = await this.prisma.$queryRaw<Array<{
-      quota_bytes: bigint;
-      price_per_gb_cents_month: number;
-      allocation_type: string;
-    }>>`
+    const activeVolumes = await this.prisma.$queryRaw<
+      Array<{
+        quota_bytes: bigint;
+        price_per_gb_cents_month: number;
+        allocation_type: string;
+      }>
+    >`
       SELECT quota_bytes, price_per_gb_cents_month, allocation_type
       FROM user_storage_volumes
       WHERE user_id = ${userId}::uuid AND status = 'active'
@@ -310,7 +334,7 @@ export class DashboardService {
     // Filter out SSO default volumes (5GB free for SSO students)
     // Only charge for 'user_created' or 'purchased' volumes
     const chargeableVolumes = activeVolumes.filter(
-      v => v.allocation_type !== 'sso_default'
+      (v) => v.allocation_type !== 'sso_default',
     );
 
     // Calculate storage hourly rate (in paise/cents per hour)
@@ -326,7 +350,8 @@ export class DashboardService {
     }
 
     // Total spend rate = compute + storage (both in cents per hour)
-    const totalSpendRateCentsPerHour = computeSpendRateCentsPerHour + storageRateCentsPerHour;
+    const totalSpendRateCentsPerHour =
+      computeSpendRateCentsPerHour + storageRateCentsPerHour;
 
     // dailySpend and chart both use past-12h charges (simpler, single source of truth)
     const twelveHoursAgo = new Date();
@@ -341,7 +366,10 @@ export class DashboardService {
       },
     });
 
-    const dailySpendCents = recentCharges12h.reduce((t, c) => t + Number(c.amountCents), 0);
+    const dailySpendCents = recentCharges12h.reduce(
+      (t, c) => t + Number(c.amountCents),
+      0,
+    );
 
     // Get billing history for the last 30 days
     const thirtyDaysAgo = new Date();
@@ -436,10 +464,14 @@ export class DashboardService {
         const hourEnd = new Date(todayStart);
         hourEnd.setHours(h + 1, 0, 0, 0);
 
-        const effectiveStart = billedUntil > hourStart ? billedUntil : hourStart;
+        const effectiveStart =
+          billedUntil > hourStart ? billedUntil : hourStart;
         const effectiveEnd = now < hourEnd ? now : hourEnd;
 
-        const secondsInHour = Math.max(0, (effectiveEnd.getTime() - effectiveStart.getTime()) / 1000);
+        const secondsInHour = Math.max(
+          0,
+          (effectiveEnd.getTime() - effectiveStart.getTime()) / 1000,
+        );
         const costCents = Math.round((secondsInHour / 3600) * rateCentsPerHour);
 
         if (costCents > 0) {
@@ -456,11 +488,12 @@ export class DashboardService {
       const spendThisHour = chargesByHour.get(h) ?? 0;
       cumulativeSpend += spendThisHour;
 
-      const label = h === currentHour ? 'Now' : `${h.toString().padStart(2, '0')}:00`;
+      const label =
+        h === currentHour ? 'Now' : `${h.toString().padStart(2, '0')}:00`;
       hourlyData.push({
         hour: label,
         cumulativeSpend: cumulativeSpend / 100, // ₹
-        hourlyRate: spendThisHour / 100,        // ₹
+        hourlyRate: spendThisHour / 100, // ₹
       });
     }
 
@@ -499,34 +532,77 @@ export class DashboardService {
       storageBurnRateCentsPerHour: storageRateCentsPerHour, // Storage burn rate in paise/cents per hour
       storageMonthlyEstimateCents: storageMonthlyEstimateCents, // Total monthly storage cost in paise/cents
       runway: (() => {
-        // Ceiling logic:
-        // - If spendLimit is set AND spendLimit <= creditBalance → ceiling = spendLimit
-        // - If spendLimit is set AND spendLimit > creditBalance → ceiling = creditBalance
-        // - If spendLimit is not set → ceiling = creditBalance
+        // Runway calculation:
+        // - When spend limit is NOT enabled: runway = balance / burnRate
+        //   (balance is already the current wallet balance, no need to subtract daily spend)
+        // - When spend limit IS enabled: runway = min(remainingBudget, balance) / burnRate
+        //   (remainingBudget = spendLimit - spentInPeriod)
         const balanceCents = Number(wallet?.balanceCents ?? 0);
-        const spendLimitCentsVal = walletExtra.spend_limit_enabled && (walletExtra.spend_limit_cents ?? 0) > 0
-          ? (walletExtra.spend_limit_cents ?? 0)
-          : null;
 
-        let ceilingCents: number;
-        if (spendLimitCentsVal !== null) {
-          ceilingCents = spendLimitCentsVal <= balanceCents ? spendLimitCentsVal : balanceCents;
-        } else {
-          ceilingCents = balanceCents;
+        // Determine if spend limit is effectively active
+        let spendLimitCentsVal: number | null = null;
+        if (
+          walletExtra.spend_limit_enabled &&
+          (walletExtra.spend_limit_cents ?? 0) > 0
+        ) {
+          // For date_range, check if we're within the active period
+          if (walletExtra.spend_limit_period === 'date_range') {
+            const now = new Date();
+            const startDate = walletExtra.spend_limit_start_date
+              ? new Date(walletExtra.spend_limit_start_date)
+              : null;
+            const endDate = walletExtra.spend_limit_end_date
+              ? new Date(walletExtra.spend_limit_end_date)
+              : null;
+
+            // Only apply spend limit if within the date range
+            if (startDate && endDate && now >= startDate && now <= endDate) {
+              spendLimitCentsVal = walletExtra.spend_limit_cents ?? 0;
+            }
+            // If outside range, spendLimitCentsVal stays null (no limit applied)
+          } else {
+            // For daily/monthly, always apply the spend limit
+            spendLimitCentsVal = walletExtra.spend_limit_cents ?? 0;
+          }
         }
 
-        // Runway = (ceiling - totalSpentToday) / burnRate (in hours)
-        // Now uses total (compute + storage) rate for accurate runway
-        const remainingCents = ceilingCents - dailySpendCents;
-        if (remainingCents <= 0 || totalSpendRateCentsPerHour <= 0) return null;
+        // No burn rate = no runway calculation needed (infinite runway)
+        if (totalSpendRateCentsPerHour <= 0) return null;
 
-        const hoursLeft = remainingCents / totalSpendRateCentsPerHour;
+        let effectiveRemainingCents: number;
+
+        if (spendLimitCentsVal !== null) {
+          // Spend limit IS enabled:
+          // Calculate remaining budget in the current period
+          const remainingBudget = spendLimitCentsVal - dailySpendCents;
+          // Runway is limited by both remaining budget AND wallet balance
+          effectiveRemainingCents = Math.min(remainingBudget, balanceCents);
+        } else {
+          // Spend limit NOT enabled:
+          // Runway = how long current balance lasts at current burn rate
+          // Note: balanceCents is the CURRENT balance (already reduced by past spending)
+          // Do NOT subtract dailySpendCents again (that would double-count)
+          effectiveRemainingCents = balanceCents;
+        }
+
+        if (effectiveRemainingCents <= 0) return 0;
+
+        const hoursLeft = effectiveRemainingCents / totalSpendRateCentsPerHour;
         return hoursLeft; // Number of hours of runway remaining
       })(),
-      gpus: activeSessions.filter(s => (s.actualGpuVramMb ?? 0) > 0).length,
-      gpuVramMb: activeSessions.reduce((total, s) => total + (s.actualGpuVramMb ?? 0), 0),
-      vcpus: activeSessions.reduce((total, s) => total + (s.computeConfig?.vcpu ?? 0), 0),
-      memoryMb: activeSessions.reduce((total, s) => total + (s.computeConfig?.memoryMb ?? 0), 0),
+      gpus: activeSessions.filter((s) => (s.actualGpuVramMb ?? 0) > 0).length,
+      gpuVramMb: activeSessions.reduce(
+        (total, s) => total + (s.actualGpuVramMb ?? 0),
+        0,
+      ),
+      vcpus: activeSessions.reduce(
+        (total, s) => total + (s.computeConfig?.vcpu ?? 0),
+        0,
+      ),
+      memoryMb: activeSessions.reduce(
+        (total, s) => total + (s.computeConfig?.memoryMb ?? 0),
+        0,
+      ),
       endpoints: activeSessions.length,
       // Storage: live used from ZFS via Python service; allocated from UserStorageVolume
       storageAllocatedGb: allocatedGb,
@@ -548,26 +624,50 @@ export class DashboardService {
       message: string;
     }[];
   }> {
-    const services: { name: string; status: 'healthy' | 'unhealthy'; message: string }[] = [];
+    const services: {
+      name: string;
+      status: 'healthy' | 'unhealthy';
+      message: string;
+    }[] = [];
 
     // 1. Database check — simple query with timeout
     try {
       await this.prisma.$queryRaw`SELECT 1`;
-      services.push({ name: 'Database', status: 'healthy', message: 'Database is responsive' });
+      services.push({
+        name: 'Database',
+        status: 'healthy',
+        message: 'Database is responsive',
+      });
     } catch {
-      services.push({ name: 'Database', status: 'unhealthy', message: 'Database connectivity issue' });
+      services.push({
+        name: 'Database',
+        status: 'unhealthy',
+        message: 'Database connectivity issue',
+      });
     }
 
     // 2. Storage service check — reuse existing method
     try {
       const health = await this.storageService.checkStorageHealth();
       if (health?.healthy) {
-        services.push({ name: 'Storage', status: 'healthy', message: 'Storage service is online' });
+        services.push({
+          name: 'Storage',
+          status: 'healthy',
+          message: 'Storage service is online',
+        });
       } else {
-        services.push({ name: 'Storage', status: 'unhealthy', message: 'Storage service is not reachable' });
+        services.push({
+          name: 'Storage',
+          status: 'unhealthy',
+          message: 'Storage service is not reachable',
+        });
       }
     } catch {
-      services.push({ name: 'Storage', status: 'unhealthy', message: 'Storage service is not reachable' });
+      services.push({
+        name: 'Storage',
+        status: 'unhealthy',
+        message: 'Storage service is not reachable',
+      });
     }
 
     // 3. Compute service check — check if the compute/GPU host is reachable
@@ -575,7 +675,9 @@ export class DashboardService {
     // In future, add: services.push(...)
 
     // Determine overall status
-    const unhealthyCount = services.filter(s => s.status === 'unhealthy').length;
+    const unhealthyCount = services.filter(
+      (s) => s.status === 'unhealthy',
+    ).length;
     let overall: 'operational' | 'degraded' | 'outage';
     if (unhealthyCount === 0) {
       overall = 'operational';
@@ -667,70 +769,60 @@ export class DashboardService {
     }));
 
     // Map session events to activity items
-    const sessionActivities = sessionEvents.map((event) => {
-      const instanceName = event.session?.instanceName || 'Instance';
-      const configName = event.session?.computeConfig?.name || '';
-      const payload = event.payload as Record<string, any> | null;
+    const sessionActivities = sessionEvents
+      .map((event) => {
+        const payload = event.payload as Record<string, any> | null;
 
-      // Determine action and description based on event type
-      let action: string;
-      let description: string;
-      let status = 'success';
+        // Determine action based on event type
+        let action: string;
+        let status = 'success';
 
-      switch (event.eventType) {
-        case 'session_created':
-          action = 'session.created';
-          description = `Launched instance ${instanceName}${configName ? ` (${configName})` : ''}`;
-          break;
-        case 'launch_initiated':
-          action = 'session.scheduling';
-          description = `Scheduling instance ${instanceName}`;
-          break;
-        case 'session_ready':
-          action = 'session.running';
-          description = `Instance ${instanceName} is now running`;
-          break;
-        case 'session_terminated':
-          action = 'session.terminated';
-          const cost = payload?.finalCostCents ? `₹${(payload.finalCostCents / 100).toFixed(2)}` : '';
-          description = `Terminated instance ${instanceName}${cost ? ` — ${cost}` : ''}`;
-          break;
-        case 'launch_failed':
-          action = 'session.failed';
-          status = 'failed';
-          description = `Instance ${instanceName} failed: ${payload?.reason || 'Unknown error'}`;
-          break;
-        case 'session_ended':
-          action = 'session.ended';
-          description = `Instance ${instanceName} ended`;
-          break;
-        case 'session_restarted':
-          action = 'session.restarted';
-          description = `Restarted instance ${instanceName}`;
-          break;
-        default:
-          // Handle launch step events (launch_creating, launch_starting, etc.)
-          if (event.eventType.startsWith('launch_')) {
-            return null; // Skip intermediate launch step events to reduce noise
+        switch (event.eventType) {
+          case 'session_created':
+            action = 'session.created';
+            break;
+          case 'launch_initiated':
+            action = 'session.scheduling';
+            break;
+          case 'session_ready':
+            action = 'session.running';
+            break;
+          case 'session_terminated': {
+            action = 'session.terminated';
+            break;
           }
-          action = `session.${event.eventType}`;
-          description = `Session event: ${event.eventType}`;
-      }
+          case 'launch_failed':
+            action = 'session.failed';
+            status = 'failed';
+            break;
+          case 'session_ended':
+            action = 'session.ended';
+            break;
+          case 'session_restarted':
+            action = 'session.restarted';
+            break;
+          default:
+            // Handle launch step events (launch_creating, launch_starting, etc.)
+            if (event.eventType.startsWith('launch_')) {
+              return null; // Skip intermediate launch step events to reduce noise
+            }
+            action = `session.${event.eventType}`;
+        }
 
-      return {
-        id: event.id,
-        action,
-        category: 'session',
-        status,
-        details: payload,
-        ipAddress: event.clientIp,
-        createdAt: event.createdAt.toISOString(),
-      };
-    }).filter((item): item is NonNullable<typeof item> => item !== null);
+        return {
+          id: event.id,
+          action,
+          category: 'session',
+          status,
+          details: payload,
+          ipAddress: event.clientIp,
+          createdAt: event.createdAt.toISOString(),
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
 
     // Map billing charges to activity items
     const billingActivities = billingCharges.map((charge) => {
-      const amountRupees = (Number(charge.amountCents) / 100).toFixed(2);
       const instanceName = charge.session?.instanceName || 'Session';
       const configName = charge.computeConfig?.name || '';
 
@@ -753,8 +845,6 @@ export class DashboardService {
 
     // Map wallet transactions (credits) to activity items
     const walletActivities = walletTransactions.map((txn) => {
-      const amountRupees = (Number(txn.amountCents) / 100).toFixed(2);
-
       return {
         id: txn.id,
         action: 'wallet.credit',
@@ -776,7 +866,10 @@ export class DashboardService {
       ...sessionActivities,
       ...billingActivities,
       ...walletActivities,
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    ].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 
     // Return top 200
     return allActivities.slice(0, 200);

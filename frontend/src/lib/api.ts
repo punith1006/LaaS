@@ -972,3 +972,50 @@ export async function downloadInvoice(transactionId: string): Promise<Blob> {
 
   throw new Error('No API configured');
 }
+
+// Spend Limit API Types
+export interface SpendLimitSettings {
+  enabled: boolean;
+  limitAmountRupees: number | null;
+  period: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  consentedAt: string | null;
+  currentPeriodSpendRupees: number;
+}
+
+// Spend Limit API Functions
+export async function getSpendLimitSettings(): Promise<SpendLimitSettings | null> {
+  const token = getAccessToken();
+  if (!token || !API_BASE) return null;
+  const res = await fetch(`${API_BASE}/api/billing/spend-limit`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function updateSpendLimit(data: {
+  enabled: boolean;
+  limitAmountRupees?: number;
+  period?: string;
+  startDate?: string;
+  endDate?: string;
+  consentAcknowledged: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  const token = getAccessToken();
+  if (!token || !API_BASE) return { success: false, error: 'Not authenticated' };
+  const res = await fetch(`${API_BASE}/api/billing/spend-limit`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: 'Failed to update spend limit' }));
+    return { success: false, error: err.message };
+  }
+  return { success: true };
+}

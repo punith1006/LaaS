@@ -3,3 +3,9 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 SESSION_SECRET=laas-session-secret-dev python3 app.py
+
+
+
+#Storage-provision (from the backend env) 
+export PROVISION_SECRET=e75064ca1702889e4f519d4ad40dfbd5f18dbdb67db7f365
+export ENABLE_NFS_AUTOMOUNT=true

@@ -3,7 +3,8 @@
 import { useEffect, useState, useMemo } from "react";
 import type { User } from "@/types/auth";
 import type { BillingData } from "@/lib/api";
-import { getBillingData } from "@/lib/api";
+import { getBillingData, getSpendLimitSettings, updateSpendLimit } from "@/lib/api";
+import { toast } from "sonner";
 import {
   AreaChart,
   Area,
@@ -339,10 +340,741 @@ function CustomTooltip({
   return null;
 }
 
+// Spend Limit Modal Component
+interface SpendLimitModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  currentLimit: number;
+  currentLimitEnabled: boolean;
+  onSuccess: () => void;
+}
+
+function SpendLimitModal({
+  isOpen,
+  onClose,
+  currentLimit,
+  currentLimitEnabled,
+  onSuccess,
+}: SpendLimitModalProps) {
+  const [enabled, setEnabled] = useState(currentLimitEnabled);
+  const [limitAmount, setLimitAmount] = useState(currentLimit > 0 ? currentLimit.toString() : "500");
+  const [period, setPeriod] = useState<string>("monthly");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
+  const [currentSpend, setCurrentSpend] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch settings when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setIsFetching(true);
+      setError(null);
+      setConsentChecked(false);
+      getSpendLimitSettings()
+        .then((settings) => {
+          if (settings) {
+            setEnabled(settings.enabled);
+            setLimitAmount(settings.limitAmountRupees?.toString() || "500");
+            setPeriod(settings.period || "monthly");
+            setStartDate(settings.startDate || "");
+            setEndDate(settings.endDate || "");
+            setCurrentSpend(settings.currentPeriodSpendRupees || 0);
+          } else {
+            // Reset to defaults
+            setEnabled(currentLimitEnabled);
+            setLimitAmount(currentLimit > 0 ? currentLimit.toString() : "500");
+            setPeriod("monthly");
+            setStartDate("");
+            setEndDate("");
+            setCurrentSpend(0);
+          }
+        })
+        .finally(() => setIsFetching(false));
+    }
+  }, [isOpen, currentLimit, currentLimitEnabled]);
+
+  const parsedLimit = parseFloat(limitAmount) || 0;
+  const isValidLimit = parsedLimit >= 50 && parsedLimit <= 100000;
+  const usagePercent = parsedLimit > 0 ? Math.min(100, (currentSpend / parsedLimit) * 100) : 0;
+
+  // Consent required only when enabling
+  const canSave = enabled ? (isValidLimit && consentChecked) : true;
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setIsLoading(true);
+    setError(null);
+
+    const result = await updateSpendLimit({
+      enabled,
+      limitAmountRupees: enabled ? parsedLimit : undefined,
+      period: enabled ? period : undefined,
+      startDate: enabled && period === "date_range" ? startDate : undefined,
+      endDate: enabled && period === "date_range" ? endDate : undefined,
+      consentAcknowledged: enabled ? consentChecked : true,
+    });
+
+    setIsLoading(false);
+
+    if (result.success) {
+      toast.success(enabled ? "Spend limit updated successfully" : "Spend limit disabled");
+      onSuccess();
+      onClose();
+    } else {
+      setError(result.error || "Failed to update spend limit");
+      toast.error(result.error || "Failed to update spend limit");
+    }
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !isLoading) {
+      onClose();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      onClick={handleBackdropClick}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(11, 11, 11, 0.7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: "var(--bgColor-mild)",
+          border: "1px solid var(--borderColor-default)",
+          borderRadius: "4px",
+          width: "100%",
+          maxWidth: "480px",
+          margin: "16px",
+          maxHeight: "90vh",
+          overflow: "auto",
+          position: "relative",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "24px 24px 0 24px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "1.25rem",
+              fontWeight: 600,
+              color: "var(--fgColor-default)",
+              margin: 0,
+            }}
+          >
+            Edit Spend Limit
+          </h2>
+          <button
+            onClick={onClose}
+            disabled={isLoading}
+            style={{
+              width: "32px",
+              height: "32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "transparent",
+              border: "none",
+              borderRadius: "4px",
+              cursor: isLoading ? "not-allowed" : "pointer",
+              color: "var(--fgColor-muted)",
+              opacity: isLoading ? 0.5 : 1,
+            }}
+            aria-label="Close"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: "20px 24px" }}>
+          {isFetching ? (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                padding: "40px",
+                color: "var(--fgColor-muted)",
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.875rem",
+              }}
+            >
+              Loading settings...
+            </div>
+          ) : (
+            <>
+              {/* Warning Info Box */}
+              <div
+                style={{
+                  backgroundColor: "var(--bgColor-warning-section)",
+                  borderLeft: "3px solid var(--fgColor-warning)",
+                  borderRadius: "4px",
+                  padding: "12px 16px",
+                  marginBottom: "20px",
+                  display: "flex",
+                  gap: "12px",
+                }}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--fgColor-warning)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ flexShrink: 0, marginTop: "2px" }}
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <div
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.8125rem",
+                    color: "var(--fgColor-default)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  When your spend reaches the configured limit, all active compute
+                  instances will be <strong>automatically terminated</strong>. Storage
+                  volumes will NOT be affected. You&apos;ll receive an email at 85%
+                  and when the limit is reached.
+                </div>
+              </div>
+
+              {/* Enable Toggle */}
+              <div style={{ marginBottom: "20px" }}>
+                <div
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    fontWeight: 500,
+                    color: "var(--fgColor-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Enable Spend Limit
+                </div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    cursor: "pointer",
+                    padding: "12px 16px",
+                    backgroundColor: "var(--bgColor-default)",
+                    border: "1px solid var(--borderColor-default)",
+                    borderRadius: "4px",
+                  }}
+                >
+                  <div
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setEnabled(!enabled);
+                    }}
+                    style={{
+                      width: "44px",
+                      height: "24px",
+                      borderRadius: "12px",
+                      backgroundColor: enabled ? "var(--fgColor-accent)" : "var(--bgColor-muted)",
+                      position: "relative",
+                      transition: "background-color 0.2s ease",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "50%",
+                        backgroundColor: "var(--fgColor-inverse)",
+                        position: "absolute",
+                        top: "2px",
+                        left: enabled ? "22px" : "2px",
+                        transition: "left 0.2s ease",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                      }}
+                    />
+                  </div>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.875rem",
+                      color: "var(--fgColor-default)",
+                    }}
+                  >
+                    {enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </label>
+              </div>
+
+              {/* Fields - gray out when disabled */}
+              <div style={{ opacity: enabled ? 1 : 0.4, pointerEvents: enabled ? "auto" : "none" }}>
+                {/* Limit Amount */}
+                <div style={{ marginBottom: "20px" }}>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.75rem",
+                      fontWeight: 500,
+                      color: "var(--fgColor-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Limit Amount
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      backgroundColor: "var(--bgColor-default)",
+                      border: `1px solid ${!isValidLimit && limitAmount ? "var(--fgColor-critical)" : "var(--borderColor-default)"}`,
+                      borderRadius: "4px",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <span
+                      style={{
+                        padding: "0 12px",
+                        fontFamily: "var(--font-sans)",
+                        fontSize: "0.875rem",
+                        color: "var(--fgColor-muted)",
+                        borderRight: "1px solid var(--borderColor-default)",
+                        height: "40px",
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      ₹
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={limitAmount}
+                      onChange={(e) => setLimitAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                      placeholder="500"
+                      disabled={isLoading}
+                      style={{
+                        flex: 1,
+                        padding: "0 12px",
+                        height: "40px",
+                        border: "none",
+                        outline: "none",
+                        backgroundColor: "transparent",
+                        fontFamily: "var(--font-sans)",
+                        fontSize: "0.875rem",
+                        color: "var(--fgColor-default)",
+                      }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.75rem",
+                      color: "var(--fgColor-muted)",
+                      marginTop: "6px",
+                    }}
+                  >
+                    Min: ₹50 · Max: ₹1,00,000
+                  </div>
+                </div>
+
+                {/* Billing Period */}
+                <div style={{ marginBottom: "20px" }}>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.75rem",
+                      fontWeight: 500,
+                      color: "var(--fgColor-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Billing Period
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {[
+                      { value: "daily", label: "Daily", desc: "resets every midnight" },
+                      { value: "monthly", label: "Current month", desc: "resets on 1st" },
+                      { value: "date_range", label: "Custom date range", desc: "" },
+                    ].map((opt) => (
+                      <label
+                        key={opt.value}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          cursor: "pointer",
+                          padding: "10px 12px",
+                          backgroundColor: period === opt.value ? "var(--bgColor-default)" : "transparent",
+                          border: `1px solid ${period === opt.value ? "var(--borderColor-default)" : "transparent"}`,
+                          borderRadius: "4px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "18px",
+                            height: "18px",
+                            borderRadius: "50%",
+                            border: `2px solid ${period === opt.value ? "var(--fgColor-accent)" : "var(--borderColor-default)"}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {period === opt.value && (
+                            <div
+                              style={{
+                                width: "10px",
+                                height: "10px",
+                                borderRadius: "50%",
+                                backgroundColor: "var(--fgColor-accent)",
+                              }}
+                            />
+                          )}
+                        </div>
+                        <input
+                          type="radio"
+                          name="period"
+                          value={opt.value}
+                          checked={period === opt.value}
+                          onChange={(e) => setPeriod(e.target.value)}
+                          style={{ display: "none" }}
+                        />
+                        <span
+                          style={{
+                            fontFamily: "var(--font-sans)",
+                            fontSize: "0.875rem",
+                            color: "var(--fgColor-default)",
+                          }}
+                        >
+                          {opt.label}
+                          {opt.desc && (
+                            <span style={{ color: "var(--fgColor-muted)", marginLeft: "6px" }}>
+                              ({opt.desc})
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* Date range inputs */}
+                  {period === "date_range" && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "12px",
+                        marginTop: "12px",
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <label
+                          style={{
+                            fontFamily: "var(--font-sans)",
+                            fontSize: "0.75rem",
+                            color: "var(--fgColor-muted)",
+                            display: "block",
+                            marginBottom: "4px",
+                          }}
+                        >
+                          Start date
+                        </label>
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          style={{
+                            width: "100%",
+                            height: "40px",
+                            padding: "0 12px",
+                            backgroundColor: "var(--bgColor-default)",
+                            border: "1px solid var(--borderColor-default)",
+                            borderRadius: "4px",
+                            fontFamily: "var(--font-sans)",
+                            fontSize: "0.875rem",
+                            color: "var(--fgColor-default)",
+                            outline: "none",
+                          }}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-end",
+                          paddingBottom: "12px",
+                          color: "var(--fgColor-muted)",
+                        }}
+                      >
+                        —
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label
+                          style={{
+                            fontFamily: "var(--font-sans)",
+                            fontSize: "0.75rem",
+                            color: "var(--fgColor-muted)",
+                            display: "block",
+                            marginBottom: "4px",
+                          }}
+                        >
+                          End date
+                        </label>
+                        <input
+                          type="date"
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          style={{
+                            width: "100%",
+                            height: "40px",
+                            padding: "0 12px",
+                            backgroundColor: "var(--bgColor-default)",
+                            border: "1px solid var(--borderColor-default)",
+                            borderRadius: "4px",
+                            fontFamily: "var(--font-sans)",
+                            fontSize: "0.875rem",
+                            color: "var(--fgColor-default)",
+                            outline: "none",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Current Period Usage */}
+                <div style={{ marginBottom: "20px" }}>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.75rem",
+                      fontWeight: 500,
+                      color: "var(--fgColor-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Current Period Usage
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "1rem",
+                      fontWeight: 600,
+                      color: "var(--fgColor-default)",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    ₹{currentSpend.toFixed(2)} / ₹{parsedLimit.toFixed(2)}{" "}
+                    <span
+                      style={{
+                        fontSize: "0.875rem",
+                        fontWeight: 400,
+                        color: usagePercent >= 85 ? "var(--fgColor-warning)" : "var(--fgColor-muted)",
+                      }}
+                    >
+                      ({usagePercent.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      height: "8px",
+                      backgroundColor: "var(--bgColor-muted)",
+                      borderRadius: "4px",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${usagePercent}%`,
+                        backgroundColor:
+                          usagePercent >= 100
+                            ? "var(--fgColor-critical)"
+                            : usagePercent >= 85
+                              ? "var(--fgColor-warning)"
+                              : "var(--fgColor-accent)",
+                        borderRadius: "4px",
+                        transition: "width 0.3s ease",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Consent Checkbox */}
+                <label
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    cursor: "pointer",
+                    padding: "12px",
+                    backgroundColor: "var(--bgColor-default)",
+                    border: "1px solid var(--borderColor-default)",
+                    borderRadius: "4px",
+                    marginBottom: "20px",
+                  }}
+                >
+                  <div
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setConsentChecked(!consentChecked);
+                    }}
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      borderRadius: "4px",
+                      border: `2px solid ${consentChecked ? "var(--fgColor-accent)" : "var(--borderColor-default)"}`,
+                      backgroundColor: consentChecked ? "var(--fgColor-accent)" : "transparent",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      marginTop: "2px",
+                    }}
+                  >
+                    {consentChecked && (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="var(--fgColor-inverse)"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </div>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.8125rem",
+                      color: "var(--fgColor-default)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    I understand that all active compute instances will be terminated
+                    when this limit is reached. Storage volumes will not be affected.
+                  </span>
+                </label>
+              </div>
+
+              {/* Error Message */}
+              {error && (
+                <div
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    color: "var(--fgColor-critical)",
+                    padding: "8px 12px",
+                    backgroundColor: "rgba(231, 0, 0, 0.1)",
+                    borderRadius: "4px",
+                    marginBottom: "16px",
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              {/* Footer Buttons */}
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button
+                  onClick={onClose}
+                  disabled={isLoading}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: "4px",
+                    border: "1px solid var(--borderColor-default)",
+                    backgroundColor: "transparent",
+                    color: "var(--fgColor-default)",
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.875rem",
+                    fontWeight: 500,
+                    cursor: isLoading ? "not-allowed" : "pointer",
+                    opacity: isLoading ? 0.5 : 1,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={!canSave || isLoading}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: "4px",
+                    border: "none",
+                    backgroundColor: canSave && !isLoading ? "var(--fgColor-default)" : "var(--bgColor-muted)",
+                    color: canSave && !isLoading ? "var(--fgColor-inverse)" : "var(--fgColor-muted)",
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    cursor: canSave && !isLoading ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {isLoading ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BillingTabContent({ user }: BillingTabContentProps) {
   const [billingData, setBillingData] = useState<BillingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isDark, setIsDark] = useState(false);
+  const [showSpendLimitModal, setShowSpendLimitModal] = useState(false);
 
   // Detect theme
   useEffect(() => {
@@ -393,8 +1125,14 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
 
   // Format runway as human-readable string
   const formatRunway = (hours: number | null): string => {
-    if (hours === null || currentSpendRate <= 0) return "--";
+    // When no burn rate (no active resources consuming credits), show infinity
+    // This means the user has credits but nothing is using them
+    if (hours === null || hours === undefined) {
+      if (currentSpendRate <= 0) return "∞";  // No active spend = unlimited runway
+      return "--";  // Truly unknown (shouldn't happen normally)
+    }
     if (hours <= 0) return "0 hrs";
+    if (hours > 8760) return "∞";  // More than a year = effectively infinite
     const days = Math.floor(hours / 24);
     const remainingHours = Math.floor(hours % 24);
     if (days > 0 && remainingHours > 0) return `${days}d ${remainingHours}h`;
@@ -652,25 +1390,32 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
             label="Runway"
             value={formatRunway(runwayHours)}
           />
-          <MetricCard
-            icon={
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                style={{ color: "var(--fgColor-muted)" }}
-              >
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-            }
-            label="Spend limit"
-            value={`₹${spendLimit.toFixed(2)}`}
-          />
+          <div
+            onClick={() => setShowSpendLimitModal(true)}
+            style={{ cursor: "pointer", flex: 1, minWidth: "140px" }}
+            title="Click to edit spend limit"
+          >
+            <MetricCard
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  style={{ color: "var(--fgColor-muted)" }}
+                >
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              }
+              label="Spend limit"
+              value={spendLimitEnabled ? `₹${spendLimit.toFixed(2)}` : "Not set"}
+              subValue={spendLimitEnabled ? "Click to edit" : "Click to configure"}
+            />
+          </div>
         </div>
       </div>
 
@@ -1049,6 +1794,20 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
           </div>
         </div>
       </div>
+
+      {/* Spend Limit Modal */}
+      <SpendLimitModal
+        isOpen={showSpendLimitModal}
+        onClose={() => setShowSpendLimitModal(false)}
+        currentLimit={spendLimit}
+        currentLimitEnabled={spendLimitEnabled}
+        onSuccess={() => {
+          // Refresh billing data
+          getBillingData().then((data) => {
+            if (data) setBillingData(data);
+          });
+        }}
+      />
     </div>
   );
 }

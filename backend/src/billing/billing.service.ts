@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -68,10 +68,10 @@ export class BillingService {
           );
           if (result === 'charged') successCount++;
           else if (result === 'skipped') skipCount++;
-        } catch (error) {
+        } catch (error: unknown) {
           errorCount++;
           this.logger.error(
-            `Failed billing for user ${userId}: ${error.message}`,
+            `Failed billing for user ${userId}: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       }
@@ -79,8 +79,10 @@ export class BillingService {
       this.logger.log(
         `Billing cycle complete: ${successCount} charged, ${skipCount} skipped, ${errorCount} errors`,
       );
-    } catch (error) {
-      this.logger.error(`Billing cycle failed: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Billing cycle failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -162,28 +164,76 @@ export class BillingService {
       const currentBalance = Number(wallet.balanceCents);
 
       // 3. Spend limit check
-      if (wallet.spendLimitEnabled && wallet.spendLimitCents !== null && wallet.spendLimitCents !== undefined) {
-        // Check if adding this charge would exceed spend limit
-        // Get total spent in the current period
-        const periodStart = this.getSpendLimitPeriodStart(
-          wallet.spendLimitPeriod,
-        );
-        const periodSpent = await tx.billingCharge.aggregate({
-          where: {
-            userId,
-            createdAt: { gte: periodStart },
-          },
-          _sum: { amountCents: true },
-        });
+      if (
+        wallet.spendLimitEnabled &&
+        wallet.spendLimitCents !== null &&
+        wallet.spendLimitCents !== undefined
+      ) {
+        // For date_range, check if we're within the active period
+        if (wallet.spendLimitPeriod === 'date_range') {
+          const now = new Date();
+          const startDate = wallet.spendLimitStartDate
+            ? new Date(wallet.spendLimitStartDate)
+            : null;
+          const endDate = wallet.spendLimitEndDate
+            ? new Date(wallet.spendLimitEndDate)
+            : null;
 
-        const totalSpentInPeriod = Number(periodSpent._sum.amountCents || 0);
-        const spendLimit = Number(wallet.spendLimitCents);
+          // If outside the date range, treat as no spend limit
+          if (!startDate || !endDate || now < startDate || now > endDate) {
+            // Skip spend limit check - not within active range
+          } else {
+            // Within date range - apply spend limit
+            const periodStart = this.getSpendLimitPeriodStart(
+              wallet.spendLimitPeriod,
+              wallet.spendLimitStartDate,
+            );
+            const periodSpent = await tx.billingCharge.aggregate({
+              where: {
+                userId,
+                createdAt: {
+                  gte: periodStart,
+                  lte: endDate,
+                },
+              },
+              _sum: { amountCents: true },
+            });
 
-        if (totalSpentInPeriod + totalChargeCents > spendLimit) {
-          this.logger.warn(
-            `User ${userId} would exceed spend limit (${totalSpentInPeriod + totalChargeCents} > ${spendLimit}), skipping`,
+            const totalSpentInPeriod = Number(
+              periodSpent._sum.amountCents || 0,
+            );
+            const spendLimit = Number(wallet.spendLimitCents);
+
+            if (totalSpentInPeriod + totalChargeCents > spendLimit) {
+              this.logger.warn(
+                `User ${userId} would exceed spend limit (${totalSpentInPeriod + totalChargeCents} > ${spendLimit}), skipping`,
+              );
+              return 'skipped';
+            }
+          }
+        } else {
+          // Check if adding this charge would exceed spend limit
+          // Get total spent in the current period
+          const periodStart = this.getSpendLimitPeriodStart(
+            wallet.spendLimitPeriod,
           );
-          return 'skipped';
+          const periodSpent = await tx.billingCharge.aggregate({
+            where: {
+              userId,
+              createdAt: { gte: periodStart },
+            },
+            _sum: { amountCents: true },
+          });
+
+          const totalSpentInPeriod = Number(periodSpent._sum.amountCents || 0);
+          const spendLimit = Number(wallet.spendLimitCents);
+
+          if (totalSpentInPeriod + totalChargeCents > spendLimit) {
+            this.logger.warn(
+              `User ${userId} would exceed spend limit (${totalSpentInPeriod + totalChargeCents} > ${spendLimit}), skipping`,
+            );
+            return 'skipped';
+          }
         }
       }
 
@@ -195,8 +245,7 @@ export class BillingService {
         return 'skipped';
       }
 
-      const newBalance =
-        BigInt(wallet.balanceCents) - BigInt(totalChargeCents);
+      const newBalance = BigInt(wallet.balanceCents) - BigInt(totalChargeCents);
 
       // 5. Create WalletTransaction record first to get its ID for linking
       const walletTransaction = await tx.walletTransaction.create({
@@ -251,7 +300,11 @@ export class BillingService {
           action: 'billing.charge',
           category: 'billing',
           status: 'success',
-          details: { totalChargeCents, volumeCount: volumeDetails.length, period: 'hourly' },
+          details: {
+            totalChargeCents,
+            volumeCount: volumeDetails.length,
+            period: 'hourly',
+          },
         });
       } catch {
         // Don't let audit logging failures break billing
@@ -263,8 +316,13 @@ export class BillingService {
 
   /**
    * Get the start of the current spend limit period
+   * @param period - 'daily', 'weekly', 'monthly', or 'date_range'
+   * @param startDate - Required for 'date_range' period
    */
-  private getSpendLimitPeriodStart(period: string | null): Date {
+  getSpendLimitPeriodStart(
+    period: string | null,
+    startDate?: Date | null,
+  ): Date {
     const now = new Date();
     switch (period) {
       case 'daily':
@@ -276,8 +334,223 @@ export class BillingService {
       }
       case 'monthly':
         return new Date(now.getFullYear(), now.getMonth(), 1);
+      case 'date_range':
+        // For date_range, use the startDate from the wallet settings
+        return startDate
+          ? new Date(startDate)
+          : new Date(now.getFullYear(), now.getMonth(), now.getDate());
       default:
         return new Date(now.getFullYear(), now.getMonth(), now.getDate());
     }
+  }
+
+  /**
+   * Check if a date_range period is currently active
+   */
+  private isDateRangeActive(
+    startDate?: Date | null,
+    endDate?: Date | null,
+  ): boolean {
+    if (!startDate || !endDate) return false;
+    const now = new Date();
+    return now >= new Date(startDate) && now <= new Date(endDate);
+  }
+
+  /**
+   * Get spend limit settings for a user
+   */
+  async getSpendLimitSettings(userId: string): Promise<{
+    enabled: boolean;
+    limitAmountRupees: number | null;
+    period: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    consentedAt: string | null;
+    currentPeriodSpendRupees: number;
+  }> {
+    const wallet = await this.prisma.wallet.findFirst({
+      where: { userId },
+    });
+
+    if (!wallet) {
+      return {
+        enabled: false,
+        limitAmountRupees: null,
+        period: null,
+        startDate: null,
+        endDate: null,
+        consentedAt: null,
+        currentPeriodSpendRupees: 0,
+      };
+    }
+
+    // Calculate current period spend
+    let currentPeriodSpendCents = 0;
+
+    if (wallet.spendLimitEnabled && wallet.spendLimitPeriod) {
+      // For date_range, check if we're within the active period
+      if (wallet.spendLimitPeriod === 'date_range') {
+        if (
+          this.isDateRangeActive(
+            wallet.spendLimitStartDate,
+            wallet.spendLimitEndDate,
+          )
+        ) {
+          const periodStart = this.getSpendLimitPeriodStart(
+            wallet.spendLimitPeriod,
+            wallet.spendLimitStartDate,
+          );
+          const periodEnd = wallet.spendLimitEndDate
+            ? new Date(wallet.spendLimitEndDate)
+            : new Date();
+
+          const periodCharges = await this.prisma.billingCharge.aggregate({
+            where: {
+              userId,
+              createdAt: {
+                gte: periodStart,
+                lte: periodEnd,
+              },
+            },
+            _sum: { amountCents: true },
+          });
+          currentPeriodSpendCents = Number(periodCharges._sum.amountCents || 0);
+        }
+      } else {
+        const periodStart = this.getSpendLimitPeriodStart(
+          wallet.spendLimitPeriod,
+        );
+        const periodCharges = await this.prisma.billingCharge.aggregate({
+          where: {
+            userId,
+            createdAt: { gte: periodStart },
+          },
+          _sum: { amountCents: true },
+        });
+        currentPeriodSpendCents = Number(periodCharges._sum.amountCents || 0);
+      }
+    }
+
+    return {
+      enabled: wallet.spendLimitEnabled,
+      limitAmountRupees:
+        wallet.spendLimitCents !== null ? wallet.spendLimitCents / 100 : null,
+      period: wallet.spendLimitPeriod,
+      startDate: wallet.spendLimitStartDate?.toISOString() ?? null,
+      endDate: wallet.spendLimitEndDate?.toISOString() ?? null,
+      consentedAt: wallet.spendLimitConsentedAt?.toISOString() ?? null,
+      currentPeriodSpendRupees: currentPeriodSpendCents / 100,
+    };
+  }
+
+  /**
+   * Update spend limit settings for a user
+   */
+  async updateSpendLimit(
+    userId: string,
+    dto: {
+      enabled: boolean;
+      limitAmountRupees?: number;
+      period?: string;
+      startDate?: string;
+      endDate?: string;
+      consentAcknowledged: boolean;
+    },
+  ): Promise<{
+    enabled: boolean;
+    limitAmountRupees: number | null;
+    period: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    consentedAt: string | null;
+    currentPeriodSpendRupees: number;
+  }> {
+    // Get current wallet for audit comparison
+    const currentWallet = await this.prisma.wallet.findFirst({
+      where: { userId },
+    });
+
+    if (!currentWallet) {
+      throw new NotFoundException('Wallet not found for user');
+    }
+
+    // Capture old values for audit
+    const oldData = {
+      spendLimitEnabled: currentWallet.spendLimitEnabled,
+      spendLimitCents: currentWallet.spendLimitCents,
+      spendLimitPeriod: currentWallet.spendLimitPeriod,
+      spendLimitStartDate:
+        currentWallet.spendLimitStartDate?.toISOString() ?? null,
+      spendLimitEndDate: currentWallet.spendLimitEndDate?.toISOString() ?? null,
+    };
+
+    // Build update data
+    const updateData: {
+      spendLimitEnabled: boolean;
+      spendLimitCents?: number | null;
+      spendLimitPeriod?: string | null;
+      spendLimitStartDate?: Date | null;
+      spendLimitEndDate?: Date | null;
+      spendLimitConsentedAt?: Date | null;
+      spendLimitWarning85Sent?: boolean;
+    } = {
+      spendLimitEnabled: dto.enabled,
+    };
+
+    if (dto.enabled) {
+      // When enabling, set all the values
+      updateData.spendLimitCents = Math.round(dto.limitAmountRupees! * 100); // Convert rupees to paise
+      updateData.spendLimitPeriod = dto.period!;
+      updateData.spendLimitStartDate = dto.startDate
+        ? new Date(dto.startDate)
+        : null;
+      if (dto.endDate) {
+        const end = new Date(dto.endDate);
+        end.setHours(23, 59, 59, 999);
+        updateData.spendLimitEndDate = end;
+      } else {
+        updateData.spendLimitEndDate = null;
+      }
+      updateData.spendLimitConsentedAt = new Date();
+      updateData.spendLimitWarning85Sent = false; // Reset warning flag when settings change
+    }
+    // When disabling, we only set spendLimitEnabled=false, keep other fields for history
+
+    // Update wallet
+    const updatedWallet = await this.prisma.wallet.update({
+      where: { id: currentWallet.id },
+      data: updateData,
+    });
+
+    // Capture new values for audit
+    const newData = {
+      spendLimitEnabled: updatedWallet.spendLimitEnabled,
+      spendLimitCents: updatedWallet.spendLimitCents,
+      spendLimitPeriod: updatedWallet.spendLimitPeriod,
+      spendLimitStartDate:
+        updatedWallet.spendLimitStartDate?.toISOString() ?? null,
+      spendLimitEndDate: updatedWallet.spendLimitEndDate?.toISOString() ?? null,
+    };
+
+    // Audit log
+    try {
+      await this.auditService.log({
+        userId,
+        action: 'spend_limit.update',
+        category: 'billing',
+        status: 'success',
+        details: { oldData, newData },
+      });
+    } catch {
+      // Don't let audit logging failures break the operation
+      this.logger.warn(`Failed to audit spend limit update for user ${userId}`);
+    }
+
+    this.logger.log(
+      `User ${userId} spend limit updated: enabled=${dto.enabled}, limit=${dto.limitAmountRupees ?? 'N/A'} rupees, period=${dto.period ?? 'N/A'}`,
+    );
+
+    // Return updated settings
+    return this.getSpendLimitSettings(userId);
   }
 }
