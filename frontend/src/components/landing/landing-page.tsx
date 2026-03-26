@@ -1464,59 +1464,177 @@ export function LandingPage() {
       </Head>
       <style>{`
         @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-        .land-section { padding: 90px 48px; max-width: 1140px; margin: 0 auto; }
-        .land-section-full { padding: 90px 48px; }
+
+        /* === FLUID LAYOUT SYSTEM === */
+        /* All spacing, sizing uses clamp() for fluid scaling */
+
+        .land-section {
+          padding: clamp(32px, 8vw, 90px) clamp(20px, 5vw, 48px);
+          max-width: 1140px;
+          margin: 0 auto;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .hero-split {
+          display: flex;
+          align-items: center;
+          gap: clamp(24px, 5vw, 56px);
+          padding: clamp(80px, 12vh, 140px) clamp(20px, 5vw, 48px) clamp(40px, 8vh, 60px);
+          max-width: 1140px;
+          margin: 0 auto;
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        /* Hero text scales with viewport */
+        .hero-text {
+          flex: 1 1 min(500px, 60%);
+          min-width: 0;
+        }
+
+        .hero-btns {
+          display: flex;
+          gap: clamp(8px, 1.5vw, 12px);
+          flex-wrap: wrap;
+        }
+
+        .terminal-side {
+          flex: 1 1 min(350px, 40%);
+          min-width: 0;
+        }
+
+        /* Stats grid - fluid columns */
+        .stats-grid {
+          max-width: 1140px;
+          margin: 0 auto;
+          padding: 0 clamp(12px, 3vw, 48px);
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        /* Steps grid - fluid */
+        .steps-grid {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: clamp(12px, 2vw, 14px);
+          align-items: center;
+        }
+
+        /* Feature grid - fluid */
+        .feature-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: clamp(12px, 2vw, 16px);
+          margin-top: clamp(24px, 4vw, 48px);
+        }
+
+        .feature-card-span2 {
+          grid-column: span 2;
+        }
+
+        .feature-card-span3 {
+          grid-column: span 3;
+        }
+
+        .bento-flex {
+          display: flex;
+          gap: clamp(20px, 4vw, 40px);
+          align-items: center;
+        }
+
+        .baremetal-flex {
+          display: flex;
+          align-items: center;
+          gap: clamp(24px, 5vw, 48px);
+        }
+
+        .baremetal-bar {
+          flex-shrink: 0;
+          width: clamp(200px, 30vw, 280px);
+        }
+
+        .gpu-terminal-split {
+          display: flex;
+          gap: clamp(24px, 5vw, 56px);
+          align-items: center;
+        }
+
+        /* Responsive breakpoints */
         @media (max-width: 1024px) {
-          .land-section { padding: 64px 32px; }
-          .hero-split { flex-direction: column !important; gap: 32px !important; }
-          .hero-split .hero-text { text-align: center !important; max-width: 100% !important; }
-          .hero-split .hero-btns { justify-content: center !important; }
-          .hero-split .terminal-side { max-width: 100% !important; }
-          .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
-          .steps-grid { grid-template-columns: repeat(3, 1fr) !important; }
-          .feature-grid { grid-template-columns: repeat(2, 1fr) !important; }
-          .feature-card-span2 { grid-column: span 2 !important; }
-          .feature-card-span3 { grid-column: span 2 !important; }
-          .gpu-terminal-split { flex-direction: column !important; gap: 32px !important; }
+          .land-section { padding: clamp(32px, 6vw, 64px) clamp(16px, 4vw, 32px); }
+          .hero-split { flex-direction: column; gap: clamp(24px, 5vw, 32px); padding-top: clamp(80px, 10vh, 100px); }
+          .hero-text { text-align: center; max-width: 100% !important; }
+          .hero-btns { justify-content: center; }
+          .terminal-side { max-width: 100% !important; width: 100%; }
+          .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .steps-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .feature-card-span2 { grid-column: span 2; }
+          .feature-card-span3 { grid-column: span 2; }
+          .gpu-terminal-split { flex-direction: column; gap: clamp(24px, 4vw, 32px); }
         }
+
         @media (max-width: 768px) {
-          .land-section { padding: 48px 20px; }
-          .hero-split { flex-direction: column !important; gap: 24px !important; padding: 100px 20px 40px !important; }
-          .hero-split .hero-text { text-align: center !important; }
-          .hero-split .hero-btns { justify-content: center !important; flex-wrap: wrap !important; }
-          .hero-split .terminal-side { max-width: 100% !important; }
-          .stats-grid { grid-template-columns: repeat(2, 1fr) !important; border-right: none !important; }
-          .stats-grid > div { border-right: none !important; border-bottom: 1px solid var(--borderColor-default) !important; }
-          .trusted-by { padding: 24px 20px !important; }
-          .steps-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
-          .feature-grid { grid-template-columns: 1fr !important; }
-          .feature-card-span2 { grid-column: span 1 !important; }
-          .feature-card-span3 { grid-column: span 1 !important; }
-          .gpu-terminal-split { flex-direction: column !important; gap: 24px !important; }
-          .cta-section { padding: 48px 20px !important; }
-          .footer-section { padding: 24px 20px !important; flex-direction: column !important; text-align: center !important; gap: 16px !important; }
-          .pricing-table-wrapper { overflow-x: auto !important; }
-          .faq-list { padding: 0 20px !important; }
-          .bento-flex { flex-direction: column !important; gap: 24px !important; }
-          .bento-flex > div { width: 100% !important; }
-          .baremetal-flex { flex-direction: column !important; gap: 24px !important; }
-          .baremetal-flex > div { width: 100% !important; }
-          .baremetal-bar { width: 100% !important; }
+          .land-section { padding: clamp(24px, 5vw, 48px) clamp(16px, 4vw, 20px); }
+          .hero-split { padding: clamp(80px, 10vh, 100px) clamp(16px, 4vw, 20px) clamp(32px, 6vw, 40px); }
+          .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); border-right: none; }
+          .stats-grid > div { border-right: none; border-bottom: 1px solid var(--borderColor-default); }
+          .trusted-by { padding: clamp(20px, 4vw, 24px) clamp(16px, 4vw, 20px); }
+          .steps-grid { grid-template-columns: 1fr; gap: clamp(12px, 3vw, 16px); }
+          .feature-grid { grid-template-columns: 1fr; }
+          .feature-card-span2 { grid-column: span 1; }
+          .feature-card-span3 { grid-column: span 1; }
+          .bento-flex { flex-direction: column; gap: clamp(16px, 4vw, 24px); }
+          .bento-flex > div { width: 100%; }
+          .baremetal-flex { flex-direction: column; gap: clamp(16px, 4vw, 24px); }
+          .baremetal-flex > div { width: 100%; }
+          .baremetal-bar { width: 100%; }
+          .cta-section { padding: clamp(40px, 8vw, 48px) clamp(16px, 4vw, 20px); }
+          .footer-section { padding: clamp(20px, 4vw, 24px) clamp(16px, 4vw, 20px); flex-direction: column; text-align: center; gap: clamp(12px, 3vw, 16px); }
+          .pricing-table-wrapper { overflow-x: auto; }
+          .faq-list { padding: 0 clamp(16px, 4vw, 20px); }
         }
+
         @media (max-width: 480px) {
-          .stats-grid { grid-template-columns: 1fr !important; }
-          .trusted-list { flex-direction: column !important; gap: 12px !important; }
+          .stats-grid { grid-template-columns: 1fr; }
+          .trusted-list { flex-direction: column; gap: clamp(8px, 2vw, 12px); }
         }
+
         .highlight-text { color: ${ACCENT}; }
+
         .reveal-on-scroll {
           opacity: 0;
           transform: translateY(30px) scale(0.98);
           transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
           will-change: opacity, transform;
         }
+
         .reveal-on-scroll.revealed {
           opacity: 1;
           transform: translateY(0) scale(1);
+        }
+
+        /* Navigation responsive */
+        @media (max-width: 768px) {
+          .nav-links-desktop { display: none !important; }
+          .nav-actions-desktop { display: none !important; }
+          .mobile-menu-btn { display: flex !important; }
+          .mobile-menu { display: flex !important; }
+          .nav-mobile-padding { padding: 0 clamp(16px, 4vw, 20px) !important; }
+        }
+
+        @media (min-width: 769px) {
+          .mobile-menu-btn { display: none !important; }
+          .mobile-menu { display: none !important; }
+        }
+
+        /* Feature comparison responsive */
+        @media (max-width: 1024px) {
+          .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        }
+        @media (max-width: 768px) {
+          .feature-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
 
@@ -1531,31 +1649,31 @@ export function LandingPage() {
         {/* Radial glow top-left */}
         <div style={{ position: "absolute", top: -120, left: -120, width: 600, height: 600, background: `radial-gradient(circle, ${ACCENT_GLOW} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
-        <div className="hero-split" style={{ display: "flex", alignItems: "center", gap: 56, padding: "100px 48px 60px", maxWidth: 1140, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
+        <div className="hero-split">
           {/* Left */}
-          <div className="hero-text" style={{ flex: 1, minWidth: 0 }}>
+          <div className="hero-text">
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 14px", background: "var(--bgColor-mild)", border: `1px solid ${ACCENT}`, borderRadius: 9999, marginBottom: 28, animation: "fadeUp 0.4s ease 0.1s both" }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e" }} />
               <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: ACCENT }}>KSRCE AI Lab Infrastructure</span>
             </div>
-            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.8rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: "var(--fgColor-default)", marginBottom: 12, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.2s both" }}>
+            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: "var(--fgColor-default)", marginBottom: 12, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.2s both", wordBreak: "break-word" }}>
               Rent GPUs.
             </h1>
-            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.8rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: ACCENT, marginBottom: 28, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.3s both" }}>
+            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: ACCENT, marginBottom: 28, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.3s both", wordBreak: "break-word" }}>
               Ship Faster.
             </h1>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", lineHeight: 1.75, color: "var(--fgColor-muted)", maxWidth: 460, marginBottom: 36, animation: "fadeUp 0.4s ease 0.4s both" }}>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(0.9rem, 1.5vw, 1.05rem)", lineHeight: 1.75, color: "var(--fgColor-muted)", maxWidth: "min(460px, 100%)", marginBottom: 36, animation: "fadeUp 0.4s ease 0.4s both", wordBreak: "break-word" }}>
               LaaS gives KSRCE students and researchers instant access to NVIDIA 4090, 15 GB persistent storage, and Jupyter notebooks — secured by university SSO.
             </p>
-            <div className="hero-btns" style={{ display: "flex", gap: 12, flexWrap: "wrap", animation: "fadeUp 0.4s ease 0.5s both" }}>
+            <div className="hero-btns">
               <Link href="/signup"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s", flexShrink: 0 }}
                 onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
                 Launch a GPU →
               </Link>
               <a href="#how-it-works"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s", flexShrink: 0 }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bgColor-mild)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = "translateY(0)"; }}>
                 See How It Works
@@ -1564,8 +1682,10 @@ export function LandingPage() {
           </div>
 
           {/* Right — Terminal */}
-          <div className="terminal-side" style={{ flex: 1, minWidth: 0, animation: "fadeUp 0.5s ease 0.5s both", maxWidth: 520 }}>
-            <HeroTerminal />
+          <div className="terminal-side">
+            <div style={{ maxWidth: "100%", overflow: "hidden" }}>
+              <HeroTerminal />
+            </div>
           </div>
         </div>
       </section>

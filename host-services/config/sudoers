@@ -1,0 +1,16 @@
+# /etc/sudoers - LaaS Container Override
+# This file removes the base image's blanket ubuntu ALL grant that
+# overrides deny rules in /etc/sudoers.d/laas-user
+#
+# Managed by LaaS - DO NOT EDIT inside container
+
+Defaults        env_reset
+Defaults        mail_badpass
+Defaults        secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+Defaults        use_pty
+
+root    ALL=(ALL:ALL) ALL
+%admin ALL=(ALL) ALL
+%sudo   ALL=(ALL:ALL) ALL
+
+@includedir /etc/sudoers.d

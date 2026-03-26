@@ -428,17 +428,30 @@ def build_docker_command(
     cmd.extend([f"--cpus={vcpu}"])
     cmd.extend([f"--cpuset-cpus={cpuset}"])
     cmd.extend([f"--memory={memory_gb}g"])
+    cmd.extend(["--pids-limit", "512"])
     
+    # TODO: For production, change to --network=laas-user-network with port publishing
+    # and test --ipc=private (MPS may work via bind-mounted pipes without host IPC)
     # IPC, network, tmpfs
     cmd.append("--ipc=host")
     cmd.append("--network=host")
     cmd.extend(["--tmpfs", "/dev/shm:rw"])
     
-    # Device access
-    cmd.extend(["--device", "/dev/fuse"])
+    # Security: Drop all capabilities, add only what's needed for sudo + desktop
+    cmd.append("--cap-drop=ALL")
+    sudo_caps = [
+        "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID",
+        "NET_BIND_SERVICE", "KILL", "SYS_CHROOT", "MKNOD",
+        "NET_RAW", "FSETID", "AUDIT_WRITE"
+    ]
+    for cap in sudo_caps:
+        cmd.extend(["--cap-add", cap])
     
-    # Capabilities
-    cmd.extend(["--cap-add", "SYS_ADMIN"])
+    # Security: Seccomp syscall filter + AppArmor MAC profile
+    cmd.extend(["--security-opt", "seccomp=/etc/laas/seccomp-gpu-desktop.json"])
+    cmd.extend(["--security-opt", "apparmor=docker-default"])
+    # no-new-privileges must be false to allow sudo inside container
+    cmd.extend(["--security-opt", "no-new-privileges=false"])
     
     # Timezone
     cmd.extend(["-e", "TZ=UTC"])
@@ -498,23 +511,30 @@ def build_docker_command(
         cmd.extend(["-v", f"{NFS_MOUNT_ROOT}/{storage_uid}:/home/ubuntu"])
     
     # Volume mounts - HAMi-core libs
-    cmd.extend(["-v", "/usr/lib/libvgpu.so:/usr/lib/libvgpu.so"])
-    cmd.extend(["-v", "/usr/lib/fake_sysconf.so:/usr/lib/fake_sysconf.so"])
+    cmd.extend(["-v", "/usr/lib/libvgpu.so:/usr/lib/libvgpu.so:ro"])
+    cmd.extend(["-v", "/usr/lib/fake_sysconf.so:/usr/lib/fake_sysconf.so:ro"])
     
     # Volume mounts - vgpulock
     cmd.extend(["-v", f"/tmp/vgpulock-{display_number}:/tmp/vgpulock"])
     
     # Volume mounts - nvidia-smi wrapper
     cmd.extend(["-v", "/usr/bin/nvidia-smi:/usr/bin/nvidia-smi.real"])
-    cmd.extend(["-v", "/etc/laas/nvidia-smi-wrapper:/usr/bin/nvidia-smi"])
+    cmd.extend(["-v", "/etc/laas/nvidia-smi-wrapper:/usr/bin/nvidia-smi:ro"])
     
     # Volume mounts - passwd wrapper
     cmd.extend(["-v", "/usr/bin/passwd:/usr/bin/passwd.real"])
-    cmd.extend(["-v", "/etc/laas/passwd-wrapper:/usr/bin/passwd"])
+    cmd.extend(["-v", "/etc/laas/passwd-wrapper:/usr/bin/passwd:ro"])
     
     # Volume mounts - supervisord config
-    cmd.extend(["-v", "/etc/laas/supervisord-hami.conf:/etc/supervisord.conf"])
-    cmd.extend(["-v", "/etc/laas/bash.bashrc:/etc/bash.bashrc"])
+    cmd.extend(["-v", "/etc/laas/supervisord-hami.conf:/etc/supervisord.conf:ro"])
+    cmd.extend(["-v", "/etc/laas/bash.bashrc:/etc/bash.bashrc:ro"])
+    
+    # Sudoers: override base image's /etc/sudoers to remove blanket ubuntu ALL grant
+    # (base image puts ubuntu ALL=(ALL:ALL) NOPASSWD: ALL after @includedir,
+    # which overrides all deny rules in /etc/sudoers.d/laas-user)
+    cmd.extend(["-v", "/etc/laas/sudoers:/etc/sudoers:ro"])
+    # Sudoers: enable passwordless sudo with deny rules for dangerous operations
+    cmd.extend(["-v", "/etc/laas/sudoers-laas-user:/etc/sudoers.d/laas-user:ro"])
     
     # Volume mounts - lxcfs (fake proc/sys)
     cmd.extend(["-v", "/var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:ro"])

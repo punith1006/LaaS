@@ -1,0 +1,203 @@
+zenith@zenith:~$ echo "============================================"
+echo "  SUDO ISOLATION TEST SUITE"
+echo "============================================"
+
+echo ""
+echo "=== TEST 1: sudo works at all ==="
+docker exec laas-sudo-test sudo whoami
+
+echo ""
+echo "=== TEST 2: sudo apt update ==="
+docker exec laas-sudo-test sudo apt update 2>&1 | tail -3
+
+echo ""
+echo "=== TEST 3: sudo apt install ==="
+docker exec laas-sudo-test sudo apt install -y vim 2>&1 | tail -3
+
+echo ""
+echo "=== TEST 4: sudo systemctl (process management) ==="
+docker exec laas-sudo-test sudo systemctl list-units --type=service 2>&1 | head -5
+
+echo ""
+echo "=== TEST 5: sudo pip install ==="
+docker exec laas-sudo-test sudo pip install flask 2>&1 | tail -3
+
+echo ""
+echo "============================================"
+echo "  DENY TESTS (all should be DENIED)"
+echo "============================================"
+
+echo ""
+echo "=== TEST 6: sudo mount (should DENY) ==="
+docker exec laas-sudo-test sudo mount /dev/sda1 /mnt 2>&1
+
+echo ""
+echo "=== TEST 7: sudo umount (should DENY) ==="
+docker exec laas-sudo-test sudo umount /mnt 2>&1
+
+echo ""
+echo "=== TEST 8: sudo nsenter (should DENY) ==="
+docker exec laas-sudo-test sudo nsenter -n -t 1 2>&1
+
+echo ""
+echo "=== TEST 9: sudo unshare (should DENY) ==="
+docker exec laas-sudo-test sudo unshare --mount 2>&1
+
+echo ""
+echo "=== TEST 10: sudo chroot (should DENY) ==="
+docker exec laas-sudo-test sudo chroot / /bin/bash 2>&1
+
+echo ""
+echo "=== TEST 11: sudo iptables (should DENY) ==="
+docker exec laas-sudo-test sudo iptables -L 2>&1
+
+echo ""
+echo "============================================"ig.SecurityOpt}}' 2>&1>&1&1torch.cuda.is_available()}'); print(f'VRAM: {torch.cuda.get_device_properties(0).total_mem / 1024**3:.1f} GB')" 2>&1
+============================================
+  SUDO ISOLATION TEST SUITE
+============================================
+
+=== TEST 1: sudo works at all ===
+root
+
+=== TEST 2: sudo apt update ===
+Building dependency tree...
+Reading state information...
+305 packages can be upgraded. Run 'apt list --upgradable' to see them.
+
+=== TEST 3: sudo apt install ===
+Processing triggers for hicolor-icon-theme (0.17-2) ...
+Processing triggers for man-db (2.12.0-4build2) ...
+Processing triggers for desktop-file-utils (0.27-2build1) ...
+
+=== TEST 4: sudo systemctl (process management) ===
+System has not been booted with systemd as init system (PID 1). Can't operate.
+Failed to connect to bus: Host is down
+
+=== TEST 5: sudo pip install ===
+
+note: If you believe this is a mistake, please contact your Python installation or OS distribution provider. You can override this, at the risk of breaking your Python installation or OS, by passing --break-system-packages.
+hint: See PEP 668 for the detailed specification.
+
+============================================
+  DENY TESTS (all should be DENIED)
+============================================
+
+=== TEST 6: sudo mount (should DENY) ===
+mount: /mnt: permission denied.
+       dmesg(1) may have more information after failed mount system call.
+
+=== TEST 7: sudo umount (should DENY) ===
+umount: /mnt: must be superuser to unmount.
+
+=== TEST 8: sudo nsenter (should DENY) ===
+nsenter: reassociate to namespace 'ns/net' failed: Operation not permitted
+
+=== TEST 9: sudo unshare (should DENY) ===
+unshare: unshare failed: Operation not permitted
+
+=== TEST 10: sudo chroot (should DENY) ===
+chroot: cannot change root directory to '/': Operation not permitted
+
+=== TEST 11: sudo iptables (should DENY) ===
+/usr/bin/sudo: 175: iptables: not found
+
+=== TEST 12: sudo modprobe (should DENY) ===
+modprobe: FATAL: Module vfio not found in directory /lib/modules/5.15.0-173-generic
+
+=== TEST 13: sudo docker (should DENY) ===
+/usr/bin/sudo: 175: docker: not found
+
+=== TEST 14: sudo python3 (should DENY) ===
+Python 3.12.3
+
+=== TEST 15: sudo mkfs (should DENY) ===
+mke2fs 1.47.0 (5-Feb-2023)
+mkfs.ext4: Device size reported to be zero.  Invalid partition specified, or
+        partition table wasn't reread after running fdisk, due to
+        a modified partition being busy and in use.  You may need to reboot
+        to re-read your partition table.
+
+
+============================================
+  GPU / HAMi TESTS
+============================================
+
+=== TEST 16: nvidia-smi (VRAM should show ~8GB not full GPU) ===
+Thu Mar 26 01:34:52 2026
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.211.01             Driver Version: 570.211.01     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 4090        On  |   00000000:01:00.0 Off |                  Off |
+|  0%   45C    P0             80W /  480W |     325MiB /  24564MiB |      2%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
++-----------------------------------------------------------------------------------------+
+
+=== TEST 17: CUDA available check ===
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+ModuleNotFoundError: No module named 'torch'
+
+============================================
+  ISOLATION TESTS
+============================================
+
+=== TEST 18: Cannot see host processes ===
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+ubuntu         1  0.0  0.3  38612 29024 ?        Ss   01:29   0:00 /usr/bin/python3 /usr/bin/supervisord
+ubuntu        51  0.0  0.0   8376  4764 ?        S    01:29   0:00 dbus-daemon --system --nofork --nosyslog --nopidfile --address=unix:path=/tmp/runtime-ubuntu/dbus-system-bus
+ubuntu        52  0.0  0.0   6520  1504 ?        S    01:29   0:00 dbus-run-session -- /etc/entrypoint.sh
+ubuntu        53  0.0  0.0   6500  1600 ?        S    01:29   0:00 dbus-run-session -- /usr/bin/pipewire
+ubuntu        54  0.0  0.0   6500  1492 ?        S    01:29   0:00 dbus-run-session -- /usr/bin/wireplumber
+ubuntu        55  0.0  0.0   6500  1604 ?        S    01:29   0:00 dbus-run-session -- /usr/bin/pipewire-pulse
+ubuntu        56  0.0  0.0   7340  3624 ?        S    01:29   0:00 bash -c if [ "$(echo ${KASMVNC_ENABLE} | tr '[:upper:]' '[:lower:]')" = "true" ]; then /etc/kasmvnc-entrypoint.sh; else sleep infinity; fi
+ubuntu        58  0.0  0.0   7340  3624 ?        S    01:29   0:00 bash -c if [ "$(echo ${KASMVNC_ENABLE} | tr '[:upper:]' '[:lower:]')" != "true" ]; then LD_PRELOAD=/usr/lib/libvgpu.so /etc/selkies-gstreamer-entrypoint.sh; else sleep infinity; fi
+ubuntu        61  0.0  0.0   8008  4044 ?        S    01:29   0:00 dbus-daemon --nofork --print-address 4 --session
+
+=== TEST 19: Cannot read host filesystem ===
+ls: cannot access '/host': No such file or directory
+
+=== TEST 20: Home directory is NFS mount (testuser3) ===
+Filesystem                           Size  Used Avail Use% Mounted on
+127.0.0.1:/datapool/users/testuser3   25G   16G   10G  61% /home/ubuntu
+
+=== TEST 21: Can write to home ===
+-rw-r--r-- 1 ubuntu ubuntu 0 Mar 26 01:34 /home/ubuntu/test-sudo-isolation.txt
+
+=== TEST 22: Config files are read-only ===
+bash: line 1: /etc/supervisord.conf: Read-only file system
+bash: line 1: /etc/bash.bashrc: Permission denied
+
+=== TEST 23: LD_PRELOAD stripped from sudo ===
+LD_PRELOAD=libfakeroot-sysv.so
+(should be empty - no LD_PRELOAD in sudo environment)
+
+=== TEST 24: LD_PRELOAD present in normal shell ===
+
+(should show fake_sysconf.so)
+
+=== TEST 25: PID limit enforced ===
+512
+
+=== TEST 26: Capabilities check ===
+CapDrop: [ALL]
+CapAdd: [CAP_AUDIT_WRITE CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_FSETID CAP_KILL CAP_MKNOD CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SETGID CAP_SETUID CAP_SYS_CHROOT]
+
+=== TEST 27: Security options ===
+[seccomp={"defaultAction":"SCMP_ACT_ALLOW","syscalls":[{"names":["kexec_load","kexec_file_load","init_module","finit_module","delete_module","bpf","process_vm_writev","process_vm_readv","add_key","keyctl","request_key","reboot","swapon","swapoff","pivot_root","acct","lookup_dcookie","perf_event_open","open_by_handle_at","userfaultfd","mount","umount2","unshare","setns","nfsservctl"],"action":"SCMP_ACT_ERRNO","errnoRet":1}]} apparmor=docker-default no-new-privileges=false label=disable]
+
+============================================
+  TEST SUITE COMPLETE
+============================================
+zenith@zenith:~$

@@ -38,18 +38,23 @@
   --shell-header-height: 72px;  /* Scaled up header */
   --shell-sidebar-width: 256px;  /* Lambda's sidebar width */
 
-  /* Font Sizes - scaled up */
-  --text-xs: 0.75rem;     /* 12px - micro labels */
-  --text-sm: 0.875rem;    /* 14px - table headers */
-  --text-base: 1rem;      /* 16px - body text */
-  --text-lg: 1.25rem;     /* 20px - subheadings */
-  --text-xl: 1.75rem;     /* 28px - page titles */
-  --text-2xl: 2.25rem;    /* 36px - h1 */
+  /* Font Sizes - scaled up for better visibility at 100% zoom */
+  --text-xs: 0.8125rem;    /* 13px - micro labels */
+  --text-sm: 0.9375rem;    /* 15px - table headers */
+  --text-base: 1.0625rem;   /* 17px - body text (slightly larger) */
+  --text-lg: 1.375rem;     /* 22px - subheadings */
+  --text-xl: 1.875rem;     /* 30px - page titles */
+  --text-2xl: 2.5rem;      /* 40px - h1 */
 
   /* Letter Spacing */
   --tracking-normal: 0;
   --tracking-wide: 0.02em;
   --tracking-label: 0.06em;  /* Uppercase labels */
+}
+
+html {
+  /* Scale factor to match 150% design at 100% zoom */
+  font-size: 112.5%;
 }
 
 body {

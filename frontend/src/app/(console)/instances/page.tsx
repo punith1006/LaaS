@@ -91,6 +91,41 @@ function formatUptime(startedAt: string | null, status: string): string {
   return `${minutes}m`;
 }
 
+// Format cost with Indian Rupee symbol and comma separators
+function formatCostRupees(cents: number): string {
+  const rupees = cents / 100;
+  // Indian numbering format: X,XX,XXX.XX
+  const formatted = rupees.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `₹${formatted}`;
+}
+
+// Calculate live cost for a session
+function calculateLiveCost(session: Session): number {
+  if (ENDED_STATUSES.includes(session.status)) {
+    // Ended sessions: return final cumulative cost
+    return session.cumulativeCostCents;
+  }
+  
+  if (!session.startedAt || !session.computeConfig) {
+    // Pending/no data: return 0
+    return 0;
+  }
+  
+  if (!ACTIVE_STATUSES.includes(session.status) || session.status === 'pending') {
+    // Not running yet
+    return 0;
+  }
+  
+  // Running sessions: calculate live cost
+  const elapsedMs = Date.now() - new Date(session.startedAt).getTime();
+  const elapsedHours = elapsedMs / 3600000;
+  const liveCostCents = elapsedHours * session.computeConfig.basePricePerHourCents;
+  return liveCostCents;
+}
+
 // Format date
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "-";
@@ -578,6 +613,8 @@ export default function InstancesPage() {
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [isTerminating, setIsTerminating] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [tick, setTick] = useState(0); // For live cost ticker updates (triggers re-render)
 
   // Get selected session
   const selectedSession = sessions.find((s) => s.id === selectedSessionId) || null;
@@ -608,6 +645,17 @@ export default function InstancesPage() {
     const interval = setInterval(fetchSessions, 5000);
     return () => clearInterval(interval);
   }, [fetchSessions]);
+
+  // Tick for live cost updates (every second)
+  useEffect(() => {
+    const hasRunningSessions = sessions.some(
+      (s) => ACTIVE_STATUSES.includes(s.status) && s.status !== 'pending' && s.startedAt
+    );
+    if (!hasRunningSessions) return;
+    
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [sessions]);
 
   // Auto-open sidebar from launch redirect
   useEffect(() => {
@@ -980,17 +1028,19 @@ export default function InstancesPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--borderColor-default)" }}>
-                      {["Name", "Config", "GPU", "Status", "Uptime", "Cost/hr"].map((header) => (
+                      {["Name", "Config", "GPU", "Status", "Uptime", "Cost", "Cost/hr"].map((header, idx) => (
                         <th
                           key={header}
                           style={{
-                            textAlign: "left",
+                            textAlign: idx >= 5 ? "right" : "left",
                             padding: "12px 16px",
+                            paddingLeft: idx === 6 ? "24px" : "16px",
                             fontSize: "0.75rem",
                             fontWeight: 600,
                             color: "var(--fgColor-muted)",
                             textTransform: "uppercase",
                             letterSpacing: "0.05em",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           {header}
@@ -1040,7 +1090,50 @@ export default function InstancesPage() {
                         <td style={{ padding: "12px 16px", fontSize: "0.875rem", color: "var(--fgColor-muted)" }}>
                           {formatUptime(session.startedAt, session.status)}
                         </td>
-                        <td style={{ padding: "12px 16px", fontSize: "0.875rem", color: "var(--fgColor-default)" }}>
+                        <td
+                          style={{
+                            padding: "12px 16px",
+                            textAlign: "right",
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "0.875rem",
+                          }}
+                        >
+                          {(() => {
+                            const isLive = ACTIVE_STATUSES.includes(session.status) && 
+                                          session.status !== 'pending' && 
+                                          session.startedAt;
+                            const costCents = calculateLiveCost(session);
+                            
+                            if (session.status === 'pending' || (!session.startedAt && ACTIVE_STATUSES.includes(session.status))) {
+                              return <span style={{ color: "var(--fgColor-muted)" }}>—</span>;
+                            }
+                            
+                            return (
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  color: isLive ? "var(--fgColor-default)" : "var(--fgColor-muted)",
+                                }}
+                              >
+                                {isLive && (
+                                  <span
+                                    style={{
+                                      width: "6px",
+                                      height: "6px",
+                                      borderRadius: "50%",
+                                      backgroundColor: "#009C00",
+                                      animation: "pulse 1.5s ease-in-out infinite",
+                                    }}
+                                  />
+                                )}
+                                {formatCostRupees(costCents)}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td style={{ padding: "12px 16px", paddingLeft: "24px", fontSize: "0.875rem", color: "var(--fgColor-default)", textAlign: "right", whiteSpace: "nowrap" }}>
                           {session.computeConfig ? `₹${(session.computeConfig.basePricePerHourCents / 100).toFixed(0)}/hr` : "-"}
                         </td>
                       </tr>

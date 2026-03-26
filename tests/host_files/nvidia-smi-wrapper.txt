@@ -1,0 +1,30 @@
+zenith@zenith:~$ cat /etc/laas/nvidia-smi-wrapper
+#!/bin/bash
+get_vram_limit_mib() {
+  if [ -n "$CUDA_DEVICE_MEMORY_LIMIT_0" ]; then
+    VAL="${CUDA_DEVICE_MEMORY_LIMIT_0,,}"
+    if [[ "$VAL" == *"m" ]]; then echo "${VAL//m/}"
+    elif [[ "$VAL" == *"g" ]]; then echo $(( ${VAL//g/} * 1024 ))
+    fi
+    return
+  fi
+  python3 -c "
+import struct
+with open('/tmp/cudevshr.cache','rb') as f:
+    d=f.read(4096)
+print(struct.unpack_from('<Q',d,1600)[0]//(1024*1024))
+" 2>/dev/null || echo "0"
+}
+case "$*" in
+  *"-pm"*|*"--persistence-mode"*|*"-pl"*|*"--power-limit"*|\
+  *"--query-gpu"*|*"--format"*|*"-i "*|*"--id"*)
+    exec env -u LD_PRELOAD /usr/bin/nvidia-smi.real "$@" ;;
+esac
+LIMIT_MIB=$(get_vram_limit_mib)
+REAL_OUT=$(env -u LD_PRELOAD /usr/bin/nvidia-smi.real "$@" 2>&1)
+if [ -n "$LIMIT_MIB" ] && [ "$LIMIT_MIB" -gt "0" ] 2>/dev/null; then
+  echo "$REAL_OUT" | sed "s|/ [0-9]*MiB|/ ${LIMIT_MIB}MiB|g"
+else
+  echo "$REAL_OUT"
+fi
+zenith@zenith:~$

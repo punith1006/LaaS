@@ -1,0 +1,36 @@
+zenith@zenith:~$ sudo cat /etc/laas/sudoers-laas-user
+# LaaS Container Sudoers Policy
+# Full sudo for desktop experience, deny dangerous + GPU-bypass operations
+
+Defaults env_reset
+Defaults env_delete += "LD_PRELOAD LD_LIBRARY_PATH"
+
+ubuntu ALL=(ALL) NOPASSWD: ALL
+
+# Block host escape vectors
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/insmod
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/rmmod
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/modprobe
+ubuntu ALL=(ALL) NOPASSWD: !/bin/mount
+ubuntu ALL=(ALL) NOPASSWD: !/usr/bin/mount
+ubuntu ALL=(ALL) NOPASSWD: !/bin/umount
+ubuntu ALL=(ALL) NOPASSWD: !/usr/bin/umount
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/mkfs*
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/fdisk
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/parted
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/iptables
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/ip6tables
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/nft
+ubuntu ALL=(ALL) NOPASSWD: !/sbin/ip
+ubuntu ALL=(ALL) NOPASSWD: !/usr/bin/nsenter
+ubuntu ALL=(ALL) NOPASSWD: !/usr/bin/unshare
+ubuntu ALL=(ALL) NOPASSWD: !/usr/bin/chroot
+ubuntu ALL=(ALL) NOPASSWD: !/usr/sbin/chroot
+
+# Block GPU runtime via sudo (prevents HAMi VRAM bypass)
+ubuntu ALL=(ALL) NOPASSWD: !/usr/bin/python3
+ubuntu ALL=(ALL) NOPASSWD: !/usr/bin/python
+ubuntu ALL=(ALL) NOPASSWD: !/usr/local/bin/python3
+ubuntu ALL=(ALL) NOPASSWD: !/usr/local/bin/python
+ubuntu ALL=(ALL) NOPASSWD: !/home/ubuntu/*
+zenith@zenith:~$

@@ -1,0 +1,38 @@
+# LaaS Container Sudoers Policy
+# Full sudo for desktop experience, deny dangerous + GPU-bypass operations
+#
+# IMPORTANT: Deny rules must target REAL binary paths (readlink -f)
+# because sudo resolves symlinks before matching.
+#
+# Security layers (defense in depth):
+#   1. This sudoers file (deny specific dangerous commands)
+#   2. Linux capabilities (--cap-drop=ALL + minimal adds)
+#   3. Seccomp syscall filter (blocks mount, unshare, setns, etc.)
+#   4. AppArmor MAC profile (docker-default)
+
+Defaults env_reset
+Defaults env_delete += "LD_PRELOAD LD_LIBRARY_PATH"
+Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Grant ALL with deny exceptions — MUST be single logical line
+# Includes both symlink paths AND real binary paths for full coverage
+ubuntu ALL=(ALL) NOPASSWD: ALL, \
+    !/sbin/insmod, !/usr/sbin/insmod, \
+    !/sbin/rmmod, !/usr/sbin/rmmod, \
+    !/sbin/modprobe, !/usr/sbin/modprobe, !/usr/bin/kmod, \
+    !/bin/mount, !/usr/bin/mount, !/sbin/mount, !/usr/sbin/mount, \
+    !/bin/umount, !/usr/bin/umount, !/sbin/umount, !/usr/sbin/umount, \
+    !/sbin/mkfs*, !/usr/sbin/mkfs*, !/usr/sbin/mke2fs, !/sbin/mke2fs, \
+    !/sbin/fdisk, !/usr/sbin/fdisk, \
+    !/sbin/parted, !/usr/sbin/parted, \
+    !/sbin/iptables, !/usr/sbin/iptables, \
+    !/sbin/ip6tables, !/usr/sbin/ip6tables, \
+    !/sbin/nft, !/usr/sbin/nft, \
+    !/sbin/ip, !/usr/sbin/ip, !/usr/bin/ip, \
+    !/usr/bin/nsenter, !/usr/sbin/nsenter, \
+    !/usr/bin/unshare, !/usr/sbin/unshare, \
+    !/usr/bin/chroot, !/usr/sbin/chroot, \
+    !/usr/bin/docker, !/usr/sbin/docker, \
+    !/usr/bin/python3, !/usr/bin/python3.10, !/usr/bin/python3.11, !/usr/bin/python3.12, !/usr/bin/python3.13, \
+    !/usr/bin/python, !/usr/local/bin/python3, !/usr/local/bin/python, \
+    !/home/ubuntu/*

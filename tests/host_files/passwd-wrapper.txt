@@ -1,0 +1,2 @@
+#!/bin/bash
+exec env -u LD_PRELOAD /usr/bin/passwd.real "$@"
