@@ -275,15 +275,14 @@ export function OnboardingForm() {
         profession,
         expertiseLevel,
         yearsOfExperience: yearsOfExperience ? parseInt(yearsOfExperience, 10) : undefined,
-        primaryUseCase,
         operationalDomains: selectedAreas,
-        toolsFrameworks: selectedTools,
-        goalsOther: goalsOther || undefined,
+        useCasePurposes: [primaryUseCase, ...selectedTools],
+        useCaseOther: goalsOther || undefined,
         country,
       });
       toast.success("Profile completed successfully!");
       reset();
-      router.push("/dashboard");
+      router.push("/home");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to save profile");
     } finally {
@@ -323,8 +322,8 @@ export function OnboardingForm() {
           What best describes your role? <span className="text-red-500">*</span>
         </Label>
         <Select value={profession} onValueChange={setProfession}>
-          <SelectTrigger className="w-full h-11 bg-white">
-            <SelectValue placeholder="Select your role" />
+          <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
+            <SelectValue placeholder="Select your role" className="text-black" />
           </SelectTrigger>
           <SelectContent>
             {PROFESSIONS.map((p) => (
@@ -341,8 +340,8 @@ export function OnboardingForm() {
           Your expertise level? <span className="text-red-500">*</span>
         </Label>
         <Select value={expertiseLevel} onValueChange={setExpertiseLevel}>
-          <SelectTrigger className="w-full h-11 bg-white">
-            <SelectValue placeholder="Select expertise level" />
+          <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
+            <SelectValue placeholder="Select expertise level" className="text-black" />
           </SelectTrigger>
           <SelectContent>
             {EXPERTISE_LEVELS.map((e) => (
@@ -363,8 +362,8 @@ export function OnboardingForm() {
           Years of experience? <span className="text-red-500">*</span>
         </Label>
         <Select value={yearsOfExperience} onValueChange={setYearsOfExperience}>
-          <SelectTrigger className="w-full h-11 bg-white">
-            <SelectValue placeholder="Select experience" />
+          <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
+            <SelectValue placeholder="Select experience" className="text-black" />
           </SelectTrigger>
           <SelectContent>
             {YEARS_OPTIONS.map((y) => (
@@ -381,8 +380,8 @@ export function OnboardingForm() {
           Country/Region <span className="text-red-500">*</span>
         </Label>
         <Select value={country} onValueChange={setCountry}>
-          <SelectTrigger className="w-full h-11 bg-white">
-            <SelectValue placeholder="Select country" />
+          <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
+            <SelectValue placeholder="Select country" className="text-black" />
           </SelectTrigger>
           <SelectContent>
             {COUNTRIES.map((c) => (
@@ -397,13 +396,13 @@ export function OnboardingForm() {
   );
 
   const renderStep3 = () => (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Primary Use Case - Single Select Cards */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         <Label className="text-sm font-medium text-gray-700">
           What is your primary goal? <span className="text-red-500">*</span>
         </Label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           {USE_CASE_CARDS.map((card) => {
             const Icon = card.icon;
             return (
@@ -438,10 +437,10 @@ export function OnboardingForm() {
       </div>
 
       {/* Areas of Work - Multi-select Chips */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         <Label className="text-sm font-medium text-gray-700">
           What areas do you work in? <span className="text-red-500">*</span>
-          <span className="text-gray-400 font-normal ml-1">(Select all that apply)</span>
+          <span className="text-gray-400 font-normal ml-1">(Select all)</span>
         </Label>
         <div className="flex flex-wrap gap-2">
           {AREAS.map((area) => (
@@ -451,8 +450,8 @@ export function OnboardingForm() {
               onClick={() => toggleChip(area.value, selectedAreas, setSelectedAreas)}
               className={`px-3 py-1.5 text-sm rounded-full border transition-all duration-150 ${
                 selectedAreas.includes(area.value)
-                  ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                  : "bg-white text-gray-900 border-gray-300 hover:border-blue-400 hover:text-blue-600"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:text-blue-600"
               }`}
             >
               {area.label}
@@ -465,10 +464,10 @@ export function OnboardingForm() {
       </div>
 
       {/* Tools & Frameworks - Multi-select Chips (Dynamic based on selected areas) */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         <Label className="text-sm font-medium text-gray-700">
           What tools & frameworks do you use? <span className="text-red-500">*</span>
-          <span className="text-gray-400 font-normal ml-1">(Filtered by your areas)</span>
+          <span className="text-gray-400 font-normal ml-1">(Filtered)</span>
         </Label>
         {availableTools.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -479,8 +478,8 @@ export function OnboardingForm() {
                 onClick={() => toggleChip(tool, selectedTools, setSelectedTools)}
                 className={`px-3 py-1.5 text-sm rounded-full border transition-all duration-150 ${
                   selectedTools.includes(tool)
-                    ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                    : "bg-white text-gray-900 border-gray-300 hover:border-blue-400 hover:text-blue-600"
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:text-blue-600"
                 }`}
               >
                 {tool}
@@ -532,7 +531,7 @@ export function OnboardingForm() {
   ];
 
   return (
-    <div ref={containerRef} className="w-full max-w-[420px] mx-auto flex flex-col h-full">
+    <div ref={containerRef} className="w-full max-w-md mx-auto flex flex-col" style={{ maxHeight: "calc(100vh - 200px)" }}>
       <div className="flex-shrink-0">
         {renderStepIndicator()}
 
@@ -546,7 +545,7 @@ export function OnboardingForm() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto px-1">
         {currentStep === 1 && renderStep1()}
         {currentStep === 2 && renderStep2()}
         {currentStep === 3 && renderStep3()}
@@ -555,7 +554,11 @@ export function OnboardingForm() {
       <div className="flex-shrink-0 pt-4 space-y-3 border-t border-gray-100">
         <Button
           type="button"
-          className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white font-medium"
+          className={`w-full h-11 font-medium transition-colors ${
+            isStepValid() && !isSubmitting
+              ? "bg-gray-900 hover:bg-gray-800 text-white"
+              : "bg-gray-300 text-gray-500 cursor-not-allowed"
+          }`}
           disabled={!isStepValid() || isSubmitting}
           onClick={currentStep < 3 ? handleNext : handleSubmit}
         >

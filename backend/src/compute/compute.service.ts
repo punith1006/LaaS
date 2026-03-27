@@ -2449,4 +2449,253 @@ export class ComputeService {
       }
     }
   }
+
+  // ============================================================================
+  // RUNWAY AUTO-TERMINATION (Cron job — runs every 5 minutes, server-side)
+  // Checks ALL users with running sessions. Warns at <=1hr, terminates at <=0.
+  // This runs independently of any frontend/client activity.
+  // ============================================================================
+
+  @Cron('0 */5 * * * *')
+  async checkAndEnforceRunwayLimit(): Promise<void> {
+    this.logger.debug('Starting runway enforcement check...');
+
+    try {
+      // 1. Find ALL distinct users who have running compute sessions
+      const usersWithRunningSessions = await this.prisma.session.findMany({
+        where: { status: 'running', startedAt: { not: null } },
+        select: { userId: true },
+        distinct: ['userId'],
+      });
+
+      if (usersWithRunningSessions.length === 0) {
+        this.logger.debug('No users with running sessions — skipping runway check');
+        return;
+      }
+
+      for (const { userId } of usersWithRunningSessions) {
+        try {
+          await this.enforceRunwayForUser(userId);
+        } catch (err: unknown) {
+          this.logger.error(
+            `Runway enforcement failed for user ${userId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    } catch (err: unknown) {
+      this.logger.error(
+        `Runway enforcement cycle failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  private async enforceRunwayForUser(userId: string): Promise<void> {
+    // 1. Fetch wallet with user info
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { userId },
+      include: { user: { select: { email: true, firstName: true } } },
+    });
+
+    if (!wallet) return;
+
+    const balanceCents = Number(wallet.balanceCents ?? 0);
+
+    // 2. Calculate total burn rate (compute + storage)
+    // Compute burn rate: sum of basePricePerHourCents for all running sessions
+    const runningSessions = await this.prisma.session.findMany({
+      where: { userId, status: 'running', startedAt: { not: null } },
+      include: { computeConfig: true },
+    });
+
+    let computeBurnRateCentsPerHour = 0;
+    for (const session of runningSessions) {
+      computeBurnRateCentsPerHour += Number(session.computeConfig?.basePricePerHourCents ?? 0);
+    }
+
+    // Storage burn rate: sum of (quotaBytes/GB * pricePerGbCentsMonth / 730) for active chargeable volumes
+    const storageVolumes = await this.prisma.userStorageVolume.findMany({
+      where: {
+        userId,
+        status: 'active',
+        storageUid: { not: 'sso_default' },
+      },
+      select: { quotaBytes: true, pricePerGbCentsMonth: true },
+    });
+
+    let storageBurnRateCentsPerHour = 0;
+    for (const vol of storageVolumes) {
+      const quotaGb = Number(vol.quotaBytes) / (1024 * 1024 * 1024);
+      storageBurnRateCentsPerHour += (vol.pricePerGbCentsMonth * quotaGb) / 730;
+    }
+
+    const totalBurnRateCentsPerHour = computeBurnRateCentsPerHour + storageBurnRateCentsPerHour;
+
+    // Skip if no burn rate (infinite runway)
+    if (totalBurnRateCentsPerHour <= 0) return;
+
+    // 3. Calculate effective remaining cents (account for spend limit if enabled)
+    let effectiveRemainingCents: number;
+
+    if (wallet.spendLimitEnabled && wallet.spendLimitCents) {
+      // Determine period start for spend limit
+      const periodStart = this.getSpendLimitPeriodStart(
+        wallet.spendLimitPeriod,
+        wallet.spendLimitStartDate,
+      );
+
+      // For date_range: check if within active period
+      if (wallet.spendLimitPeriod === 'date_range') {
+        const now = new Date();
+        if (wallet.spendLimitStartDate && now < wallet.spendLimitStartDate) {
+          effectiveRemainingCents = balanceCents;
+        } else if (wallet.spendLimitEndDate && now > wallet.spendLimitEndDate) {
+          effectiveRemainingCents = balanceCents;
+        } else {
+          const periodSpent = await this.prisma.billingCharge.aggregate({
+            where: { userId, createdAt: { gte: periodStart } },
+            _sum: { amountCents: true },
+          });
+          const totalSpentCents = Number(periodSpent._sum.amountCents || 0);
+          const remainingBudget = Number(wallet.spendLimitCents) - totalSpentCents;
+          effectiveRemainingCents = Math.min(remainingBudget, balanceCents);
+        }
+      } else {
+        const periodSpent = await this.prisma.billingCharge.aggregate({
+          where: { userId, createdAt: { gte: periodStart } },
+          _sum: { amountCents: true },
+        });
+        const totalSpentCents = Number(periodSpent._sum.amountCents || 0);
+        const remainingBudget = Number(wallet.spendLimitCents) - totalSpentCents;
+        effectiveRemainingCents = Math.min(remainingBudget, balanceCents);
+      }
+    } else {
+      effectiveRemainingCents = balanceCents;
+    }
+
+    const runwayHours = effectiveRemainingCents / totalBurnRateCentsPerHour;
+
+    // 4. ENFORCE: Runway <= 0 — terminate all running compute sessions
+    if (effectiveRemainingCents <= 0) {
+      this.logger.warn(
+        `User ${userId} runway exhausted (balance: ${balanceCents}c, burn: ${totalBurnRateCentsPerHour.toFixed(1)}c/hr). Terminating compute sessions.`,
+      );
+
+      const terminatedSessions: Array<{ name: string; config: string; uptime: string }> = [];
+
+      for (const session of runningSessions) {
+        try {
+          await this.terminateSession(userId, session.id, 'credit_exhausted');
+
+          const uptimeMs = session.startedAt ? Date.now() - session.startedAt.getTime() : 0;
+          const uptimeHours = Math.floor(uptimeMs / 3600000);
+          const uptimeMinutes = Math.floor((uptimeMs % 3600000) / 60000);
+
+          terminatedSessions.push({
+            name: session.instanceName || session.containerName || session.id,
+            config: session.computeConfig?.name || 'Unknown',
+            uptime: `${uptimeHours}h ${uptimeMinutes}m`,
+          });
+        } catch (err: unknown) {
+          this.logger.error(
+            `Failed to terminate session ${session.id} for runway exhaustion: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      // Send termination email
+      if (terminatedSessions.length > 0) {
+        try {
+          await this.mailService.sendRunwayTerminationEmail(wallet.user.email, {
+            firstName: wallet.user.firstName || 'User',
+            terminatedCount: terminatedSessions.length,
+            terminatedSessions,
+          });
+        } catch (err: unknown) {
+          this.logger.error(
+            `Failed to send runway termination email: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      // Audit log
+      try {
+        await this.auditService.log({
+          userId,
+          action: 'runway.termination',
+          category: 'billing',
+          status: 'success',
+          details: {
+            runwayHours: 0,
+            balanceCents,
+            burnRateCentsPerHour: Math.round(totalBurnRateCentsPerHour),
+            terminatedSessionCount: terminatedSessions.length,
+            terminatedSessionIds: runningSessions.map((s) => s.id),
+            terminatedSessionNames: terminatedSessions.map((s) => s.name),
+          },
+        });
+      } catch {
+        // Don't let audit failures break enforcement
+      }
+
+      // Reset warning flag so it re-triggers if user adds credits and runway drops again
+      await this.prisma.wallet.update({
+        where: { userId },
+        data: { runwayWarning1HourSent: false },
+      });
+
+      return; // Already terminated, no need to check warning threshold
+    }
+
+    // 5. WARNING: Runway <= 1 hour — send warning email (once)
+    if (runwayHours <= 1 && !wallet.runwayWarning1HourSent) {
+      this.logger.log(
+        `User ${userId} runway low: ${runwayHours.toFixed(2)}hrs. Sending warning.`,
+      );
+
+      try {
+        const runwayMinutes = Math.round(runwayHours * 60);
+        const formattedRunway = runwayHours >= 1
+          ? `${Math.floor(runwayHours)}h ${Math.round((runwayHours % 1) * 60)}m`
+          : `${runwayMinutes}m`;
+
+        await this.mailService.sendRunwayWarningEmail(wallet.user.email, {
+          firstName: wallet.user.firstName || 'User',
+          runwayHours: formattedRunway,
+          burnRate: `₹${(totalBurnRateCentsPerHour / 100).toFixed(2)}/hr`,
+          creditBalance: `₹${(balanceCents / 100).toFixed(2)}`,
+        });
+
+        await this.prisma.wallet.update({
+          where: { userId },
+          data: { runwayWarning1HourSent: true },
+        });
+
+        // Audit log
+        await this.auditService.log({
+          userId,
+          action: 'runway.warning',
+          category: 'billing',
+          status: 'success',
+          details: {
+            runwayHours: Math.round(runwayHours * 100) / 100,
+            balanceCents,
+            burnRateCentsPerHour: Math.round(totalBurnRateCentsPerHour),
+          },
+        });
+      } catch (err: unknown) {
+        this.logger.error(
+          `Failed to send runway warning: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // 6. RESET: Runway > 1 hour but warning was sent — user added credits, clear flag
+    if (runwayHours > 1 && wallet.runwayWarning1HourSent) {
+      await this.prisma.wallet.update({
+        where: { userId },
+        data: { runwayWarning1HourSent: false },
+      });
+      this.logger.log(`User ${userId} runway restored (${runwayHours.toFixed(2)}hrs). Warning flag cleared.`);
+    }
+  }
 }

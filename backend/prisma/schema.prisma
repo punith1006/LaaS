@@ -107,6 +107,7 @@ enum SessionTerminationReason {
   idle_timeout
   resource_exhaustion
   spend_limit_exceeded
+  credit_exhausted
   node_failure
   node_maintenance
   admin_terminated
@@ -565,14 +566,14 @@ model UserProfile {
   updatedBy               String?   @map("updated_by") @db.Uuid
 
   // Onboarding profile fields
-  profession              String?   @map("profession")
-  expertiseLevel           String?   @map("expertise_level")
-  yearsOfExperience       Int?      @map("years_of_experience")
-  operationalDomains      String[]  @map("operational_domains")
-  useCasePurposes         String[]  @map("use_case_purposes")
-  useCaseOther            String?   @map("use_case_other")
-  country                 String?
-  isOnboardingComplete    Boolean   @default(false) @map("onboarding_complete")
+  profession           String?  @map("profession")
+  expertiseLevel       String?  @map("expertise_level")
+  yearsOfExperience    Int?     @map("years_of_experience")
+  operationalDomains   String[] @map("operational_domains")
+  useCasePurposes      String[] @map("use_case_purposes")
+  useCaseOther         String?  @map("use_case_other")
+  country              String?
+  isOnboardingComplete Boolean  @default(false) @map("onboarding_complete")
 
   // Relations
   user     User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -657,9 +658,9 @@ model UserStorageVolume {
   osSwitchHistoriesOld OsSwitchHistory[]  @relation("OsSwitchOldVolume")
   osSwitchHistoriesNew OsSwitchHistory[]  @relation("OsSwitchNewVolume")
 
+  @@unique([userId, name])
   @@index([userId, status])
   @@index([createdAt])
-  @@unique([userId, name])
   @@map("user_storage_volumes")
 }
 
@@ -775,8 +776,8 @@ model Node {
   updatedBy             String?    @map("updated_by") @db.Uuid
 
   // Relations
-  nodeBaseImages NodeBaseImage[]
-  nodeResourceReservations  NodeResourceReservation[]
+  nodeBaseImages           NodeBaseImage[]
+  nodeResourceReservations NodeResourceReservation[]
 
   // Domain 7: Sessions and Bookings
   bookings Booking[]
@@ -941,79 +942,79 @@ model Booking {
 }
 
 model Session {
-  id                  String        @id @default(uuid()) @db.Uuid
-  userId              String        @map("user_id") @db.Uuid
-  organizationId      String?       @map("organization_id") @db.Uuid
-  computeConfigId     String        @map("compute_config_id") @db.Uuid
-  bookingId           String?       @unique @map("booking_id") @db.Uuid
-  nodeId              String?       @map("node_id") @db.Uuid
-  sessionType         SessionType   @map("session_type")
-  containerId         String?       @map("container_id")
-  containerName       String?       @map("container_name")
-  nginxPort           Int?          @map("nginx_port")
-  selkiesPort         Int?          @map("selkies_port")
-  displayNumber       Int?          @map("display_number")
-  sessionTokenHash    String?       @map("session_token_hash")
-  sessionUrl          String?       @map("session_url")
+  id                  String                    @id @default(uuid()) @db.Uuid
+  userId              String                    @map("user_id") @db.Uuid
+  organizationId      String?                   @map("organization_id") @db.Uuid
+  computeConfigId     String                    @map("compute_config_id") @db.Uuid
+  bookingId           String?                   @unique @map("booking_id") @db.Uuid
+  nodeId              String?                   @map("node_id") @db.Uuid
+  sessionType         SessionType               @map("session_type")
+  containerId         String?                   @map("container_id")
+  containerName       String?                   @map("container_name")
+  nginxPort           Int?                      @map("nginx_port")
+  selkiesPort         Int?                      @map("selkies_port")
+  displayNumber       Int?                      @map("display_number")
+  sessionTokenHash    String?                   @map("session_token_hash")
+  sessionUrl          String?                   @map("session_url")
   status              SessionStatus
-  startedAt           DateTime?     @map("started_at")
-  endedAt             DateTime?     @map("ended_at")
-  scheduledEndAt      DateTime?     @map("scheduled_end_at")
-  lastActivityAt      DateTime?     @map("last_activity_at")
-  nfsMountPath        String?       @map("nfs_mount_path")
-  baseImageId         String?       @map("base_image_id") @db.Uuid
-  actualGpuVramMb     Int?          @map("actual_gpu_vram_mb")
-  actualHamiSmPercent Int?          @map("actual_hami_sm_percent")
-  reconnectCount      Int           @default(0) @map("reconnect_count")
-  lastReconnectAt     DateTime?     @map("last_reconnect_at")
-  autoPreserveFiles   Boolean       @default(false) @map("auto_preserve_files")
-  avgRttMs            Int?          @map("avg_rtt_ms")
-  avgPacketLossRatio  Decimal?      @map("avg_packet_loss_ratio")
-  terminationReason             SessionTerminationReason? @map("termination_reason")
-  resourceSnapshot              Json?         @map("resource_snapshot")
-  
+  startedAt           DateTime?                 @map("started_at")
+  endedAt             DateTime?                 @map("ended_at")
+  scheduledEndAt      DateTime?                 @map("scheduled_end_at")
+  lastActivityAt      DateTime?                 @map("last_activity_at")
+  nfsMountPath        String?                   @map("nfs_mount_path")
+  baseImageId         String?                   @map("base_image_id") @db.Uuid
+  actualGpuVramMb     Int?                      @map("actual_gpu_vram_mb")
+  actualHamiSmPercent Int?                      @map("actual_hami_sm_percent")
+  reconnectCount      Int                       @default(0) @map("reconnect_count")
+  lastReconnectAt     DateTime?                 @map("last_reconnect_at")
+  autoPreserveFiles   Boolean                   @default(false) @map("auto_preserve_files")
+  avgRttMs            Int?                      @map("avg_rtt_ms")
+  avgPacketLossRatio  Decimal?                  @map("avg_packet_loss_ratio")
+  terminationReason   SessionTerminationReason? @map("termination_reason")
+  resourceSnapshot    Json?                     @map("resource_snapshot")
+
   // User-facing instance name
-  instanceName                  String?       @map("instance_name") @db.VarChar(256)
-  
+  instanceName String? @map("instance_name") @db.VarChar(256)
+
   // Storage persistence mode
-  storageMode                   StorageMode   @default(ephemeral) @map("storage_mode")
-  
+  storageMode StorageMode @default(ephemeral) @map("storage_mode")
+
   // Cumulative cost tracking (denormalized from BillingCharge for fast queries)
-  cumulativeCostCents           BigInt        @default(0) @map("cumulative_cost_cents")
-  costLastUpdatedAt             DateTime?     @map("cost_last_updated_at")
-  
+  cumulativeCostCents BigInt    @default(0) @map("cumulative_cost_cents")
+  costLastUpdatedAt   DateTime? @map("cost_last_updated_at")
+
   // Resource allocation snapshot at launch time (for billing accuracy even if config changes)
-  allocatedVcpu                 Int?          @map("allocated_vcpu")
-  allocatedMemoryMb             Int?          @map("allocated_memory_mb")
-  allocatedGpuVramMb            Int?          @map("allocated_gpu_vram_mb")
-  allocatedHamiSmPercent        Int?          @map("allocated_hami_sm_percent")
-  allocationSnapshotAt          DateTime?     @map("allocation_snapshot_at")
-  
+  allocatedVcpu          Int?      @map("allocated_vcpu")
+  allocatedMemoryMb      Int?      @map("allocated_memory_mb")
+  allocatedGpuVramMb     Int?      @map("allocated_gpu_vram_mb")
+  allocatedHamiSmPercent Int?      @map("allocated_hami_sm_percent")
+  allocationSnapshotAt   DateTime? @map("allocation_snapshot_at")
+
   // Duration tracking (computed: endedAt - startedAt in seconds)
-  durationSeconds               Int?          @map("duration_seconds")
-  
+  durationSeconds Int? @map("duration_seconds")
+
   // Enhanced termination tracking
-  terminatedBy                  String?       @map("terminated_by") @db.Uuid
-  terminatedAt                  DateTime?     @map("terminated_at")
-  terminationDetails            Json?         @map("termination_details")
-  
-  createdAt           DateTime      @default(now()) @map("created_at")
-  updatedAt           DateTime      @updatedAt @map("updated_at")
-  createdBy           String?       @map("created_by") @db.Uuid
-  updatedBy           String?       @map("updated_by") @db.Uuid
+  terminatedBy       String?   @map("terminated_by") @db.Uuid
+  terminatedAt       DateTime? @map("terminated_at")
+  terminationDetails Json?     @map("termination_details")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
 
   // Relations
-  user           User            @relation(fields: [userId], references: [id], onDelete: Restrict)
-  organization   Organization?   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  computeConfig  ComputeConfig   @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
-  booking        Booking?        @relation(fields: [bookingId], references: [id], onDelete: Restrict)
-  node           Node?           @relation(fields: [nodeId], references: [id], onDelete: Restrict)
-  baseImage      BaseImage?      @relation(fields: [baseImageId], references: [id], onDelete: Restrict)
-  sessionEvents  SessionEvent[]
-  billingCharges BillingCharge[]
-  walletHolds    WalletHold[]
-  userFiles      UserFile[]
-  nodeResourceReservation   NodeResourceReservation?
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization            Organization?            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  computeConfig           ComputeConfig            @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
+  booking                 Booking?                 @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  node                    Node?                    @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  baseImage               BaseImage?               @relation(fields: [baseImageId], references: [id], onDelete: Restrict)
+  sessionEvents           SessionEvent[]
+  billingCharges          BillingCharge[]
+  walletHolds             WalletHold[]
+  userFiles               UserFile[]
+  nodeResourceReservation NodeResourceReservation?
 
   // Domain 9: Academic / LMS
   labSubmissions LabSubmission[]
@@ -1049,21 +1050,21 @@ model SessionEvent {
 
 // AUDIT: Records must NEVER be deleted — required for resource allocation audit trail
 model NodeResourceReservation {
-  id                    String    @id @default(uuid()) @db.Uuid
-  nodeId                String    @map("node_id") @db.Uuid
-  sessionId             String    @unique @map("session_id") @db.Uuid
+  id        String @id @default(uuid()) @db.Uuid
+  nodeId    String @map("node_id") @db.Uuid
+  sessionId String @unique @map("session_id") @db.Uuid
 
-  reservedVcpu          Int       @map("reserved_vcpu")
-  reservedMemoryMb      Int       @map("reserved_memory_mb")
-  reservedGpuVramMb     Int       @map("reserved_gpu_vram_mb")
-  reservedHamiSmPercent Int?      @map("reserved_hami_sm_percent")
+  reservedVcpu          Int  @map("reserved_vcpu")
+  reservedMemoryMb      Int  @map("reserved_memory_mb")
+  reservedGpuVramMb     Int  @map("reserved_gpu_vram_mb")
+  reservedHamiSmPercent Int? @map("reserved_hami_sm_percent")
 
-  reservedAt            DateTime  @default(now()) @map("reserved_at")
-  releasedAt            DateTime? @map("released_at")
-  status                String    @default("reserved") @map("status") // reserved, released, failed
+  reservedAt DateTime  @default(now()) @map("reserved_at")
+  releasedAt DateTime? @map("released_at")
+  status     String    @default("reserved") @map("status") // reserved, released, failed
 
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   node    Node    @relation(fields: [nodeId], references: [id], onDelete: Restrict)
@@ -1082,25 +1083,26 @@ model NodeResourceReservation {
 
 // AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
 model Wallet {
-  id                       String   @id @default(uuid()) @db.Uuid
-  userId                   String   @unique @map("user_id") @db.Uuid
-  balanceCents             BigInt   @default(0) @map("balance_cents")
-  currency                 String   @default("INR")
-  lifetimeCreditsCents     BigInt   @default(0) @map("lifetime_credits_cents")
-  lifetimeSpentCents       BigInt   @default(0) @map("lifetime_spent_cents")
-  lowBalanceThresholdCents Int      @default(10000) @map("low_balance_threshold_cents")
-  spendLimitCents          Int?     @map("spend_limit_cents") // Max spend allowed per period (null = no limit)
-  spendLimitPeriod         String?  @map("spend_limit_period") // 'daily' / 'monthly' / 'date_range' (null if no limit set)
-  spendLimitEnabled        Boolean  @default(false) @map("spend_limit_enabled") // Whether spend limit is active
+  id                       String    @id @default(uuid()) @db.Uuid
+  userId                   String    @unique @map("user_id") @db.Uuid
+  balanceCents             BigInt    @default(0) @map("balance_cents")
+  currency                 String    @default("INR")
+  lifetimeCreditsCents     BigInt    @default(0) @map("lifetime_credits_cents")
+  lifetimeSpentCents       BigInt    @default(0) @map("lifetime_spent_cents")
+  lowBalanceThresholdCents Int       @default(10000) @map("low_balance_threshold_cents")
+  spendLimitCents          Int?      @map("spend_limit_cents") // Max spend allowed per period (null = no limit)
+  spendLimitPeriod         String?   @map("spend_limit_period") // 'daily' / 'monthly' / 'date_range' (null if no limit set)
+  spendLimitEnabled        Boolean   @default(false) @map("spend_limit_enabled") // Whether spend limit is active
   spendLimitStartDate      DateTime? @map("spend_limit_start_date")
   spendLimitEndDate        DateTime? @map("spend_limit_end_date")
   spendLimitConsentedAt    DateTime? @map("spend_limit_consented_at")
-  spendLimitWarning85Sent  Boolean  @default(false) @map("spend_limit_warning_85_sent")
-  isFrozen                 Boolean  @default(false) @map("is_frozen")
-  createdAt                DateTime @default(now()) @map("created_at")
-  updatedAt                DateTime @updatedAt @map("updated_at")
-  createdBy                String?  @map("created_by") @db.Uuid
-  updatedBy                String?  @map("updated_by") @db.Uuid
+  spendLimitWarning85Sent  Boolean   @default(false) @map("spend_limit_warning_85_sent")
+  runwayWarning1HourSent   Boolean   @default(false) @map("runway_warning_1hour_sent")
+  isFrozen                 Boolean   @default(false) @map("is_frozen")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+  createdBy                String?   @map("created_by") @db.Uuid
+  updatedBy                String?   @map("updated_by") @db.Uuid
 
   // Relations
   user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)

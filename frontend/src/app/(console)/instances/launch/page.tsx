@@ -276,9 +276,13 @@ export default function LaunchInstancePage() {
       try {
         const data = await getComputeConfigs();
         if (data && data.configs && data.configs.length > 0) {
-          setConfigs(data.configs);
+          // Filter out "GPU Desktop Standard" if it exists in the database
+          const filteredConfigs = data.configs.filter(
+            (c) => c.name !== "GPU Desktop Standard" && c.slug !== "gpu-desktop-standard"
+          );
+          setConfigs(filteredConfigs);
           // Select first available config by default
-          const firstAvailable = data.configs.find(c => c.available);
+          const firstAvailable = filteredConfigs.find(c => c.available);
           if (firstAvailable) {
             setSelectedConfig(firstAvailable.id);
           } else if (data.configs.length > 0) {
@@ -1288,7 +1292,26 @@ export default function LaunchInstancePage() {
           </div>
 
           {/* Right side - Price & Button */}
-          <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            {hasInsufficientBalance && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "6px 12px",
+                  backgroundColor: "var(--fgColor-warning)",
+                  borderRadius: "4px",
+                  fontSize: "0.75rem",
+                  fontWeight: 500,
+                  color: "var(--bgColor-default)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                Insufficient Credit Balance
+              </div>
+            )}
             <div
               style={{
                 fontSize: "1.5rem",

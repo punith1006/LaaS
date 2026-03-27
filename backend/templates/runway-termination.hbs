@@ -13,7 +13,7 @@
           <tr>
             <td style="padding:32px 40px 24px;border-bottom:1px solid #eee;">
               <span style="font-size:20px;font-weight:600;color:#1a1a1a;">LaaS</span>
-              <span style="font-size:14px;color:#16a34a;font-weight:500;float:right;padding-top:4px;">Welcome</span>
+              <span style="font-size:14px;color:#dc2626;font-weight:500;float:right;padding-top:4px;">Instances Terminated</span>
             </td>
           </tr>
           <!-- Content -->
@@ -22,31 +22,37 @@
               <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">Hi {{firstName}},</p>
               
               <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">
-                Welcome to LaaS — your lab, any machine, anywhere.
+                Your credit balance has been exhausted. The following <strong>{{terminatedCount}}</strong> compute instance(s) have been automatically terminated.
               </p>
               
-              <!-- Features Table -->
+              <!-- Terminated Sessions List -->
+              {{#if terminatedSessions.length}}
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;border:1px solid #e5e5e5;border-radius:6px;overflow:hidden;">
-                <tr style="background-color:#fafafa;">
-                  <td style="padding:16px;font-size:14px;line-height:1.6;color:#1a1a1a;border-bottom:1px solid #e5e5e5;">
-                    <strong>GPU-powered compute instances</strong> on demand
-                  </td>
+                <tr style="background-color:#f5f5f5;">
+                  <th style="padding:10px 16px;font-size:13px;font-weight:600;text-align:left;color:#666;border-bottom:1px solid #e5e5e5;">Instance Name</th>
+                  <th style="padding:10px 16px;font-size:13px;font-weight:600;text-align:left;color:#666;border-bottom:1px solid #e5e5e5;">Configuration</th>
+                  <th style="padding:10px 16px;font-size:13px;font-weight:600;text-align:right;color:#666;border-bottom:1px solid #e5e5e5;">Uptime</th>
                 </tr>
+                {{#each terminatedSessions}}
                 <tr>
-                  <td style="padding:16px;font-size:14px;line-height:1.6;color:#1a1a1a;border-bottom:1px solid #e5e5e5;">
-                    <strong>Full remote desktop</strong> with sudo access
-                  </td>
+                  <td style="padding:12px 16px;font-size:14px;color:#333;border-bottom:1px solid #e5e5e5;">{{this.name}}</td>
+                  <td style="padding:12px 16px;font-size:14px;color:#666;border-bottom:1px solid #e5e5e5;">{{this.config}}</td>
+                  <td style="padding:12px 16px;font-size:14px;color:#666;text-align:right;border-bottom:1px solid #e5e5e5;">{{this.uptime}}</td>
                 </tr>
-                <tr style="background-color:#fafafa;">
-                  <td style="padding:16px;font-size:14px;line-height:1.6;color:#1a1a1a;">
-                    <strong>Persistent file storage</strong> across sessions
-                  </td>
-                </tr>
+                {{/each}}
               </table>
+              {{/if}}
               
-              <!-- Call to Action -->
+              <!-- Note -->
+              <div style="margin:0 0 24px;padding:16px;background-color:#f9fafb;border-left:4px solid #6b7280;border-radius:0 4px 4px 0;">
+                <p style="margin:0;font-size:14px;line-height:1.6;color:#374151;">
+                  Your storage volumes remain active and will not be affected.
+                </p>
+              </div>
+              
+              <!-- CTA -->
               <p style="margin:0;font-size:15px;line-height:1.6;color:#333;">
-                <strong>Log in to your dashboard to get started.</strong>
+                <strong>Add credits to your account to relaunch instances.</strong>
               </p>
             </td>
           </tr>

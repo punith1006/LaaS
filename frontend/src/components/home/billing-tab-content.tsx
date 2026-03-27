@@ -1372,24 +1372,196 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
             label="Burn rate"
             value={`₹${currentSpendRate.toFixed(2)}/hr`}
           />
-          <MetricCard
-            icon={
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                style={{ color: "var(--fgColor-muted)" }}
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 6v6l4 2" />
-              </svg>
+          {/* Runway MetricCard with warning states */}
+          {(() => {
+            // Determine warning state based on runway value
+            const isCritical = runwayHours !== null && runwayHours > 0 && runwayHours <= 1;
+            const isExhausted = runwayHours !== null && runwayHours <= 0;
+
+            if (isCritical) {
+              return (
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: "140px",
+                    backgroundColor: "#FFFBEB",
+                    border: "1px solid #F59E0B",
+                    borderRadius: "4px",
+                    padding: "16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "40px",
+                        height: "40px",
+                        borderRadius: "4px",
+                        backgroundColor: "rgba(245, 158, 11, 0.15)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#D97706"
+                        strokeWidth="1.5"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 6v6l4 2" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-sans)",
+                          fontSize: "var(--text-xs)",
+                          color: "#D97706",
+                          marginBottom: "2px",
+                        }}
+                      >
+                        Runway
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-sans)",
+                          fontSize: "var(--text-h4)",
+                          fontWeight: 600,
+                          color: "var(--fgColor-default)",
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {formatRunway(runwayHours)}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-sans)",
+                          fontSize: "var(--text-xs)",
+                          color: "#D97706",
+                          marginTop: "2px",
+                        }}
+                      >
+                        Instances will auto-terminate at 0
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
             }
-            label="Runway"
-            value={formatRunway(runwayHours)}
-          />
+
+            if (isExhausted) {
+              return (
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: "140px",
+                    backgroundColor: "#FEF2F2",
+                    border: "1px solid #EF4444",
+                    borderRadius: "4px",
+                    padding: "16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "40px",
+                        height: "40px",
+                        borderRadius: "4px",
+                        backgroundColor: "rgba(239, 68, 68, 0.15)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#DC2626"
+                        strokeWidth="1.5"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 6v6l4 2" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-sans)",
+                          fontSize: "var(--text-xs)",
+                          color: "#DC2626",
+                          marginBottom: "2px",
+                        }}
+                      >
+                        Runway
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-sans)",
+                          fontSize: "var(--text-h4)",
+                          fontWeight: 600,
+                          color: "var(--fgColor-default)",
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {formatRunway(runwayHours)}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-sans)",
+                          fontSize: "var(--text-xs)",
+                          color: "#DC2626",
+                          marginTop: "2px",
+                        }}
+                      >
+                        All instances terminated
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Normal state - use default MetricCard
+            return (
+              <MetricCard
+                icon={
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    style={{ color: "var(--fgColor-muted)" }}
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                }
+                label="Runway"
+                value={formatRunway(runwayHours)}
+              />
+            );
+          })()}
           <div
             onClick={() => setShowSpendLimitModal(true)}
             style={{ cursor: "pointer", flex: 1, minWidth: "140px" }}

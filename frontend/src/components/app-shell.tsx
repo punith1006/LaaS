@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutModal } from "./sign-out-modal";
-import { getIdToken } from "@/lib/token";
-import { getBillingData, getPlatformHealth, PlatformHealth } from "@/lib/api";
+import { getIdToken, getTokenExpiresIn, getRefreshToken, clearTokens } from "@/lib/token";
+import { getBillingData, getPlatformHealth, PlatformHealth, refreshTokens } from "@/lib/api";
 
 /**
  * Base screen template — Utilitarian minimalism (Design\template.txt).
@@ -52,6 +52,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
     fetchHealth();
     const interval = setInterval(fetchHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Proactive token refresh - refresh if token expires in less than 2 minutes
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const expiresIn = getTokenExpiresIn();
+      // Refresh if token expires in less than 2 minutes
+      if (expiresIn !== null && expiresIn < 120000 && getRefreshToken()) {
+        try {
+          await refreshTokens();
+        } catch {
+          clearTokens();
+          window.location.href = "/signin";
+        }
+      }
+    }, 30000); // Check every 30 seconds
+
     return () => clearInterval(interval);
   }, []);
 

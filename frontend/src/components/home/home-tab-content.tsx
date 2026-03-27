@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { User } from "@/types/auth";
-import type { HomeDashboardData, ActivityLogEntry } from "@/lib/api";
-import { getHomeDashboardData, getRecentActivity } from "@/lib/api";
+import type { HomeDashboardData, ActivityLogEntry, BillingData } from "@/lib/api";
+import { getHomeDashboardData, getRecentActivity, getBillingData } from "@/lib/api";
 
 interface HomeTabContentProps {
   user: User | null;
@@ -136,6 +136,7 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
   const [activityData, setActivityData] = useState<ActivityLogEntry[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  const [billingData, setBillingData] = useState<BillingData | null>(null);
 
   useEffect(() => {
     getHomeDashboardData()
@@ -158,6 +159,15 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
       })
       .catch(() => {
         setActivityLoading(false);
+      });
+
+    // Fetch billing data for runway check
+    getBillingData()
+      .then((data) => {
+        setBillingData(data);
+      })
+      .catch(() => {
+        // Silently fail - billing data is optional for home page
       });
   }, []);
 
@@ -335,6 +345,19 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
     }
   };
 
+  // Format runway hours for display
+  const formatRunway = (hours: number | null): string => {
+    if (hours === null || hours === undefined) return "--";
+    if (hours <= 0) return "0 hrs";
+    if (hours > 8760) return "∞"; // More than a year = effectively infinite
+    const days = Math.floor(hours / 24);
+    const remainingHours = Math.floor(hours % 24);
+    if (days > 0) {
+      return `${days}d ${remainingHours}h`;
+    }
+    return `${remainingHours} hrs`;
+  };
+
   // Toggle date expansion
   const toggleDateExpansion = (date: string) => {
     setExpandedDates((prev) => {
@@ -410,6 +433,51 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
           </p>
         </div>
       </div>
+
+      {/* Low Runway Warning */}
+      {billingData?.runway !== null && billingData?.runway !== undefined && billingData.runway <= 1 && (
+        <div style={{
+          backgroundColor: "#FEF3C7",
+          border: "1px solid #F59E0B",
+          borderRadius: "4px",
+          padding: "16px",
+          marginBottom: "24px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "12px",
+        }}>
+          <div style={{ flexShrink: 0, marginTop: "2px" }}>
+            {/* Orange warning triangle icon - 20x20, strokeWidth 1.5 */}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </div>
+          <div>
+            <div style={{
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              textTransform: "uppercase" as const,
+              letterSpacing: "0.06em",
+              color: "#D97706",
+              marginBottom: "4px",
+            }}>
+              LOW RUNWAY
+            </div>
+            <p style={{
+              fontSize: "0.875rem",
+              color: "#92400E",
+              margin: 0,
+              lineHeight: 1.5,
+            }}>
+              Your compute instances will be automatically terminated when your credit runway reaches zero.
+              Current runway: <strong>{formatRunway(billingData.runway)}</strong>.
+              Add credits or stop active sessions to avoid interruption.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats Grid */}
       <SectionHeader title="Overview" />

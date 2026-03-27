@@ -1,7 +1,87 @@
 import type { AuthTokens, User } from "@/types/auth";
-import { saveTokens, getAccessToken, getRefreshToken, clearTokens } from "@/lib/token";
+import { saveTokens, getAccessToken, getRefreshToken, clearTokens, isTokenExpired } from "@/lib/token";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+// Mutex to prevent multiple simultaneous refresh calls
+let refreshPromise: Promise<AuthTokens> | null = null;
+
+/**
+ * Perform token refresh with deduplication
+ * If a refresh is already in progress, wait for it instead of starting a new one
+ */
+async function doRefresh(): Promise<boolean> {
+  // Deduplicate: if a refresh is already in progress, wait for it
+  if (refreshPromise) {
+    try {
+      await refreshPromise;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+
+  refreshPromise = refreshTokens(); // existing function
+  try {
+    await refreshPromise;
+    return true;
+  } catch {
+    return false;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+/**
+ * Centralized fetch wrapper with automatic token refresh on 401
+ * - Proactively refreshes expired tokens before making requests
+ * - Handles 401 responses by refreshing and retrying once
+ * - Deduplicates concurrent refresh requests
+ */
+export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  let token = getAccessToken();
+
+  // Proactive check: if token is expired, refresh BEFORE making the request
+  if (isTokenExpired() && getRefreshToken()) {
+    await doRefresh();
+    token = getAccessToken();
+  }
+
+  // Make the request
+  let res = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  // If 401, try refresh once and retry
+  if (res.status === 401) {
+    const refreshed = await doRefresh();
+    if (refreshed) {
+      token = getAccessToken();
+      res = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } else {
+      // Refresh failed — session is dead
+      clearTokens();
+      if (typeof window !== "undefined") {
+        window.location.href = "/signin";
+      }
+    }
+  }
+
+  return res;
+}
 
 async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -156,9 +236,8 @@ export async function getMe(): Promise<User | null> {
 
   if (API_BASE) {
     // Add cache-busting timestamp to prevent stale user data
-    const res = await fetch(`${API_BASE}/api/auth/me?t=${Date.now()}`, {
+    const res = await apiFetch(`${API_BASE}/api/auth/me?t=${Date.now()}`, {
       headers: { 
-        Authorization: `Bearer ${token}`,
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
       },
@@ -187,11 +266,9 @@ export async function retryStorageProvisioning(): Promise<{
   status: string;
   error?: string;
 }> {
-  const token = getAccessToken();
-  if (!token) throw new Error("Not authenticated");
-  const res = await fetch(`${API_BASE}/api/auth/storage-retry`, {
+  if (!getAccessToken()) throw new Error("Not authenticated");
+  const res = await apiFetch(`${API_BASE}/api/auth/storage-retry`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -293,13 +370,10 @@ export interface BillingHistoryItem {
 
 // Dashboard API Functions
 export async function getHomeDashboardData(): Promise<HomeDashboardData | null> {
-  const token = getAccessToken();
-  if (!token) return null;
+  if (!getAccessToken()) return null;
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/dashboard/home`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await apiFetch(`${API_BASE}/api/dashboard/home`);
     if (!res.ok) return null;
     return res.json();
   }
@@ -307,13 +381,10 @@ export async function getHomeDashboardData(): Promise<HomeDashboardData | null> 
 }
 
 export async function getBillingData(): Promise<BillingData | null> {
-  const token = getAccessToken();
-  if (!token) return null;
+  if (!getAccessToken()) return null;
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/dashboard/billing`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await apiFetch(`${API_BASE}/api/dashboard/billing`);
     if (!res.ok) return null;
     return res.json();
   }
@@ -331,13 +402,10 @@ export interface PlatformHealth {
 }
 
 export async function getPlatformHealth(): Promise<PlatformHealth | null> {
-  const token = getAccessToken();
-  if (!token) return null;
+  if (!getAccessToken()) return null;
 
   try {
-    const res = await fetch(`${API_BASE}/api/dashboard/health`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await apiFetch(`${API_BASE}/api/dashboard/health`);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -365,16 +433,14 @@ export interface NameCheckResult {
 
 // Storage API Functions
 async function storageFetch(endpoint: string, options: RequestInit = {}) {
-  const token = getAccessToken();
-  if (!token) {
+  if (!getAccessToken()) {
     throw new Error('Not authenticated');
   }
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+  const res = await apiFetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
       ...options.headers,
     },
   });
@@ -398,13 +464,10 @@ export async function getStorageVolumes(): Promise<StorageVolume[]> {
 
 export async function checkStorageName(name: string): Promise<NameCheckResult> {
   if (API_BASE) {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/api/storage/volumes/check-name/${encodeURIComponent(name)}`,
       {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${getAccessToken()}`,
-        },
       },
     );
     if (!res.ok) {
@@ -484,18 +547,13 @@ export interface FileItem {
 }
 
 export async function getStorageFiles(path?: string): Promise<FileItem[]> {
-  const token = getAccessToken();
-  if (!token) {
+  if (!getAccessToken()) {
     throw new Error('Not authenticated');
   }
 
   if (API_BASE) {
     const queryParam = path && path !== '/' ? `?path=${encodeURIComponent(path)}` : '';
-    const res = await fetch(`${API_BASE}/api/storage/files${queryParam}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const res = await apiFetch(`${API_BASE}/api/storage/files${queryParam}`);
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -515,15 +573,13 @@ export async function createStorageFolder(
   path: string,
   folderName: string,
 ): Promise<{ success: boolean }> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/storage/files/mkdir`, {
+    const res = await apiFetch(`${API_BASE}/api/storage/files/mkdir`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ path, folderName }),
     });
@@ -546,20 +602,16 @@ export async function uploadStorageFiles(
   path: string,
   files: File[],
 ): Promise<{ success: boolean; uploaded: string[] }> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
   if (API_BASE) {
     const formData = new FormData();
     formData.append('path', path);
     files.forEach((file) => formData.append('files', file));
 
-    const res = await fetch(`${API_BASE}/api/storage/files/upload`, {
+    const res = await apiFetch(`${API_BASE}/api/storage/files/upload`, {
       method: 'POST',
-      headers: {
-        // Do NOT set Content-Type - browser auto-sets with boundary for multipart
-        Authorization: `Bearer ${token}`,
-      },
+      // Note: Do NOT set Content-Type - browser auto-sets with boundary for multipart
       body: formData,
     });
 
@@ -577,17 +629,11 @@ export async function uploadStorageFiles(
 
 // Download file from storage - triggers browser download
 export async function downloadStorageFile(filePath: string): Promise<void> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
   if (API_BASE) {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/api/storage/files/download?file=${encodeURIComponent(filePath)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
     );
 
     if (!res.ok) {
@@ -613,17 +659,13 @@ export async function downloadStorageFile(filePath: string): Promise<void> {
 export async function deleteStorageFile(
   filePath: string,
 ): Promise<{ success: boolean }> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
   if (API_BASE) {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/api/storage/files?file=${encodeURIComponent(filePath)}`,
       {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       },
     );
 
@@ -651,14 +693,11 @@ export interface ActivityLogEntry {
 }
 
 export async function getRecentActivity(days: number = 30): Promise<ActivityLogEntry[]> {
-  const token = getAccessToken();
-  if (!token) return [];
+  if (!getAccessToken()) return [];
 
   if (API_BASE) {
     try {
-      const res = await fetch(`${API_BASE}/api/dashboard/activity?days=${days}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`${API_BASE}/api/dashboard/activity?days=${days}`);
       if (!res.ok) return [];
       return res.json();
     } catch {
@@ -723,14 +762,11 @@ export interface LaunchSessionResponse {
 
 // Compute API Functions
 export async function getComputeConfigs(): Promise<ComputeConfigsResponse | null> {
-  const token = getAccessToken();
-  if (!token) return null;
+  if (!getAccessToken()) return null;
 
   if (API_BASE) {
     try {
-      const res = await fetch(`${API_BASE}/api/compute/configs`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`${API_BASE}/api/compute/configs`);
       if (!res.ok) return null;
       return res.json();
     } catch {
@@ -743,14 +779,12 @@ export async function getComputeConfigs(): Promise<ComputeConfigsResponse | null
 export async function launchComputeSession(
   data: LaunchSessionRequest
 ): Promise<LaunchSessionResponse> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE}/api/compute/sessions`, {
+  const res = await apiFetch(`${API_BASE}/api/compute/sessions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(data),
   });
@@ -852,14 +886,12 @@ export interface TransactionDetail extends PaymentTransactionItem {
 
 // Payment API Functions
 export async function createPaymentOrder(amountInRupees: number): Promise<CreateOrderResponse> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE}/api/payment/create-order`, {
+  const res = await apiFetch(`${API_BASE}/api/payment/create-order`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ amountInRupees }),
   });
@@ -874,14 +906,12 @@ export async function createPaymentOrder(amountInRupees: number): Promise<Create
 }
 
 export async function verifyPayment(data: VerifyPaymentRequest): Promise<VerifyPaymentResponse> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE}/api/payment/verify`, {
+  const res = await apiFetch(`${API_BASE}/api/payment/verify`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(data),
   });
@@ -896,15 +926,10 @@ export async function verifyPayment(data: VerifyPaymentRequest): Promise<VerifyP
 }
 
 export async function getPaymentTransactions(page = 1, limit = 10): Promise<PaginatedTransactions> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/payment/transactions?page=${page}&limit=${limit}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const res = await apiFetch(`${API_BASE}/api/payment/transactions?page=${page}&limit=${limit}`);
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -928,15 +953,10 @@ export async function getPaymentTransactions(page = 1, limit = 10): Promise<Pagi
 }
 
 export async function getTransactionDetail(id: string): Promise<TransactionDetail> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/payment/transactions/${id}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const res = await apiFetch(`${API_BASE}/api/payment/transactions/${id}`);
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -951,15 +971,10 @@ export async function getTransactionDetail(id: string): Promise<TransactionDetai
 }
 
 export async function downloadInvoice(transactionId: string): Promise<Blob> {
-  const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!getAccessToken()) throw new Error('Not authenticated');
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/payment/invoice/${transactionId}/download`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const res = await apiFetch(`${API_BASE}/api/payment/invoice/${transactionId}/download`);
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -978,10 +993,9 @@ export interface OnboardingProfileData {
   profession?: string;
   expertiseLevel?: string;
   yearsOfExperience?: number;
-  primaryUseCase?: string;
   operationalDomains?: string[];
-  toolsFrameworks?: string[];
-  goalsOther?: string;
+  useCasePurposes?: string[];
+  useCaseOther?: string;
   country?: string;
 }
 
@@ -1005,15 +1019,13 @@ export interface OnboardingStatusResponse {
 export async function saveOnboardingProfile(
   data: OnboardingProfileData
 ): Promise<SaveOnboardingResponse> {
-  const token = getAccessToken();
-  if (!token) throw new Error("Not authenticated");
+  if (!getAccessToken()) throw new Error("Not authenticated");
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/user/onboarding`, {
+    const res = await apiFetch(`${API_BASE}/api/user/onboarding`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     });
@@ -1034,13 +1046,10 @@ export async function saveOnboardingProfile(
 }
 
 export async function getOnboardingStatus(): Promise<OnboardingStatusResponse | null> {
-  const token = getAccessToken();
-  if (!token) return null;
+  if (!getAccessToken()) return null;
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/api/user/onboarding-status`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await apiFetch(`${API_BASE}/api/user/onboarding-status`);
     if (!res.ok) return null;
     return res.json();
   }
@@ -1069,11 +1078,8 @@ export interface SpendLimitSettings {
 
 // Spend Limit API Functions
 export async function getSpendLimitSettings(): Promise<SpendLimitSettings | null> {
-  const token = getAccessToken();
-  if (!token || !API_BASE) return null;
-  const res = await fetch(`${API_BASE}/api/billing/spend-limit`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  if (!getAccessToken() || !API_BASE) return null;
+  const res = await apiFetch(`${API_BASE}/api/billing/spend-limit`);
   if (!res.ok) return null;
   return res.json();
 }
@@ -1086,13 +1092,11 @@ export async function updateSpendLimit(data: {
   endDate?: string;
   consentAcknowledged: boolean;
 }): Promise<{ success: boolean; error?: string }> {
-  const token = getAccessToken();
-  if (!token || !API_BASE) return { success: false, error: 'Not authenticated' };
-  const res = await fetch(`${API_BASE}/api/billing/spend-limit`, {
+  if (!getAccessToken() || !API_BASE) return { success: false, error: 'Not authenticated' };
+  const res = await apiFetch(`${API_BASE}/api/billing/spend-limit`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(data),
   });

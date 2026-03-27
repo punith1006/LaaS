@@ -27,6 +27,13 @@ app = Flask(__name__)
 log = logging.getLogger("werkzeug")
 log.setLevel(logging.WARNING)
 
+# Application logger for session orchestration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("laas-session-orchestration")
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
@@ -46,9 +53,28 @@ INTERNAL_SELKIES_PORT = 9080
 INTERNAL_METRICS_PORT = 19080
 
 # Port ranges
-NGINX_PORT_MIN, NGINX_PORT_MAX = 8080, 8199
+NGINX_PORT_MIN, NGINX_PORT_MAX = 8100, 8199  # Start at 8100 to avoid 8080 (cAdvisor)
 SELKIES_PORT_OFFSET = 1000  # selkies = nginx + 1000
 METRICS_PORT_OFFSET = 11000  # metrics = nginx + 11000
+
+# Reserved infrastructure ports - these are used by monitoring stack and other services
+# on the host and must never be allocated to user session containers.
+RESERVED_PORTS = {
+    3000,   # Grafana
+    3001,   # Uptime Kuma
+    3100,   # Loki
+    8080,   # cAdvisor (internal)
+    8999,   # cAdvisor (published)
+    9090,   # Prometheus
+    9093,   # Alertmanager
+    9100,   # Node Exporter
+    9115,   # Blackbox Exporter
+    9400,   # DCGM Exporter
+    9500,   # MPS Exporter
+    9501,   # Session Exporter
+    9998,   # Session Orchestration API
+    8180,   # Reserved for Keycloak
+}
 
 # Display range
 DISPLAY_MIN, DISPLAY_MAX = 20, 99
@@ -321,11 +347,25 @@ def get_used_cores() -> set:
 
 
 def allocate_port() -> Optional[int]:
-    """Find the first available nginx port in range 8080-8199."""
+    """Find the first available nginx port in range 8100-8199.
+
+    Skips ports that are:
+    - Already in use by other LaaS containers
+    - In RESERVED_PORTS (infrastructure/monitoring services)
+    - Would cause derived ports (selkies=nginx+1000, metrics=nginx+11000) to conflict with RESERVED_PORTS
+    """
     used_ports = get_used_ports()
     for port in range(NGINX_PORT_MIN, NGINX_PORT_MAX + 1):
-        if port not in used_ports:
-            return port
+        if port in used_ports:
+            continue
+        if port in RESERVED_PORTS:
+            continue
+        # Check derived ports don't conflict with reserved ports
+        selkies_port = port + SELKIES_PORT_OFFSET
+        metrics_port = port + METRICS_PORT_OFFSET
+        if selkies_port in RESERVED_PORTS or metrics_port in RESERVED_PORTS:
+            continue
+        return port
     return None
 
 
@@ -666,7 +706,7 @@ def launch_session_worker(
             emit_event(container_name, "allocating_ports", "Finding available port triplet...")
             nginx_port = allocate_port()
             if nginx_port is None:
-                fail_session(container_name, "allocating_ports", "No available ports in range 8080-8199")
+                fail_session(container_name, "allocating_ports", "No available ports in range 8100-8199")
                 return
             display_number = allocate_display()
             if display_number is None:
@@ -785,7 +825,7 @@ def launch_session_worker(
         emit_event(container_name, "waiting_desktop", f"Waiting for desktop to initialize on port {nginx_port}...")
         
         desktop_ready = False
-        max_wait = 60  # seconds
+        max_wait = 120  # seconds - KDE Plasma + GPU driver initialization needs 70-120s
         poll_interval = 2  # seconds
         waited = 0
         
@@ -799,14 +839,22 @@ def launch_session_worker(
                 return
             
             # Try to connect to nginx port
-            ok, _ = _run_cmd([
+            ok, http_code = _run_cmd([
                 "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
                 "--connect-timeout", "2",
                 f"http://127.0.0.1:{nginx_port}/"
             ], timeout=5)
-            if ok:
+            http_code = http_code.strip()
+            # Any HTTP response (even 401 from basic auth) means nginx is alive
+            if ok and http_code and http_code != "000":
                 desktop_ready = True
+                emit_event(container_name, "waiting_desktop", 
+                           f"Desktop responding on port {nginx_port} (HTTP {http_code})", "completed")
                 break
+            
+            # Log progress every ~10 seconds (every 5th poll iteration)
+            if waited > 0 and waited % 10 == 0:
+                logger.info(f"Desktop readiness check: {waited}s elapsed, still waiting for port {nginx_port}...")
             
             time.sleep(poll_interval)
             waited += poll_interval
@@ -1327,7 +1375,7 @@ def get_resources():
     Response:
     {
         "cpuCores": { "total": 14, "used": 8, "available": 6, "usedCores": [2,3,4,5,8,9,10,11] },
-        "ports": { "range": "8080-8199", "used": 3, "usedPorts": [8080, 8081, 8083] },
+        "ports": { "range": "8100-8199", "used": 3, "usedPorts": [8100, 8101, 8103] },
         "displays": { "range": "20-99", "used": 3, "usedDisplays": [20, 21, 23] },
         "containers": 3
     }

@@ -891,9 +891,9 @@ function Nav({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
 const termLines = [
   { t: "cmd", s: "$ laas login --sso ksrce.edu.in" },
   { t: "ok", s: "✓  Authenticated via KSRCE SSO" },
-  { t: "ok", s: "✓  Storage provisioned  15 GB ZFS" },
+  { t: "ok", s: "✓  Storage provisioned  up to 100 GB ZFS" },
   { t: "", s: "" },
-  { t: "cmd", s: "$ laas launch --gpu 4090--type jupyter" },
+  { t: "cmd", s: "$ laas launch --gpu 4090 --type jupyter" },
   { t: "muted", s: "  Selecting node …" },
   { t: "muted", s: "  Pulling image  laas/jupyter:cuda12" },
   { t: "ok", s: "✓  Session live in 8s" },
@@ -1060,11 +1060,11 @@ function FeatureComparison() {
             </div>
             <div style={{ fontFamily: "var(--font-sans)", fontSize: "1.3rem", fontWeight: 800, color: "var(--fgColor-default)", marginBottom: 10, lineHeight: 1.25 }}>Your data outlives every session</div>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.88rem", color: "var(--fgColor-muted)", lineHeight: 1.7, marginBottom: 20 }}>No more re-uploading gigabytes of datasets before every run. Your persistent ZFS volume mounts automatically every time.</p>
-            <div className="vs-row"><span style={{ color: "#22c55e" }}>✓</span><span style={{ color: "var(--fgColor-default)", fontWeight: 600 }}>15 GB Zero-setup ZFS — always mounted</span></div>
+            <div className="vs-row"><span style={{ color: "#22c55e" }}>✓</span><span style={{ color: "var(--fgColor-default)", fontWeight: 600 }}>Up to 100 GB Zero-setup ZFS — always mounted</span></div>
             <div className="vs-row"><span style={{ color: "#ef4444", fontSize: "0.7rem", fontWeight: 800 }}>✕</span><span style={{ color: "var(--fgColor-muted)", textDecoration: "line-through", opacity: 0.6 }}>Manual cloud volumes — re-attach each session</span></div>
           </div>
           <div style={{ textAlign: "center", flexShrink: 0 }}>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: "4.5rem", fontWeight: 800, lineHeight: 1, letterSpacing: "-0.04em", background: "linear-gradient(135deg, #4f8ef7, #8b5cf6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>15</div>
+            <div style={{ fontFamily: "var(--font-sans)", fontSize: "4.5rem", fontWeight: 800, lineHeight: 1, letterSpacing: "-0.04em", background: "linear-gradient(135deg, #4f8ef7, #8b5cf6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>100</div>
             <div style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, color: "var(--fgColor-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>GB</div>
             <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.72rem", color: "var(--fgColor-muted)", marginTop: 4 }}>per user, always-on</div>
           </div>
@@ -1346,7 +1346,11 @@ export function LandingPage() {
     };
     setZoomValue();
     window.addEventListener("resize", setZoomValue);
-    return () => window.removeEventListener("resize", setZoomValue);
+    return () => {
+      window.removeEventListener("resize", setZoomValue);
+      // Reset zoom when leaving landing page
+      document.documentElement.style.zoom = "1";
+    };
   }, []);
 
   useScrollReveal();
@@ -1374,8 +1378,8 @@ export function LandingPage() {
   ];
 
   const faqs = [
-    { q: "What types of GPUs are available on LaaS?", a: "LaaS provides access to NVIDIA 4090(40 GB & 80 GB) and H100 GPUs. Fractional GPU allocation via HAMI is available for lighter workloads, allowing multiple users to share a single GPU efficiently." },
-    { q: "How is storage handled across sessions?", a: "Institution SSO users receive a dedicated 15 GB persistent ZFS dataset on first login. This dataset is mounted automatically into every session, so your datasets, notebooks, and code persist indefinitely between sessions." },
+    { q: "What types of GPUs are available on LaaS?", a: "LaaS provides access to NVIDIA RTX 4090 GPUs with 24 GB VRAM. Fractional GPU allocation via HAMI allows multiple users to share a single GPU efficiently for lighter workloads." },
+    { q: "How is storage handled across sessions?", a: "Institution SSO users receive up to 100 GB of persistent ZFS storage on first login. This dataset is mounted automatically into every session, so your datasets, notebooks, and code persist indefinitely between sessions." },
     { q: "Can I access my session via SSH?", a: "Yes. Every session exposes an SSH endpoint. You can upload your public SSH keys through the Account → SSH Keys panel and connect directly from your local terminal." },
     { q: "How does billing work?", a: "LaaS uses a wallet-based credit system with per-second billing charges. Active sessions burn credits at the configured compute rate. Paused sessions only incur minimal storage fees. You can set spend limits and view a real-time daily spend chart on your dashboard." },
     { q: "Do I need to set up Keycloak for university SSO?", a: "Admins configure the Keycloak IDP federation (SAML or OIDC) once per institution. After that, all students and faculty can sign in using their existing university email credentials — no additional signup required." },
@@ -1428,31 +1432,31 @@ export function LandingPage() {
         {/* Radial glow top-left */}
         <div style={{ position: "absolute", top: -120, left: -120, width: 600, height: 600, background: `radial-gradient(circle, ${ACCENT_GLOW} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
-        <div className="hero-split" style={{ display: "flex", alignItems: "center", gap: 56, padding: "100px 48px 60px", maxWidth: 1140, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
+        <div className="hero-split" style={{ display: "flex", alignItems: "center", gap: 48, padding: "72px 48px 56px", maxWidth: 1140, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
           {/* Left */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 14px", background: "var(--bgColor-mild)", border: `1px solid ${ACCENT}`, borderRadius: 9999, marginBottom: 28, animation: "fadeUp 0.4s ease 0.1s both" }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e" }} />
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: ACCENT }}>KSRCE AI Lab Infrastructure</span>
+          <div style={{ flex: "1 1 52%", minWidth: 0 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", background: "var(--bgColor-mild)", border: `1px solid ${ACCENT}`, borderRadius: 9999, marginBottom: 20, animation: "fadeUp 0.4s ease 0.1s both" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: ACCENT }}>KSRCE AI Lab Infrastructure</span>
             </div>
-            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.8rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: "var(--fgColor-default)", marginBottom: 12, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.2s both" }}>
-              Rent GPUs.
+            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.4rem, 5vw, 4rem)", fontWeight: 800, lineHeight: 1.1, color: "var(--fgColor-default)", marginBottom: 10, letterSpacing: "-0.02em", animation: "fadeUp 0.4s ease 0.2s both" }}>
+              Your Remote AI Workstation.
             </h1>
-            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.8rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: ACCENT, marginBottom: 28, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.3s both" }}>
-              Ship Faster.
-            </h1>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", lineHeight: 1.75, color: "var(--fgColor-muted)", maxWidth: 460, marginBottom: 36, animation: "fadeUp 0.4s ease 0.4s both" }}>
-              LaaS gives KSRCE students and researchers instant access to NVIDIA 4090, 15 GB persistent storage, and Jupyter notebooks — secured by university SSO.
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", fontWeight: 700, lineHeight: 1.2, color: ACCENT, marginBottom: 16, letterSpacing: "-0.02em", animation: "fadeUp 0.4s ease 0.3s both" }}>
+              Work Anywhere. Create Everywhere.
+            </h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", lineHeight: 1.65, color: "var(--fgColor-muted)", maxWidth: 440, marginBottom: 24, animation: "fadeUp 0.4s ease 0.4s both" }}>
+              LaaS gives KSRCE students and researchers instant access to NVIDIA RTX 4090 GPUs with 24 GB VRAM, up to 100 GB persistent storage, and Jupyter notebooks — secured by university SSO.
             </p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", animation: "fadeUp 0.4s ease 0.5s both" }}>
               <Link href="/signup"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
                 Launch a GPU →
               </Link>
               <a href="#how-it-works"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bgColor-mild)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = "translateY(0)"; }}>
                 See How It Works
@@ -1461,7 +1465,7 @@ export function LandingPage() {
           </div>
 
           {/* Right — Terminal */}
-          <div style={{ flex: 1, minWidth: 0, animation: "fadeUp 0.5s ease 0.5s both" }}>
+          <div style={{ flex: "1 1 48%", minWidth: 0, animation: "fadeUp 0.5s ease 0.5s both" }}>
             <HeroTerminal />
           </div>
         </div>

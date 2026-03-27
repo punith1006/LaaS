@@ -64,4 +64,37 @@ export class MailService {
       context,
     });
   }
+
+  async sendRunwayWarningEmail(
+    to: string,
+    context: {
+      firstName: string;
+      runwayHours: string;
+      burnRate: string;
+      creditBalance: string;
+    },
+  ): Promise<void> {
+    await this.mailer.sendMail({
+      to,
+      subject: 'LaaS: Low runway — instances will auto-terminate soon',
+      template: 'runway-warning',
+      context,
+    });
+  }
+
+  async sendRunwayTerminationEmail(
+    to: string,
+    context: {
+      firstName: string;
+      terminatedCount: number;
+      terminatedSessions: Array<{ name: string; config: string; uptime: string }>;
+    },
+  ): Promise<void> {
+    await this.mailer.sendMail({
+      to,
+      subject: 'LaaS: Runway exhausted — compute instances terminated',
+      template: 'runway-termination',
+      context,
+    });
+  }
 }

@@ -126,7 +126,7 @@ Users retain ownership of all content they create, upload, or generate using the
 
 Content Storage and Persistence
 
-- Stateful desktop sessions include persistent storage (5GB per user) on network-attached storage;
+- Stateful desktop sessions include persistent storage (upto 100GB per user) on network-attached storage;
 
 - Ephemeral session data is not persisted after session termination;
 
@@ -149,8 +149,8 @@ LaaS shall not be liable for any loss, damage, or corruption of user content, re
 
 <h3>Content Storage and Persistence</h3>
 <ul>
-<li>Stateful desktop sessions include persistent storage (5GB per user) on network-attached storage;</li>
-<li>Ephemeral session data is not persisted after session termination;</li>
+<li>Stateful desktop sessions include persistent storage (upto 100GB per user) on network-attached storage or,</br>
+Ephemeral session data is not persisted after session termination;</li>
 <li>LaaS reserves the right to delete user data after account termination or prolonged inactivity as defined in the Terms of Service;</li>
 <li>Users are responsible for backing up their own data.</li>
 </ul>
@@ -179,7 +179,7 @@ By creating an account, you represent that the information you provide is accura
 
 2. Service Description
 
-LaaS provides on-demand access to GPU compute resources, including stateful desktop sessions with persistent storage (for university/institution members), ephemeral compute sessions (Jupyter, Code-Server, CLI) for all users, booking and scheduling of compute time slots, and wallet-based billing and subscription plans.
+LaaS provides on-demand access to GPU compute resources, including stateful desktop sessions with persistent storage or, ephemeral compute sessions (Jupyter, Code-Server, CLI) for all users based on their subscribed instance configuration, booking and scheduling of compute time slots, and wallet-based billing and subscription plans.
 
 3. Billing and Payments
 
@@ -205,8 +205,8 @@ These Terms are governed by the laws of India. Any disputes shall be resolved in
 <h3>2. Service Description</h3>
 <p>LaaS provides on-demand access to GPU compute resources, including:</p>
 <ul>
-<li>Stateful desktop sessions with persistent storage (for university/institution members);</li>
-<li>Ephemeral compute sessions (Jupyter, Code-Server, CLI) for all users;</li>
+<li>Stateful desktop sessions with persistent storage or,</br>
+Ephemeral compute sessions (Jupyter, Code-Server, CLI) for all users based on their subscribed instance configuration;</li>
 <li>Booking and scheduling of compute time slots;</li>
 <li>Wallet-based billing and subscription plans.</li>
 </ul>

@@ -6,16 +6,40 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { IsString, IsOptional, IsArray, IsNumber, Min } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UserService } from './user.service';
 
 class OnboardingProfileDto {
+  @IsOptional()
+  @IsString()
   profession?: string;
+
+  @IsOptional()
+  @IsString()
   expertiseLevel?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   yearsOfExperience?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   operationalDomains?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   useCasePurposes?: string[];
+
+  @IsOptional()
+  @IsString()
   useCaseOther?: string;
+
+  @IsOptional()
+  @IsString()
   country?: string;
 }
 
