@@ -564,6 +564,16 @@ model UserProfile {
   createdBy               String?   @map("created_by") @db.Uuid
   updatedBy               String?   @map("updated_by") @db.Uuid
 
+  // Onboarding profile fields
+  profession              String?   @map("profession")
+  expertiseLevel           String?   @map("expertise_level")
+  yearsOfExperience       Int?      @map("years_of_experience")
+  operationalDomains      String[]  @map("operational_domains")
+  useCasePurposes         String[]  @map("use_case_purposes")
+  useCaseOther            String?   @map("use_case_other")
+  country                 String?
+  isOnboardingComplete    Boolean   @default(false) @map("onboarding_complete")
+
   // Relations
   user     User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   verifier User? @relation("ProfileVerifier", fields: [idProofVerifiedBy], references: [id], onDelete: Restrict)

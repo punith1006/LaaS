@@ -10,6 +10,7 @@ import { PaymentModule } from './payment/payment.module';
 import { BillingModule } from './billing/billing.module';
 import { AuditModule } from './audit/audit.module';
 import { ComputeModule } from './compute/compute.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ComputeModule } from './compute/compute.module';
     PaymentModule,
     BillingModule,
     ComputeModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],

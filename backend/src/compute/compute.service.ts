@@ -595,7 +595,8 @@ export class ComputeService {
       );
       await this.releaseSessionResources(
         session.id,
-        'orchestration_launch_failed',
+        'error_unrecoverable',
+        `Orchestration launch failed: ${err}`,
       );
 
       throw new ServiceUnavailableException(
@@ -775,7 +776,7 @@ export class ComputeService {
     reason: string,
   ): Promise<void> {
     this.logger.error(`Session ${sessionId} launch failed: ${reason}`);
-    await this.releaseSessionResources(sessionId, reason);
+    await this.releaseSessionResources(sessionId, 'error_unrecoverable', reason);
 
     await this.prisma.sessionEvent.create({
       data: {
@@ -788,7 +789,8 @@ export class ComputeService {
 
   private async releaseSessionResources(
     sessionId: string,
-    reason: string,
+    terminationReason: SessionTerminationReason,
+    errorDetails?: string,
   ): Promise<void> {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
@@ -796,6 +798,13 @@ export class ComputeService {
     });
 
     if (!session) return;
+
+    // Log the detailed error message if provided
+    if (errorDetails) {
+      this.logger.error(
+        `Session ${sessionId} release reason details: ${errorDetails}`,
+      );
+    }
 
     const now = new Date();
 
@@ -805,7 +814,7 @@ export class ComputeService {
       data: {
         status: 'failed',
         endedAt: now,
-        terminationReason: reason as any,
+        terminationReason: terminationReason,
       },
     });
 
@@ -1691,7 +1700,11 @@ export class ComputeService {
           this.logger.warn(
             `Container ${session.containerName} not found for active session ${session.id}`,
           );
-          await this.releaseSessionResources(session.id, 'container_not_found');
+          await this.releaseSessionResources(
+            session.id,
+            'error_unrecoverable',
+            `Container ${session.containerName} not found`,
+          );
         } else {
           this.logger.warn(
             `Reconciliation error for session ${session.id}: ${errMsg}`,

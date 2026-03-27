@@ -973,6 +973,89 @@ export async function downloadInvoice(transactionId: string): Promise<Blob> {
   throw new Error('No API configured');
 }
 
+// Onboarding API Types
+export interface OnboardingProfileData {
+  profession?: string;
+  expertiseLevel?: string;
+  yearsOfExperience?: number;
+  primaryUseCase?: string;
+  operationalDomains?: string[];
+  toolsFrameworks?: string[];
+  goalsOther?: string;
+  country?: string;
+}
+
+export interface SaveOnboardingResponse {
+  success: boolean;
+  profileId: string;
+  onboardingComplete: boolean;
+}
+
+export interface OnboardingStatusResponse {
+  isOnboardingComplete: boolean;
+  hasProfession: boolean;
+  hasExpertiseLevel: boolean;
+  hasYearsOfExperience: boolean;
+  hasOperationalDomains: boolean;
+  hasUseCasePurposes: boolean;
+  hasCountry: boolean;
+}
+
+// Onboarding API Functions
+export async function saveOnboardingProfile(
+  data: OnboardingProfileData
+): Promise<SaveOnboardingResponse> {
+  const token = getAccessToken();
+  if (!token) throw new Error("Not authenticated");
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/user/onboarding`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = Array.isArray(data.message) ? data.message[0] : data.message;
+      throw new Error(msg || "Failed to save onboarding profile");
+    }
+    return res.json();
+  }
+  // Mock for development
+  await delay(800);
+  return {
+    success: true,
+    profileId: `profile-${Date.now()}`,
+    onboardingComplete: true,
+  };
+}
+
+export async function getOnboardingStatus(): Promise<OnboardingStatusResponse | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/user/onboarding-status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+  // Mock for development
+  return {
+    isOnboardingComplete: false,
+    hasProfession: false,
+    hasExpertiseLevel: false,
+    hasYearsOfExperience: false,
+    hasOperationalDomains: false,
+    hasUseCasePurposes: false,
+    hasCountry: false,
+  };
+}
+
 // Spend Limit API Types
 export interface SpendLimitSettings {
   enabled: boolean;

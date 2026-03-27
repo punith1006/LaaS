@@ -53,8 +53,8 @@
 }
 
 html {
-  /* Scale factor to match 150% design at 100% zoom */
-  font-size: 112.5%;
+  /* Standard 16px base */
+  font-size: 100%;
 }
 
 body {
@@ -132,8 +132,8 @@ header > div:hover {
 /* Policy modal rich text */
 .policy-content h3 {
   font-weight: 700;
-  font-size: 0.95rem;
-  color: #171717;
+  font-size: 1rem;
+  color: #000000;
   margin-top: 1.25rem;
   margin-bottom: 0.5rem;
 }

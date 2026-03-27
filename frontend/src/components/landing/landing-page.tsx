@@ -831,130 +831,59 @@ function useScrollReveal() {
 // ─── Nav ──────────────────────────────────────────────────────────────────────
 function Nav({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 30);
     window.addEventListener("scroll", h);
     return () => window.removeEventListener("scroll", h);
   }, []);
 
-  // Close mobile menu on resize to desktop
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth > 768) setMobileMenuOpen(false);
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  const navLinks = ["Features", "How It Works", "Pricing", "FAQ"];
-
   return (
-    <>
-      <style>{`
-        @media (max-width: 768px) {
-          .nav-links-desktop { display: none !important; }
-          .nav-actions-desktop { display: none !important; }
-          .mobile-menu-btn { display: flex !important; }
-          .mobile-menu { display: flex !important; }
-          .nav-mobile-padding { padding: 0 20px !important; }
-        }
-        @media (min-width: 769px) {
-          .mobile-menu-btn { display: none !important; }
-          .mobile-menu { display: none !important; }
-        }
-      `}</style>
-      <nav className="nav-mobile-padding" style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
-        minHeight: 60,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 48px",
-        background: scrolled ? (isDark ? "rgba(8,10,18,0.92)" : "rgba(245,245,240,0.92)") : "transparent",
-        borderBottom: scrolled ? `1px solid var(--borderColor-default)` : "1px solid transparent",
-        backdropFilter: scrolled ? "blur(14px)" : "none",
-        transition: "all 0.3s ease",
-      }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fgColor-default)" }}>
-          LaaS
-        </span>
-        <div className="nav-links-desktop" style={{ display: "flex", alignItems: "center", gap: 32 }}>
-          {navLinks.map(l => (
-            <a key={l} href={`#${l.toLowerCase().replace(/ /g, "-")}`}
-              style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", color: "var(--fgColor-muted)", textDecoration: "none", transition: "color 0.15s" }}
-              onMouseEnter={e => (e.currentTarget.style.color = "var(--fgColor-default)")}
-              onMouseLeave={e => (e.currentTarget.style.color = "var(--fgColor-muted)")}>
-              {l}
-            </a>
-          ))}
-        </div>
-        <div className="nav-actions-desktop" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={onToggle}
-            style={{ background: "transparent", border: `1px solid var(--borderColor-default)`, borderRadius: 6, width: 34, height: 34, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fgColor-muted)", transition: "all 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.background = "var(--bgColor-muted)"; e.currentTarget.style.color = "var(--fgColor-default)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--fgColor-muted)"; }}>
-            {isDark
-              ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
-              : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
-          </button>
-          <Link href="/signin"
-            style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", textDecoration: "none", padding: "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, transition: "all 0.15s" }}
-            onMouseEnter={e => e.currentTarget.style.background = "var(--bgColor-muted)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-            Sign In
-          </Link>
-          <Link href="/signup"
-            style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: "7px 20px", backgroundColor: ACCENT, borderRadius: 6, border: `1px solid ${ACCENT}`, transition: "all 0.15s", boxShadow: `0 0 20px ${ACCENT_GLOW}` }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = ACCENT_DARK}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = ACCENT}>
-            Get Started →
-          </Link>
-        </div>
-        {/* Mobile menu button */}
-        <button className="mobile-menu-btn"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          style={{ background: "transparent", border: `1px solid var(--borderColor-default)`, borderRadius: 6, width: 34, height: 34, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fgColor-muted)" }}>
-          {mobileMenuOpen ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
-          )}
-        </button>
-      </nav>
-      {/* Mobile Menu */}
-      <div className="mobile-menu" style={{
-        position: "fixed", top: 60, left: 0, right: 0, zIndex: 199,
-        background: isDark ? "rgba(8,10,18,0.98)" : "rgba(245,245,240,0.98)",
-        borderBottom: "1px solid var(--borderColor-default)",
-        backdropFilter: "blur(14px)",
-        flexDirection: "column",
-        padding: "16px 24px",
-        gap: 16,
-      }}>
-        {navLinks.map(l => (
+    <nav style={{
+      position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
+      height: 60,
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "0 48px",
+      background: scrolled ? (isDark ? "rgba(8,10,18,0.92)" : "rgba(245,245,240,0.92)") : "transparent",
+      borderBottom: scrolled ? `1px solid var(--borderColor-default)` : "1px solid transparent",
+      backdropFilter: scrolled ? "blur(14px)" : "none",
+      transition: "all 0.3s ease",
+    }}>
+      <span style={{ fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fgColor-default)" }}>
+        LaaS
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+        {["Features", "How It Works", "Pricing", "FAQ"].map(l => (
           <a key={l} href={`#${l.toLowerCase().replace(/ /g, "-")}`}
-            onClick={() => setMobileMenuOpen(false)}
-            style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-muted)", textDecoration: "none", padding: "8px 0" }}>
+            style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", color: "var(--fgColor-muted)", textDecoration: "none", transition: "color 0.15s" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "var(--fgColor-default)")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--fgColor-muted)")}>
             {l}
           </a>
         ))}
-        <div style={{ display: "flex", gap: 10, paddingTop: 8, borderTop: "1px solid var(--borderColor-default)" }}>
-          <button onClick={onToggle}
-            style={{ background: "transparent", border: `1px solid var(--borderColor-default)`, borderRadius: 6, width: 40, height: 40, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fgColor-muted)" }}>
-            {isDark
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /></svg>
-              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
-          </button>
-          <Link href="/signin"
-            style={{ flex: 1, fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", textDecoration: "none", padding: "10px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, textAlign: "center" }}>
-            Sign In
-          </Link>
-          <Link href="/signup"
-            style={{ flex: 1, fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: "10px 18px", backgroundColor: ACCENT, borderRadius: 6, textAlign: "center" }}>
-            Get Started →
-          </Link>
-        </div>
       </div>
-    </>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={onToggle}
+          style={{ background: "transparent", border: `1px solid var(--borderColor-default)`, borderRadius: 6, width: 34, height: 34, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fgColor-muted)", transition: "all 0.15s" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "var(--bgColor-muted)"; e.currentTarget.style.color = "var(--fgColor-default)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--fgColor-muted)"; }}>
+          {isDark
+            ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
+            : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
+        </button>
+        <Link href="/signin"
+          style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", textDecoration: "none", padding: "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, transition: "all 0.15s" }}
+          onMouseEnter={e => (e.currentTarget.style.background = "var(--bgColor-muted)")}
+          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+          Sign In
+        </Link>
+        <Link href="/signup"
+          style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: "7px 20px", backgroundColor: ACCENT, borderRadius: 6, border: `1px solid ${ACCENT}`, transition: "all 0.15s", boxShadow: `0 0 20px ${ACCENT_GLOW}` }}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = ACCENT_DARK)}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = ACCENT)}>
+          Get Started →
+        </Link>
+      </div>
+    </nav>
   );
 }
 
@@ -1113,15 +1042,9 @@ function FeatureComparison() {
           opacity: 1;
           transform: translateY(0) scale(1);
         }
-        @media (max-width: 1024px) {
-          .feature-grid { grid-template-columns: repeat(2, 1fr) !important; }
-        }
-        @media (max-width: 768px) {
-          .feature-grid { grid-template-columns: 1fr !important; }
-        }
       `}</style>
 
-      <div className="feature-grid" ref={gridRef} style={{
+      <div ref={gridRef} style={{
         display: "grid",
         gridTemplateColumns: "repeat(3, 1fr)",
         gap: 16,
@@ -1129,7 +1052,7 @@ function FeatureComparison() {
       }}>
 
         {/* Card 1: Storage — spans 2 cols */}
-        <div className="bento-card bento-animate feature-card-span2 bento-flex" style={{ gridColumn: "span 2", padding: "32px 36px", display: "flex", gap: 40, alignItems: "center" }}>
+        <div className="bento-card bento-animate" style={{ gridColumn: "span 2", padding: "32px 36px", display: "flex", gap: 40, alignItems: "center", transitionDelay: "0s" }}>
           <div style={{ flex: 1 }}>
             <div className="bento-tag" style={{ background: "rgba(79,142,247,0.12)", color: "#4f8ef7", border: "1px solid rgba(79,142,247,0.25)" }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
@@ -1191,7 +1114,7 @@ function FeatureComparison() {
         </div>
 
         {/* Card 5: Predictable Envs — spans 2 */}
-        <div className="bento-card bento-animate feature-card-span2 bento-flex" style={{ gridColumn: "span 2", padding: "28px 32px", display: "flex", gap: 32, alignItems: "center" }}>
+        <div className="bento-card bento-animate" style={{ gridColumn: "span 2", padding: "28px 32px", display: "flex", gap: 32, alignItems: "center", transitionDelay: "0.3s" }}>
           <div style={{ flex: 1 }}>
             <div className="bento-tag" style={{ background: "rgba(249,115,22,0.1)", color: "#f97316", border: "1px solid rgba(249,115,22,0.25)" }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="9" x2="19" y2="9" /><line x1="5" y1="15" x2="19" y2="15" /></svg>
@@ -1214,7 +1137,7 @@ function FeatureComparison() {
         </div>
 
         {/* Card 6: Bare-metal — full width */}
-        <div className="bento-card bento-animate feature-card-span3 baremetal-flex" style={{ gridColumn: "span 3", padding: "28px 36px", display: "flex", alignItems: "center", gap: 48 }}>
+        <div className="bento-card bento-animate" style={{ gridColumn: "span 3", padding: "28px 36px", display: "flex", alignItems: "center", gap: 48, transitionDelay: "0.38s" }}>
           <div style={{ flex: 1 }}>
             <div className="bento-tag" style={{ background: "rgba(239,68,68,0.1)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)" }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" /></svg>
@@ -1223,7 +1146,7 @@ function FeatureComparison() {
             <div style={{ fontFamily: "var(--font-sans)", fontSize: "1.2rem", fontWeight: 800, color: "var(--fgColor-default)", marginBottom: 8 }}>Raw hardware. No noisy neighbours.</div>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.88rem", color: "var(--fgColor-muted)", lineHeight: 1.7 }}>AMD Ryzen 9 + NVMe, not throttled virtual vCPUs sharing a hypervisor with 40 other tenants.</p>
           </div>
-          <div className="baremetal-bar" style={{ flexShrink: 0, width: 280 }}>
+          <div style={{ flexShrink: 0, width: 280 }}>
             {[
               { label: "LaaS (bare-metal)", pct: 94, color: "#4f8ef7" },
               { label: "AWS EC2 (vCPU)", pct: 58, color: "#ef4444" },
@@ -1281,7 +1204,7 @@ function PricingTable({ rows }: { rows: any[] }) {
   return (
     <>
       <style>{`
-        .pricing-table { width: 100%; border-collapse: collapse; min-width: 700px; }
+        .pricing-table { width: 100%; border-collapse: collapse; }
         .pricing-table th {
           font-family: var(--font-sans); font-size: 0.72rem; font-weight: 600;
           letter-spacing: 0.07em; text-transform: uppercase;
@@ -1301,12 +1224,8 @@ function PricingTable({ rows }: { rows: any[] }) {
         .pricing-row:hover td { background: var(--bgColor-muted); }
         .pricing-row.featured td { background: rgba(79,110,247,0.06); }
         .pricing-row.featured:hover td { background: rgba(79,110,247,0.1); }
-        @media (max-width: 768px) {
-          .pricing-table { min-width: 600px; }
-          .pricing-table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        }
       `}</style>
-      <div className="pricing-table-container" style={{
+      <div style={{
         background: "var(--bgColor-default)",
         border: "1px solid var(--borderColor-default)",
         borderRadius: 14, overflow: "hidden",
@@ -1376,6 +1295,7 @@ const I = {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export function LandingPage() {
   const [isDark, toggle] = useTheme();
+  const [zoom, setZoom] = useState(1);
   const stepsRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1416,6 +1336,19 @@ export function LandingPage() {
       row.removeEventListener("mouseleave", onLeave);
     };
   }, []);
+
+  // Apply zoom to match 1280px design viewport
+  useEffect(() => {
+    const setZoomValue = () => {
+      const zoomValue = window.innerWidth / 1280;
+      document.documentElement.style.zoom = String(zoomValue);
+      setZoom(zoomValue);
+    };
+    setZoomValue();
+    window.addEventListener("resize", setZoomValue);
+    return () => window.removeEventListener("resize", setZoomValue);
+  }, []);
+
   useScrollReveal();
 
   const brandCss = `
@@ -1458,190 +1391,36 @@ export function LandingPage() {
   // desc field removed — replaced by bestFor in new PricingCard
 
   return (
-    <>
+    <div className="landing-page">
       <Head>
         <style>{brandCss}</style>
       </Head>
       <style>{`
+        .landing-page { zoom: calc(100vw / 1280); }
         @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-
-        /* === FLUID LAYOUT SYSTEM === */
-        /* All spacing, sizing uses clamp() for fluid scaling */
-
-        .land-section {
-          padding: clamp(32px, 8vw, 90px) clamp(20px, 5vw, 48px);
-          max-width: 1140px;
-          margin: 0 auto;
-          width: 100%;
-          box-sizing: border-box;
+        .land-section { padding: 90px 48px; max-width: 1140px; margin: 0 auto; }
+        .land-section-full { padding: 90px 48px; }
+        @media (max-width: 860px) {
+          .hero-split { flex-direction: column !important; }
+          .land-section { padding: 64px 20px; }
         }
-
-        .hero-split {
-          display: flex;
-          align-items: center;
-          gap: clamp(24px, 5vw, 56px);
-          padding: clamp(80px, 12vh, 140px) clamp(20px, 5vw, 48px) clamp(40px, 8vh, 60px);
-          max-width: 1140px;
-          margin: 0 auto;
-          width: 100%;
-          box-sizing: border-box;
-        }
-
-        /* Hero text scales with viewport */
-        .hero-text {
-          flex: 1 1 min(500px, 60%);
-          min-width: 0;
-        }
-
-        .hero-btns {
-          display: flex;
-          gap: clamp(8px, 1.5vw, 12px);
-          flex-wrap: wrap;
-        }
-
-        .terminal-side {
-          flex: 1 1 min(350px, 40%);
-          min-width: 0;
-        }
-
-        /* Stats grid - fluid columns */
-        .stats-grid {
-          max-width: 1140px;
-          margin: 0 auto;
-          padding: 0 clamp(12px, 3vw, 48px);
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-        }
-
-        /* Steps grid - fluid */
-        .steps-grid {
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: clamp(12px, 2vw, 14px);
-          align-items: center;
-        }
-
-        /* Feature grid - fluid */
-        .feature-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: clamp(12px, 2vw, 16px);
-          margin-top: clamp(24px, 4vw, 48px);
-        }
-
-        .feature-card-span2 {
-          grid-column: span 2;
-        }
-
-        .feature-card-span3 {
-          grid-column: span 3;
-        }
-
-        .bento-flex {
-          display: flex;
-          gap: clamp(20px, 4vw, 40px);
-          align-items: center;
-        }
-
-        .baremetal-flex {
-          display: flex;
-          align-items: center;
-          gap: clamp(24px, 5vw, 48px);
-        }
-
-        .baremetal-bar {
-          flex-shrink: 0;
-          width: clamp(200px, 30vw, 280px);
-        }
-
-        .gpu-terminal-split {
-          display: flex;
-          gap: clamp(24px, 5vw, 56px);
-          align-items: center;
-        }
-
-        /* Responsive breakpoints */
-        @media (max-width: 1024px) {
-          .land-section { padding: clamp(32px, 6vw, 64px) clamp(16px, 4vw, 32px); }
-          .hero-split { flex-direction: column; gap: clamp(24px, 5vw, 32px); padding-top: clamp(80px, 10vh, 100px); }
-          .hero-text { text-align: center; max-width: 100% !important; }
-          .hero-btns { justify-content: center; }
-          .terminal-side { max-width: 100% !important; width: 100%; }
-          .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .steps-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-          .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .feature-card-span2 { grid-column: span 2; }
-          .feature-card-span3 { grid-column: span 2; }
-          .gpu-terminal-split { flex-direction: column; gap: clamp(24px, 4vw, 32px); }
-        }
-
-        @media (max-width: 768px) {
-          .land-section { padding: clamp(24px, 5vw, 48px) clamp(16px, 4vw, 20px); }
-          .hero-split { padding: clamp(80px, 10vh, 100px) clamp(16px, 4vw, 20px) clamp(32px, 6vw, 40px); }
-          .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); border-right: none; }
-          .stats-grid > div { border-right: none; border-bottom: 1px solid var(--borderColor-default); }
-          .trusted-by { padding: clamp(20px, 4vw, 24px) clamp(16px, 4vw, 20px); }
-          .steps-grid { grid-template-columns: 1fr; gap: clamp(12px, 3vw, 16px); }
-          .feature-grid { grid-template-columns: 1fr; }
-          .feature-card-span2 { grid-column: span 1; }
-          .feature-card-span3 { grid-column: span 1; }
-          .bento-flex { flex-direction: column; gap: clamp(16px, 4vw, 24px); }
-          .bento-flex > div { width: 100%; }
-          .baremetal-flex { flex-direction: column; gap: clamp(16px, 4vw, 24px); }
-          .baremetal-flex > div { width: 100%; }
-          .baremetal-bar { width: 100%; }
-          .cta-section { padding: clamp(40px, 8vw, 48px) clamp(16px, 4vw, 20px); }
-          .footer-section { padding: clamp(20px, 4vw, 24px) clamp(16px, 4vw, 20px); flex-direction: column; text-align: center; gap: clamp(12px, 3vw, 16px); }
-          .pricing-table-wrapper { overflow-x: auto; }
-          .faq-list { padding: 0 clamp(16px, 4vw, 20px); }
-        }
-
-        @media (max-width: 480px) {
-          .stats-grid { grid-template-columns: 1fr; }
-          .trusted-list { flex-direction: column; gap: clamp(8px, 2vw, 12px); }
-        }
-
         .highlight-text { color: ${ACCENT}; }
-
         .reveal-on-scroll {
           opacity: 0;
           transform: translateY(30px) scale(0.98);
           transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
           will-change: opacity, transform;
         }
-
         .reveal-on-scroll.revealed {
           opacity: 1;
           transform: translateY(0) scale(1);
-        }
-
-        /* Navigation responsive */
-        @media (max-width: 768px) {
-          .nav-links-desktop { display: none !important; }
-          .nav-actions-desktop { display: none !important; }
-          .mobile-menu-btn { display: flex !important; }
-          .mobile-menu { display: flex !important; }
-          .nav-mobile-padding { padding: 0 clamp(16px, 4vw, 20px) !important; }
-        }
-
-        @media (min-width: 769px) {
-          .mobile-menu-btn { display: none !important; }
-          .mobile-menu { display: none !important; }
-        }
-
-        /* Feature comparison responsive */
-        @media (max-width: 1024px) {
-          .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-        }
-        @media (max-width: 768px) {
-          .feature-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
 
       <Nav isDark={isDark} onToggle={toggle} />
 
       {/* ── HERO ── */}
-      <section style={{ position: "relative", minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden" }}>
+      <section style={{ position: "relative", minHeight: `${(1 / zoom) * 100}vh`, display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden" }}>
 
         {/* ↓ Particle network replaces the old hero-grid div */}
         <Particles />
@@ -1649,31 +1428,31 @@ export function LandingPage() {
         {/* Radial glow top-left */}
         <div style={{ position: "absolute", top: -120, left: -120, width: 600, height: 600, background: `radial-gradient(circle, ${ACCENT_GLOW} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
-        <div className="hero-split">
+        <div className="hero-split" style={{ display: "flex", alignItems: "center", gap: 56, padding: "100px 48px 60px", maxWidth: 1140, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
           {/* Left */}
-          <div className="hero-text">
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 14px", background: "var(--bgColor-mild)", border: `1px solid ${ACCENT}`, borderRadius: 9999, marginBottom: 28, animation: "fadeUp 0.4s ease 0.1s both" }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e" }} />
               <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: ACCENT }}>KSRCE AI Lab Infrastructure</span>
             </div>
-            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: "var(--fgColor-default)", marginBottom: 12, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.2s both", wordBreak: "break-word" }}>
+            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.8rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: "var(--fgColor-default)", marginBottom: 12, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.2s both" }}>
               Rent GPUs.
             </h1>
-            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: ACCENT, marginBottom: 28, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.3s both", wordBreak: "break-word" }}>
+            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.8rem, 6vw, 4.8rem)", fontWeight: 800, lineHeight: 1.05, color: ACCENT, marginBottom: 28, letterSpacing: "-0.03em", animation: "fadeUp 0.4s ease 0.3s both" }}>
               Ship Faster.
             </h1>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(0.9rem, 1.5vw, 1.05rem)", lineHeight: 1.75, color: "var(--fgColor-muted)", maxWidth: "min(460px, 100%)", marginBottom: 36, animation: "fadeUp 0.4s ease 0.4s both", wordBreak: "break-word" }}>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", lineHeight: 1.75, color: "var(--fgColor-muted)", maxWidth: 460, marginBottom: 36, animation: "fadeUp 0.4s ease 0.4s both" }}>
               LaaS gives KSRCE students and researchers instant access to NVIDIA 4090, 15 GB persistent storage, and Jupyter notebooks — secured by university SSO.
             </p>
-            <div className="hero-btns">
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", animation: "fadeUp 0.4s ease 0.5s both" }}>
               <Link href="/signup"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s", flexShrink: 0 }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
                 Launch a GPU →
               </Link>
               <a href="#how-it-works"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s", flexShrink: 0 }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bgColor-mild)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = "translateY(0)"; }}>
                 See How It Works
@@ -1682,17 +1461,15 @@ export function LandingPage() {
           </div>
 
           {/* Right — Terminal */}
-          <div className="terminal-side">
-            <div style={{ maxWidth: "100%", overflow: "hidden" }}>
-              <HeroTerminal />
-            </div>
+          <div style={{ flex: 1, minWidth: 0, animation: "fadeUp 0.5s ease 0.5s both" }}>
+            <HeroTerminal />
           </div>
         </div>
       </section>
 
       {/* ── STATS ── */}
       <div className="reveal-on-scroll" style={{ borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)", background: "var(--bgColor-mild)" }}>
-        <div className="stats-grid" style={{ maxWidth: 1140, margin: "0 auto", padding: "0 48px", display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
+        <div style={{ maxWidth: 1140, margin: "0 auto", padding: "0 48px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
           {stats.map((s, i) => (
             <div key={i} style={{ padding: "32px 24px", borderRight: i < stats.length - 1 ? "1px solid var(--borderColor-default)" : "none", textAlign: "center" }}>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: "2.2rem", fontWeight: 800, color: "var(--fgColor-default)", lineHeight: 1, marginBottom: 6 }}>
@@ -1705,11 +1482,11 @@ export function LandingPage() {
       </div>
 
       {/* ── TRUSTED BY ── */}
-      <div className="reveal-on-scroll trusted-by" style={{ borderBottom: "1px solid var(--borderColor-default)", padding: "28px 48px", textAlign: "center" }}>
+      <div className="reveal-on-scroll" style={{ borderBottom: "1px solid var(--borderColor-default)", padding: "28px 48px", textAlign: "center" }}>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, color: "var(--fgColor-muted)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 20 }}>
           Powering institutions that push boundaries
         </div>
-        <div className="trusted-list" style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "20px 48px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "20px 48px" }}>
           {["KSRCE", "Partner Colleges", "Research Groups", "Industry Labs", "Govt. R&D Units"].map(l => (
             <span key={l} style={{ fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, color: "var(--fgColor-muted)", letterSpacing: "0.03em" }}>{l}</span>
           ))}
@@ -1725,7 +1502,6 @@ export function LandingPage() {
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-muted)", maxWidth: 500, margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
           </div>
           <div
-            className="steps-grid"
             ref={stepsRowRef}
             style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, alignItems: "center" }}
           >
@@ -1753,7 +1529,7 @@ export function LandingPage() {
 
       {/* ── YOUR GPU, YOUR TERMINAL ── */}
       <section className="reveal-on-scroll" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
-        <div className="land-section gpu-terminal-split" style={{ display: "flex", gap: 56, alignItems: "center" }}>
+        <div className="land-section hero-split" style={{ display: "flex", gap: 56, alignItems: "center" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ background: "var(--bgColor-muted)", border: "1px solid var(--borderColor-default)", borderRadius: 10, overflow: "hidden", fontFamily: "var(--font-mono),ui-monospace,monospace", fontSize: "0.82rem", lineHeight: 1.8 }}>
               <div style={{ background: "var(--bgColor-mild)", borderBottom: "1px solid var(--borderColor-default)", padding: "10px 18px", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1828,7 +1604,7 @@ export function LandingPage() {
             <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 12 }}>Pay as you go</h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-muted)", maxWidth: 520, margin: "0 auto", lineHeight: 1.7 }}>Our pricing model lets you pay only for what you use. No minimum commitments. Paused instances only incur storage fees.</p>
           </div>
-          <div className="pricing-table-wrapper" style={{ marginBottom: 32, overflowX: "auto" }}>
+          <div style={{ marginBottom: 32 }}>
             <PricingTable rows={pricing} />
           </div>
           <div style={{ background: "var(--bgColor-default)", border: "1px solid var(--borderColor-default)", borderRadius: 10, padding: "28px 32px" }}>
@@ -1860,14 +1636,14 @@ export function LandingPage() {
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>FAQ</div>
             <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em" }}>Frequently Asked Questions</h2>
           </div>
-          <div className="faq-list" style={{ maxWidth: 780, margin: "0 auto" }}>
+          <div style={{ maxWidth: 780, margin: "0 auto" }}>
             {faqs.map((f, i) => <FAQ key={i} {...f} />)}
           </div>
         </div>
       </section>
 
       {/* ── CTA BANNER ── */}
-      <section className="cta-section" style={{ background: `linear-gradient(135deg, #0e1a3a 0%, #0b0d18 100%)`, padding: "80px 48px", textAlign: "center", position: "relative", overflow: "hidden" }}>
+      <section style={{ background: `linear-gradient(135deg, #0e1a3a 0%, #0b0d18 100%)`, padding: "80px 48px", textAlign: "center", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: -100, left: "50%", transform: "translateX(-50%)", width: 700, height: 400, background: `radial-gradient(ellipse, ${ACCENT_GLOW} 0%, transparent 70%)`, pointerEvents: "none" }} />
         <div style={{ position: "relative" }}>
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Ready to launch your first GPU session?</h2>
@@ -1890,9 +1666,9 @@ export function LandingPage() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer className="footer-section" style={{ borderTop: "1px solid var(--borderColor-default)", padding: "28px 48px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      <footer style={{ borderTop: "1px solid var(--borderColor-default)", padding: "28px 48px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fgColor-default)" }}>LaaS</span>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)" }}>KSRCE AI Lab — Lab as a Service Platform · © 2026</span>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)" }}>KSRCE AI Lab — Lab as a Service Platform · © 2025</span>
         <div style={{ display: "flex", gap: 24 }}>
           {["Privacy", "Terms", "Docs", "Pricing"].map(l => (
             <a key={l} href="#"
@@ -1904,6 +1680,6 @@ export function LandingPage() {
           ))}
         </div>
       </footer>
-    </>
+    </div>
   );
 }

@@ -36,17 +36,14 @@ import { redirect } from "next/navigation";
 
 import { LandingPage } from "@/components/landing/landing-page";
  
-export default function RootPage() {
+export default async function RootPage() {
 
-  const token = cookies().get("accessToken");
+  const token = (await cookies()).get("accessToken");
  
   if (token) {
-
     redirect("/home");
-
   }
  
   return <LandingPage />;
-
 }
  

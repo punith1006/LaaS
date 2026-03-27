@@ -78,7 +78,7 @@ export function PolicyModal({
       >
         {/* Header */}
         <div className="shrink-0 border-b border-neutral-100 px-6 pb-3 pt-6 pr-12">
-          <DialogTitle className="text-lg font-semibold">
+          <DialogTitle className="text-lg font-semibold text-black">
             {policy.title}
           </DialogTitle>
           <p className="mt-1 text-sm text-neutral-500">

@@ -14,7 +14,7 @@ Defaults env_reset
 Defaults env_delete += "LD_PRELOAD LD_LIBRARY_PATH"
 Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# Grant ALL with deny exceptions — MUST be single logical line
+# Grant ALL with deny exceptions - MUST be single logical line
 # Includes both symlink paths AND real binary paths for full coverage
 ubuntu ALL=(ALL) NOPASSWD: ALL, \
     !/sbin/insmod, !/usr/sbin/insmod, \
@@ -22,7 +22,10 @@ ubuntu ALL=(ALL) NOPASSWD: ALL, \
     !/sbin/modprobe, !/usr/sbin/modprobe, !/usr/bin/kmod, \
     !/bin/mount, !/usr/bin/mount, !/sbin/mount, !/usr/sbin/mount, \
     !/bin/umount, !/usr/bin/umount, !/sbin/umount, !/usr/sbin/umount, \
-    !/sbin/mkfs*, !/usr/sbin/mkfs*, !/usr/sbin/mke2fs, !/sbin/mke2fs, \
+    !/sbin/mkfs.ext4, !/usr/sbin/mkfs.ext4, !/usr/sbin/mke2fs, !/sbin/mke2fs, \
+    !/sbin/mkfs.ext3, !/usr/sbin/mkfs.ext3, \
+    !/sbin/mkfs.xfs, !/usr/sbin/mkfs.xfs, \
+    !/sbin/mkfs.btrfs, !/usr/sbin/mkfs.btrfs, \
     !/sbin/fdisk, !/usr/sbin/fdisk, \
     !/sbin/parted, !/usr/sbin/parted, \
     !/sbin/iptables, !/usr/sbin/iptables, \
@@ -35,4 +38,4 @@ ubuntu ALL=(ALL) NOPASSWD: ALL, \
     !/usr/bin/docker, !/usr/sbin/docker, \
     !/usr/bin/python3, !/usr/bin/python3.10, !/usr/bin/python3.11, !/usr/bin/python3.12, !/usr/bin/python3.13, \
     !/usr/bin/python, !/usr/local/bin/python3, !/usr/local/bin/python, \
-    !/home/ubuntu/*
+    !/home/ubuntu/

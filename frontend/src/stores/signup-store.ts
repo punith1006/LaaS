@@ -4,6 +4,17 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PolicySlug } from "@/config/policies";
 
+export interface OnboardingData {
+  profession?: string;
+  expertiseLevel?: string;
+  yearsOfExperience?: number;
+  primaryUseCase?: string;
+  operationalDomains: string[];
+  toolsFrameworks: string[];
+  goalsOther?: string;
+  country?: string;
+}
+
 export interface SignupState {
   email: string;
   password: string;
@@ -11,12 +22,18 @@ export interface SignupState {
   firstName: string;
   lastName: string;
   currentStep: 1 | 2 | 3;
+  onboardingData: OnboardingData;
 }
 
 const initialAgreedPolicies: Record<PolicySlug, boolean> = {
   acceptable_use: false,
   user_content_disclaimer: false,
   console_tos: false,
+};
+
+const initialOnboardingData: OnboardingData = {
+  operationalDomains: [],
+  toolsFrameworks: [],
 };
 
 type SignupActions = {
@@ -27,6 +44,7 @@ type SignupActions = {
   ) => void;
   setStep2: (firstName: string, lastName: string) => void;
   setPolicy: (slug: PolicySlug, agreed: boolean) => void;
+  setOnboardingData: (data: Partial<OnboardingData>) => void;
   reset: () => void;
   hasStep1Data: () => boolean;
   hasEmail: () => boolean;
@@ -39,6 +57,7 @@ const initialState: SignupState = {
   firstName: "",
   lastName: "",
   currentStep: 1,
+  onboardingData: initialOnboardingData,
 };
 
 export const useSignupStore = create<SignupState & SignupActions>()(
@@ -58,6 +77,10 @@ export const useSignupStore = create<SignupState & SignupActions>()(
         set((state) => ({
           agreedPolicies: { ...state.agreedPolicies, [slug]: agreed },
         })),
+      setOnboardingData: (data) =>
+        set((state) => ({
+          onboardingData: { ...state.onboardingData, ...data },
+        })),
       reset: () => set(initialState),
       hasStep1Data: () => {
         const s = get();
@@ -65,6 +88,24 @@ export const useSignupStore = create<SignupState & SignupActions>()(
       },
       hasEmail: () => Boolean(get().email),
     }),
-    { name: "laas-signup", storage: typeof window !== "undefined" ? window.sessionStorage : undefined }
+    {
+      name: "laas-signup",
+      storage: {
+        getItem: (name: string) => {
+          if (typeof window === "undefined") return null;
+          return window.sessionStorage.getItem(name);
+        },
+        setItem: (name: string, value: string) => {
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(name, value);
+          }
+        },
+        removeItem: (name: string) => {
+          if (typeof window !== "undefined") {
+            window.sessionStorage.removeItem(name);
+          }
+        },
+      },
+    } as never
   )
 );

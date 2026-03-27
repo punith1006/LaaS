@@ -44,9 +44,9 @@ export function OtpVerification() {
         lastName,
         agreedPolicies: policiesList,
       });
-      reset();
       toast.success("Account created successfully!");
-      router.push("/dashboard");
+      // Don't reset store - onboarding needs the data. Reset will happen after onboarding completes.
+      router.push("/signup/onboarding");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Verification failed");
     } finally {

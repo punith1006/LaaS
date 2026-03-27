@@ -44,11 +44,9 @@ fi
 if [ ! -e "$HOME/.sudo_as_admin_successful" ] && [ ! -e "$HOME/.hushlogin" ] ; then
     case " $(groups) " in *\ admin\ *|*\ sudo\ *)
     if [ -x /usr/bin/sudo ]; then
-        cat <<-EOF
-        To run a command as administrator (user "root"), use "sudo <command>".
-        See "man sudo_root" for details.
-
-        EOF
+        echo 'To run a command as administrator (user "root"), use "sudo <command>".'
+        echo 'See "man sudo_root" for details.'
+        echo
     fi
     esac
 fi
@@ -70,20 +68,28 @@ if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-no
         }
 fi
 
+# Electron/Chromium apps (VS Code, Chrome, Brave, Slack, etc.)
+# Disable Chromium's internal sandbox — the container IS the sandbox
+export ELECTRON_DISABLE_SANDBOX=1
+
 # LaaS resource interceptors
 # fake_sysconf.so is safe for all programs (KDE RAM display fix)
 # libvgpu.so ONLY for CUDA programs (crashes non-CUDA via dlsym hooks)
-export LD_PRELOAD="/usr/lib/fake_sysconf.so"
-export SYSCONF_INJECTED=1
+if [ -f /usr/lib/fake_sysconf.so ]; then
+    export LD_PRELOAD="/usr/lib/fake_sysconf.so"
+    export SYSCONF_INJECTED=1
+fi
 mkdir -p /tmp/vgpulock 2>/dev/null
 
 # CUDA program wrappers — inject HAMi VRAM/SM enforcement
 # IMPORTANT: space-separated, fake_sysconf FIRST (proven working order from Full_Setup.txt)
 _HAMI_PRELOAD="/usr/lib/fake_sysconf.so /usr/lib/libvgpu.so"
-python3() { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/python3 "$@"; }
-python()  { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/python "$@"; }
-nvcc()    { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/local/cuda/bin/nvcc "$@"; }
-jupyter() { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/jupyter "$@"; }
+if [ -f /usr/lib/libvgpu.so ]; then
+    python3() { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/python3 "$@"; }
+    python()  { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/python "$@"; }
+    nvcc()    { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/local/cuda/bin/nvcc "$@"; }
+    jupyter() { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/jupyter "$@"; }
+fi
 
 # Smart sudo wrapper: strip LD_PRELOAD so system tools dont crash
 sudo() {

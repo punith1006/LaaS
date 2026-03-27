@@ -36,6 +36,15 @@ SELKIES_IMAGE = os.environ.get("SELKIES_IMAGE", "ghcr.io/selkies-project/nvidia-
 NFS_MOUNT_ROOT = os.environ.get("NFS_MOUNT_ROOT", "/mnt/nfs/users")
 RESOURCE_LOCK_PATH = "/tmp/laas-resource-lock"
 
+# Network mode: "bridge" (isolated) or "host" (legacy)
+NETWORK_MODE = os.environ.get("LAAS_NETWORK_MODE", "bridge")
+USER_NETWORK_NAME = os.environ.get("LAAS_USER_NETWORK_NAME", "laas-sessions")
+
+# Internal container ports (for bridge networking - each container uses same internal ports)
+INTERNAL_NGINX_PORT = 8080
+INTERNAL_SELKIES_PORT = 9080
+INTERNAL_METRICS_PORT = 19080
+
 # Port ranges
 NGINX_PORT_MIN, NGINX_PORT_MAX = 8080, 8199
 SELKIES_PORT_OFFSET = 1000  # selkies = nginx + 1000
@@ -48,7 +57,12 @@ DISPLAY_MIN, DISPLAY_MAX = 20, 99
 ALLOCATABLE_CORES = list(range(2, 16))
 
 # TURN server config (can override via env)
-TURN_HOST = os.environ.get("TURN_HOST", "106.51.247.170")
+# NOTE: For bridge networking, TURN_HOST must be an IP reachable from BOTH:
+#   1. The browser (WebRTC client) - for STUN/TURN ICE candidate discovery
+#   2. The container (via laas-sessions network) - for WebRTC relay traffic
+# Using host's public IP may fail from containers on isolated bridge networks;
+# use Tailscale IP (e.g., 100.100.66.101) or ensure iptables allows TURN traffic.
+TURN_HOST = os.environ.get("TURN_HOST", "100.100.66.101")
 TURN_PORT = os.environ.get("TURN_PORT", "3478")
 TURN_USERNAME = os.environ.get("TURN_USERNAME", "selkies")
 TURN_PASSWORD = os.environ.get("TURN_PASSWORD", "wVIAbfwkgkxjaCiZVX4BDsdU")
@@ -417,6 +431,8 @@ def build_docker_command(
     # Container identity
     cmd.extend(["--name", container_name])
     cmd.extend(["--hostname", hostname])
+    # Ensure container hostname resolves (required by sudo)
+    cmd.extend(["--add-host", f"{hostname}:127.0.0.1"])
     
     # Restart policy
     cmd.extend(["--restart", "unless-stopped"])
@@ -428,13 +444,27 @@ def build_docker_command(
     cmd.extend([f"--cpus={vcpu}"])
     cmd.extend([f"--cpuset-cpus={cpuset}"])
     cmd.extend([f"--memory={memory_gb}g"])
-    cmd.extend(["--pids-limit", "512"])
+    cmd.extend(["--pids-limit", "2048"])  # KDE desktop + browser + dev tools need ~500+ PIDs
     
-    # TODO: For production, change to --network=laas-user-network with port publishing
-    # and test --ipc=private (MPS may work via bind-mounted pipes without host IPC)
-    # IPC, network, tmpfs
+    # IPC sharing (required for Selkies WebRTC shared memory and HAMi MPS pipes)
     cmd.append("--ipc=host")
-    cmd.append("--network=host")
+    
+    # Network configuration: bridge (isolated) or host (legacy)
+    # Bridge mode: containers CANNOT access host localhost services (NestJS, Keycloak, etc.)
+    # but CAN reach the internet via Docker NAT (for apt install, pip, etc.)
+    if NETWORK_MODE == "bridge":
+        cmd.append(f"--network={USER_NETWORK_NAME}")
+        # DNS for external hostname resolution (apt install, pip, etc.)
+        cmd.extend(["--dns", "8.8.8.8", "--dns", "8.8.4.4"])
+        # Publish container ports to host — map external ports to fixed internal ports
+        cmd.extend(["-p", f"{nginx_port}:{INTERNAL_NGINX_PORT}"])
+        # Note: selkies_port not published — selkies-gstreamer binds to 127.0.0.1
+        # only inside the container; all WebRTC traffic is proxied through nginx
+        cmd.extend(["-p", f"{metrics_port}:{INTERNAL_METRICS_PORT}"])
+    else:
+        # Fallback: host networking (no isolation, all host services accessible)
+        cmd.append("--network=host")
+    
     cmd.extend(["--tmpfs", "/dev/shm:rw"])
     
     # Security: Drop all capabilities, add only what's needed for sudo + desktop
@@ -467,10 +497,16 @@ def build_docker_command(
     cmd.extend(["-e", "SELKIES_ENABLE_BASIC_AUTH=true"])
     cmd.extend(["-e", f"SELKIES_BASIC_AUTH_PASSWORD={password}"])
     
-    # Ports
-    cmd.extend(["-e", f"NGINX_PORT={nginx_port}"])
-    cmd.extend(["-e", f"SELKIES_PORT={selkies_port}"])
-    cmd.extend(["-e", f"SELKIES_METRICS_HTTP_PORT={metrics_port}"])
+    # Ports: in bridge mode, container listens on fixed internal ports
+    # In host mode, container listens directly on external ports
+    if NETWORK_MODE == "bridge":
+        cmd.extend(["-e", f"NGINX_PORT={INTERNAL_NGINX_PORT}"])
+        cmd.extend(["-e", f"SELKIES_PORT={INTERNAL_SELKIES_PORT}"])
+        cmd.extend(["-e", f"SELKIES_METRICS_HTTP_PORT={INTERNAL_METRICS_PORT}"])
+    else:
+        cmd.extend(["-e", f"NGINX_PORT={nginx_port}"])
+        cmd.extend(["-e", f"SELKIES_PORT={selkies_port}"])
+        cmd.extend(["-e", f"SELKIES_METRICS_HTTP_PORT={metrics_port}"])
     
     # Ubuntu user password
     cmd.extend(["-e", f"PASSWD={password}"])
@@ -535,6 +571,8 @@ def build_docker_command(
     cmd.extend(["-v", "/etc/laas/sudoers:/etc/sudoers:ro"])
     # Sudoers: enable passwordless sudo with deny rules for dangerous operations
     cmd.extend(["-v", "/etc/laas/sudoers-laas-user:/etc/sudoers.d/laas-user:ro"])
+    # Override fakeroot-symlinked sudo with real setuid sudo binary
+    cmd.extend(["-v", "/etc/laas/sudo-bin:/usr/bin/sudo"])
     
     # Volume mounts - lxcfs (fake proc/sys)
     cmd.extend(["-v", "/var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:ro"])

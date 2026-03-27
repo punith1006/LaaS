@@ -24,8 +24,8 @@ export function RightPanelShell({ children, className }: RightPanelShellProps) {
       >
         <X className="h-5 w-5 text-neutral-700" />
       </Link>
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-8 md:px-12">
-        <div className="w-full max-w-sm">{children}</div>
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-8 md:px-12 overflow-y-auto">
+        <div className="w-full max-w-md">{children}</div>
       </div>
     </div>
   );

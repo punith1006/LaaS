@@ -283,17 +283,17 @@ fi
 # ============================================================================
 section_header "Docker Networks"
 
-if docker network ls 2>/dev/null | grep -q "laas-user-network"; then
-    check_pass "laas-user-network Docker bridge exists"
+if docker network ls 2>/dev/null | grep -q "laas-sessions"; then
+    check_pass "laas-sessions Docker bridge exists"
     # Check ICC setting
-    ICC=$(docker network inspect laas-user-network 2>/dev/null | grep -A5 "Options" | grep "icc" | awk -F'"' '{print $4}')
+    ICC=$(docker network inspect laas-sessions 2>/dev/null | grep -A5 "Options" | grep "icc" | awk -F'"' '{print $4}')
     if [ "$ICC" = "false" ]; then
-        check_pass "Inter-container communication disabled on laas-user-network"
+        check_pass "Inter-container communication disabled on laas-sessions"
     else
         check_warn "Inter-container communication may be enabled (should be disabled for isolation)"
     fi
 else
-    check_warn "laas-user-network not found (will be created by deployment script)"
+    check_warn "laas-sessions not found (will be created by deployment script)"
 fi
 
 # ============================================================================
