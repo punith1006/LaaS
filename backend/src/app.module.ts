@@ -11,6 +11,8 @@ import { BillingModule } from './billing/billing.module';
 import { AuditModule } from './audit/audit.module';
 import { ComputeModule } from './compute/compute.module';
 import { UserModule } from './user/user.module';
+import { SupportModule } from './support/support.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { UserModule } from './user/user.module';
     BillingModule,
     ComputeModule,
     UserModule,
+    SupportModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

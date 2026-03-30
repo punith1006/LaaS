@@ -16,6 +16,9 @@ import {
   downloadStorageFile,
   deleteStorageFile,
   getStorageStatus,
+  checkActiveSessions,
+  upgradeStorageVolume,
+  StorageVolumeUpgrade,
 } from "@/lib/api";
 
 // Storage types (from API)
@@ -56,8 +59,13 @@ function formatSize(bytes: number): string {
 export default function StoragePage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  // Active sessions state for delete modal
+  const [activeSessions, setActiveSessions] = useState<{ id: string; instanceName: string; status: string }[]>([]);
+  const [checkingActiveSessions, setCheckingActiveSessions] = useState(false);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [storages, setStorages] = useState<StorageVolume[]>([]);
   const [loadingStorages, setLoadingStorages] = useState(true);
@@ -385,7 +393,18 @@ export default function StoragePage() {
         </div>
         {hasStorage ? (
           <button
-            onClick={() => setShowDeleteModal(true)}
+            onClick={async () => {
+              setCheckingActiveSessions(true);
+              try {
+                const sessionsData = await checkActiveSessions();
+                setActiveSessions(sessionsData.sessions || []);
+              } catch {
+                setActiveSessions([]);
+              } finally {
+                setCheckingActiveSessions(false);
+                setShowDeleteModal(true);
+              }
+            }}
             style={{
               fontFamily: "var(--font-sans)",
               fontSize: "0.875rem",
@@ -604,6 +623,56 @@ export default function StoragePage() {
               </span>
             </div>
           </div>
+          {/* Upgrade Storage Button */}
+          {totalAllocated > 0 && totalAllocated < 10 && (
+            <button
+              onClick={() => setShowUpgradeModal(true)}
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.8125rem",
+                fontWeight: 500,
+                color: "var(--fgColor-default)",
+                backgroundColor: "var(--bgColor-default)",
+                border: "1px solid var(--borderColor-default)",
+                borderRadius: "4px",
+                padding: "0 12px",
+                height: "32px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--bgColor-mild)";
+                e.currentTarget.style.borderColor = "var(--fgColor-muted)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--bgColor-default)";
+                e.currentTarget.style.borderColor = "var(--borderColor-default)";
+              }}
+            >
+              Upgrade Storage
+            </button>
+          )}
+          {/* Already at max - show disabled button */}
+          {totalAllocated >= 10 && (
+            <button
+              disabled
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.8125rem",
+                fontWeight: 500,
+                color: "var(--fgColor-muted)",
+                backgroundColor: "var(--bgColor-default)",
+                border: "1px solid var(--borderColor-muted)",
+                borderRadius: "4px",
+                padding: "0 12px",
+                height: "32px",
+                cursor: "not-allowed",
+                opacity: 0.6,
+              }}
+            >
+              Max Storage
+            </button>
+          )}
         </div>
         {/* Progress Bar */}
         <div
@@ -1159,6 +1228,18 @@ export default function StoragePage() {
         />
       )}
 
+      {/* Upgrade Storage Modal */}
+      {showUpgradeModal && storages[0] && (
+        <UpgradeStorageModal
+          onClose={() => setShowUpgradeModal(false)}
+          onSuccess={(updatedVolume) => {
+            setStorages([updatedVolume as unknown as StorageVolume]);
+            setShowUpgradeModal(false);
+          }}
+          volume={storages[0]}
+        />
+      )}
+
       {/* Delete File Store Modal */}
       {showDeleteModal && (
         <DeleteFileStoreModal
@@ -1166,6 +1247,7 @@ export default function StoragePage() {
           onClose={() => {
             setShowDeleteModal(false);
             setDeleteConfirmText('');
+            setActiveSessions([]);
           }}
           onConfirm={async () => {
             setDeleting(true);
@@ -1175,6 +1257,7 @@ export default function StoragePage() {
               setDeleteConfirmText('');
               setStorages([]);
               setFiles([]);
+              setActiveSessions([]);
               window.location.reload();
             } catch (err: unknown) {
               alert('Delete failed: ' + ((err as Error).message || 'Unknown error'));
@@ -1185,6 +1268,8 @@ export default function StoragePage() {
           confirmText={deleteConfirmText}
           onConfirmTextChange={setDeleteConfirmText}
           isDeleting={deleting}
+          activeSessions={activeSessions}
+          checkingActiveSessions={checkingActiveSessions}
         />
       )}
 
@@ -2382,6 +2467,454 @@ function CreateStorageModal({
   );
 }
 
+// Upgrade Storage Modal Component
+function UpgradeStorageModal({
+  onClose,
+  onSuccess,
+  volume,
+}: {
+  onClose: () => void;
+  onSuccess: (volume: StorageVolumeUpgrade) => void;
+  volume: StorageVolume;
+}) {
+  const [newQuotaGb, setNewQuotaGb] = useState(Math.min(Math.floor(volume.quotaGb) + 1, 10));
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  const currentQuotaGb = Math.floor(volume.quotaGb);
+
+  // Dark mode detection
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains("dark"));
+    };
+    checkDarkMode();
+
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Storage cost: Rs.7 per GB per month
+  const pricePerGbMonth = 7.00;
+  const monthlyEstimate = newQuotaGb * pricePerGbMonth;
+  const hourlyRate = (newQuotaGb * 700) / 730 / 100;
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewQuotaGb(parseInt(e.target.value, 10));
+  };
+
+  const handleUpgrade = async () => {
+    if (newQuotaGb <= currentQuotaGb) {
+      setSubmitError("Please select a size larger than current allocation");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const result = await upgradeStorageVolume(volume.id, newQuotaGb);
+      onSuccess(result);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Upgrade failed";
+      setSubmitError(errorMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Calculate slider background gradient
+  const sliderProgress = ((newQuotaGb - currentQuotaGb - 1) / (10 - currentQuotaGb - 1)) * 100 || 0;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(11, 11, 11, 0.15)",
+          zIndex: 100,
+        }}
+      />
+
+      {/* Modal */}
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "100%",
+          maxWidth: "400px",
+          backgroundColor: "var(--bgColor-default)",
+          border: "1px solid var(--borderColor-default)",
+          borderRadius: "8px",
+          zIndex: 101,
+          overflow: "hidden",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--borderColor-default)",
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "1rem",
+              fontWeight: 600,
+              color: "var(--fgColor-default)",
+              margin: 0,
+            }}
+          >
+            Upgrade File Store
+          </h2>
+        </div>
+
+        <div style={{ padding: "20px" }}>
+          {/* Info Banner */}
+          <div
+            style={{
+              backgroundColor: "#1e40af",
+              borderRadius: "4px",
+              padding: "12px 16px",
+              marginBottom: "20px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#93c5fd"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0, marginTop: "2px" }}
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.8125rem",
+                  color: "#dbeafe",
+                  margin: 0,
+                  lineHeight: 1.5,
+                }}
+              >
+                Upgrade your storage allocation. Your data will be migrated to the new storage with zero downtime.
+                Billing will be adjusted to the new size.
+              </p>
+            </div>
+          </div>
+
+          {/* Name Field (Read-only) */}
+          <div style={{ marginBottom: "20px" }}>
+            <label
+              style={{
+                display: "block",
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.75rem",
+                fontWeight: 500,
+                color: "var(--fgColor-muted)",
+                marginBottom: "8px",
+              }}
+            >
+              Name
+            </label>
+            <input
+              type="text"
+              value={volume.name}
+              readOnly
+              style={{
+                width: "100%",
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.875rem",
+                color: "var(--fgColor-muted)",
+                backgroundColor: "var(--bgColor-muted)",
+                border: "1px solid var(--borderColor-muted)",
+                borderRadius: "4px",
+                padding: "0 12px",
+                height: "40px",
+                outline: "none",
+                boxSizing: "border-box",
+                cursor: "not-allowed",
+              }}
+            />
+          </div>
+
+          {/* Current Size Display */}
+          <div style={{ marginBottom: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  color: "var(--fgColor-muted)",
+                }}
+              >
+                Current Size
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.875rem",
+                  fontWeight: 500,
+                  color: "var(--fgColor-default)",
+                }}
+              >
+                {currentQuotaGb} GB
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  color: "var(--fgColor-muted)",
+                }}
+              >
+                New Size
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "1.25rem",
+                  fontWeight: 600,
+                  color: "var(--fgColor-default)",
+                }}
+              >
+                {newQuotaGb} GB
+              </span>
+            </div>
+          </div>
+
+          {/* Size Slider */}
+          <div style={{ marginBottom: "20px" }}>
+            <input
+              type="range"
+              min={currentQuotaGb + 1}
+              max={10}
+              step={1}
+              value={newQuotaGb}
+              onChange={handleSliderChange}
+              style={{
+                width: "100%",
+                height: "4px",
+                borderRadius: "2px",
+                outline: "none",
+                cursor: "pointer",
+                appearance: "none",
+                WebkitAppearance: "none",
+                background: `linear-gradient(to right, var(--fgColor-info) ${sliderProgress}%, var(--borderColor-muted) ${sliderProgress}%)`,
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "8px" }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  color: "var(--fgColor-muted)",
+                }}
+              >
+                {currentQuotaGb + 1} GB
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  color: "var(--fgColor-muted)",
+                }}
+              >
+                10 GB
+              </span>
+            </div>
+          </div>
+
+          {/* Price Estimate */}
+          <div
+            style={{
+              backgroundColor: "var(--bgColor-muted)",
+              border: "1px solid var(--borderColor-default)",
+              borderRadius: "4px",
+              padding: "12px 16px",
+              marginBottom: "20px",
+              display: "flex",
+              justifyContent: "space-around",
+            }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  color: "var(--fgColor-muted)",
+                  margin: "0 0 4px 0",
+                }}
+              >
+                Monthly
+              </p>
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "var(--fgColor-default)",
+                  margin: 0,
+                }}
+              >
+                Rs.{monthlyEstimate.toFixed(2)}
+              </p>
+            </div>
+            <div
+              style={{
+                width: "1px",
+                backgroundColor: "var(--borderColor-default)",
+              }}
+            />
+            <div style={{ textAlign: "center" }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  color: "var(--fgColor-muted)",
+                  margin: "0 0 4px 0",
+                }}
+              >
+                Hourly
+              </p>
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "var(--fgColor-default)",
+                  margin: 0,
+                }}
+              >
+                Rs.{hourlyRate.toFixed(3)}
+              </p>
+            </div>
+          </div>
+
+          {/* Error Message */}
+          {submitError && (
+            <div
+              style={{
+                backgroundColor: "transparent",
+                border: "1px solid #f85149",
+                borderRadius: "4px",
+                padding: "12px 16px",
+                marginBottom: "16px",
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.8125rem",
+                  color: "#f85149",
+                  margin: 0,
+                }}
+              >
+                {submitError}
+              </p>
+            </div>
+          )}
+
+          {/* Buttons */}
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              justifyContent: "flex-end",
+            }}
+          >
+            <button
+              onClick={onClose}
+              disabled={isSubmitting}
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                color: "var(--fgColor-default)",
+                backgroundColor: "transparent",
+                border: "1px solid var(--borderColor-default)",
+                borderRadius: "4px",
+                padding: "0 16px",
+                height: "36px",
+                cursor: isSubmitting ? "not-allowed" : "pointer",
+                opacity: isSubmitting ? 0.6 : 1,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpgrade}
+              disabled={isSubmitting || newQuotaGb <= currentQuotaGb}
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                color: "var(--fgColor-inverse)",
+                backgroundColor: "var(--fgColor-default)",
+                border: "1px solid var(--fgColor-default)",
+                borderRadius: "4px",
+                padding: "0 16px",
+                height: "36px",
+                cursor: isSubmitting || newQuotaGb <= currentQuotaGb ? "not-allowed" : "pointer",
+                opacity: isSubmitting || newQuotaGb <= currentQuotaGb ? 0.6 : 1,
+                transition: "opacity 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (!isSubmitting && newQuotaGb > currentQuotaGb) {
+                  e.currentTarget.style.opacity = "0.85";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = isSubmitting || newQuotaGb <= currentQuotaGb ? "0.6" : "1";
+              }}
+            >
+              {isSubmitting ? (
+                <>
+                  <div
+                    style={{
+                      width: "12px",
+                      height: "12px",
+                      border: "2px solid var(--fgColor-inverse)",
+                      borderTopColor: "transparent",
+                      borderRadius: "50%",
+                      animation: "spin 1s linear infinite",
+                      display: "inline-block",
+                      marginRight: "6px",
+                    }}
+                  />
+                  Upgrading...
+                </>
+              ) : (
+                "Upgrade Storage"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // Delete File Store Modal Component (Lambda "Utilitarian Minimalism" style)
 function DeleteFileStoreModal({
   volumeName,
@@ -2390,6 +2923,8 @@ function DeleteFileStoreModal({
   confirmText,
   onConfirmTextChange,
   isDeleting,
+  activeSessions,
+  checkingActiveSessions,
 }: {
   volumeName: string;
   onClose: () => void;
@@ -2397,8 +2932,11 @@ function DeleteFileStoreModal({
   confirmText: string;
   onConfirmTextChange: (text: string) => void;
   isDeleting: boolean;
+  activeSessions?: { id: string; instanceName: string; status: string }[];
+  checkingActiveSessions?: boolean;
 }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const hasActiveSessions = activeSessions && activeSessions.length > 0;
 
   // Dark mode detection
   useEffect(() => {
@@ -2413,7 +2951,7 @@ function DeleteFileStoreModal({
     return () => observer.disconnect();
   }, []);
 
-  const isConfirmValid = confirmText.toLowerCase() === 'delete';
+  const isConfirmValid = confirmText.toLowerCase() === 'delete' && !hasActiveSessions;
 
   return (
     <>
@@ -2534,6 +3072,104 @@ function DeleteFileStoreModal({
             immediately.
           </p>
 
+          {/* Active Sessions Warning */}
+          {checkingActiveSessions ? (
+            <div
+              style={{
+                backgroundColor: "#fef3c7",
+                border: "1px solid #f59e0b",
+                borderRadius: "4px",
+                padding: "12px 16px",
+                marginBottom: "24px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+              }}
+            >
+              <div
+                style={{
+                  width: "16px",
+                  height: "16px",
+                  border: "2px solid #f59e0b",
+                  borderTopColor: "transparent",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite",
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.8125rem",
+                  color: "#92400e",
+                }}
+              >
+                Checking for active instances...
+              </span>
+            </div>
+          ) : hasActiveSessions ? (
+            <div
+              style={{
+                backgroundColor: "#fef2f2",
+                border: "1px solid #ef4444",
+                borderRadius: "4px",
+                padding: "12px 16px",
+                marginBottom: "24px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ flexShrink: 0, marginTop: "2px" }}
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <div>
+                  <p
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.8125rem",
+                      color: "#991b1b",
+                      margin: "0 0 8px 0",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Cannot delete storage while instances are running
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.8125rem",
+                      color: "#b91c1c",
+                      margin: "0 0 8px 0",
+                    }}
+                  >
+                    You have {activeSessions.length} active instance{activeSessions.length > 1 ? 's' : ''}: {activeSessions.map(s => s.instanceName).join(', ')}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "0.75rem",
+                      color: "#991b1b",
+                      margin: 0,
+                    }}
+                  >
+                    Please stop all instances first before deleting storage.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {/* Confirmation prompt */}
           <p
             style={{
@@ -2564,11 +3200,12 @@ function DeleteFileStoreModal({
             value={confirmText}
             onChange={(e) => onConfirmTextChange(e.target.value)}
             placeholder="Enter 'delete'"
+            disabled={hasActiveSessions || checkingActiveSessions}
             style={{
               width: "100%",
               fontFamily: "var(--font-sans)",
               fontSize: "0.875rem",
-              color: "var(--fgColor-default)",
+              color: hasActiveSessions || checkingActiveSessions ? "var(--fgColor-muted)" : "var(--fgColor-default)",
               backgroundColor: "transparent",
               border: "1px solid #818178",
               borderRadius: "4px",

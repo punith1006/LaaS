@@ -532,6 +532,77 @@ export async function deleteUserFileStore(): Promise<{ ok: boolean; message?: st
   return { ok: true, message: 'Mock delete successful' };
 }
 
+// Active session check types
+export interface ActiveSession {
+  id: string;
+  instanceName: string;
+  status: string;
+}
+
+export interface ActiveSessionsCheck {
+  hasActiveSessions: boolean;
+  sessionCount: number;
+  sessions: ActiveSession[];
+}
+
+// Check if user has active sessions (blocks storage operations)
+export async function checkActiveSessions(): Promise<ActiveSessionsCheck> {
+  if (API_BASE) {
+    return storageFetch('/api/storage/volumes/active-sessions-check');
+  }
+  // Mock for development
+  return { hasActiveSessions: false, sessionCount: 0, sessions: [] };
+}
+
+// Check host available storage space
+export async function checkHostSpace(): Promise<{ availableGb: number; totalGb: number; availableBytes: number }> {
+  if (API_BASE) {
+    return storageFetch('/api/storage/volumes/host-space-check');
+  }
+  // Mock for development
+  return { availableGb: 45.2, totalGb: 100, availableBytes: 48534556672 };
+}
+
+// Storage upgrade response type
+export interface StorageVolumeUpgrade {
+  id: string;
+  name: string;
+  storageUid: string;
+  quotaGb: number;
+  usedGb: number;
+  status: string;
+  allocationType: string;
+  previousQuotaGb: number;
+  monthlyEstimate: number;
+  hourlyRate: number;
+}
+
+// Upgrade storage volume
+export async function upgradeStorageVolume(
+  volumeId: string,
+  newQuotaGb: number,
+): Promise<StorageVolumeUpgrade> {
+  if (API_BASE) {
+    return storageFetch(`/api/storage/volumes/${volumeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ newQuotaGb }),
+    });
+  }
+  // Mock for development
+  return {
+    id: `mock-${Date.now()}`,
+    name: 'fs1',
+    storageUid: `u_${Date.now().toString(16)}`,
+    quotaGb: newQuotaGb,
+    usedGb: 2.5,
+    status: 'active',
+    allocationType: 'user_created',
+    previousQuotaGb: 5,
+    monthlyEstimate: newQuotaGb * 7.0,
+    hourlyRate: (newQuotaGb * 700) / 730 / 100,
+  };
+}
+
 // Storage status types
 export interface StorageStatus {
   hasStorage: boolean;
@@ -1092,6 +1163,70 @@ export async function getSpendLimitSettings(): Promise<SpendLimitSettings | null
   const res = await apiFetch(`${API_BASE}/api/billing/spend-limit`);
   if (!res.ok) return null;
   return res.json();
+}
+
+// Support Ticket API Types
+export interface SupportTicketRequest {
+  category: string;
+  subject: string;
+  description: string;
+}
+
+export interface SupportTicketResponse {
+  ticketId: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface SupportTicketListItem {
+  id: string;
+  subject: string;
+  category: string;
+  priority: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+// Support Ticket API Functions
+export async function submitSupportTicket(
+  data: SupportTicketRequest
+): Promise<SupportTicketResponse> {
+  if (!getAccessToken()) throw new Error('Not authenticated');
+
+  const res = await apiFetch(`${API_BASE}/api/support/tickets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const msg = Array.isArray(errData.message) ? errData.message[0] : errData.message;
+    throw new Error(msg || 'Failed to submit support ticket');
+  }
+
+  return res.json();
+}
+
+export async function getSupportTickets(): Promise<SupportTicketListItem[]> {
+  if (!getAccessToken()) return [];
+
+  if (API_BASE) {
+    const res = await apiFetch(`${API_BASE}/api/support/tickets/list`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!res.ok) return [];
+    return res.json();
+  }
+  return [];
 }
 
 export async function updateSpendLimit(data: {

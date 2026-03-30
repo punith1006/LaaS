@@ -4,6 +4,14 @@ import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handleba
 import { join } from 'path';
 import { MailService } from './mail.service';
 
+// Custom Handlebars helpers
+const handlebarsHelpers = {
+  eq: (a: unknown, b: unknown) => a === b,
+  ne: (a: unknown, b: unknown) => a !== b,
+  and: (...args: unknown[]) => args.slice(0, -1).every(Boolean),
+  or: (...args: unknown[]) => args.slice(0, -1).some(Boolean),
+};
+
 @Module({
   imports: [
     MailerModule.forRoot({
@@ -21,7 +29,7 @@ import { MailService } from './mail.service';
       },
       template: {
         dir: join(process.cwd(), 'templates'),
-        adapter: new HandlebarsAdapter(),
+        adapter: new HandlebarsAdapter(handlebarsHelpers as Record<string, (...args: unknown[]) => unknown>),
         options: { strict: true },
       },
     }),

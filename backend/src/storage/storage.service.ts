@@ -610,4 +610,121 @@ export class StorageService {
       return { success: false, error: msg };
     }
   }
+
+  /**
+   * Get available host storage space.
+   */
+  async getHostSpace(): Promise<{ availableGb: number; totalGb: number; availableBytes: number } | null> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      this.logger.debug('USER_STORAGE_PROVISION_URL not set, skipping host space check');
+      return null;
+    }
+
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/host-space`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        this.logger.warn(`Host space check failed: ${res.status}`);
+        return null;
+      }
+
+      const data = await res.json() as {
+        availableBytes: number;
+        totalBytes: number;
+        availableGb: number;
+        totalGb: number;
+      };
+
+      return {
+        availableGb: data.availableGb,
+        totalGb: data.totalGb,
+        availableBytes: data.availableBytes,
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Host space check error: ${msg}`);
+      return null;
+    }
+  }
+
+  /**
+   * Upgrade storage quota on the host.
+   */
+  async upgradeStorageQuota(
+    storageUid: string,
+    newQuotaGb: number,
+  ): Promise<{ ok: boolean; previousQuotaGb?: number; newQuotaGb?: number; error?: string }> {
+    const provisionUrl = process.env[URL_ENV];
+    if (!provisionUrl) {
+      return { ok: false, error: 'Storage provisioning URL not configured' };
+    }
+
+    const baseUrl = provisionUrl.replace(/\/provision$/, '');
+    const url = `${baseUrl}/upgrade-storage`;
+    const secret = process.env[SECRET_ENV];
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 min timeout for upgrade
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(secret ? { 'X-Provision-Secret': secret } : {}),
+        },
+        body: JSON.stringify({ storageUid, newQuotaGb }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const data = await res.json() as {
+        ok?: boolean;
+        previousQuotaGb?: number;
+        newQuotaGb?: number;
+        error?: string;
+      };
+
+      if (!res.ok) {
+        const errorMsg = data.error || `Upgrade failed (${res.status})`;
+        this.logger.error(`Storage upgrade failed for storageUid=${storageUid}: ${errorMsg}`);
+        return { ok: false, error: errorMsg };
+      }
+
+      if (!data.ok) {
+        const errorMsg = data.error || 'Upgrade failed';
+        this.logger.error(`Storage upgrade failed for storageUid=${storageUid}: ${errorMsg}`);
+        return { ok: false, error: errorMsg };
+      }
+
+      this.logger.log(`Storage upgraded for storageUid=${storageUid}: ${data.previousQuotaGb}GB -> ${data.newQuotaGb}GB`);
+      return {
+        ok: true,
+        previousQuotaGb: data.previousQuotaGb,
+        newQuotaGb: data.newQuotaGb,
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      const msg = isTimeout
+        ? 'Storage upgrade timed out'
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      this.logger.error(`Storage upgrade failed for storageUid=${storageUid}: ${msg}`);
+      return { ok: false, error: msg };
+    }
+  }
 }

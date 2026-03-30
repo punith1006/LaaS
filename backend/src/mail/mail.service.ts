@@ -97,4 +97,46 @@ export class MailService {
       context,
     });
   }
+
+  // Support Ticket Email Methods
+  async sendSupportTicketAdminNotification(
+    context: {
+      ticketId: string;
+      userName: string;
+      userEmail: string;
+      category: string;
+      priority: string;
+      subject: string;
+      description: string;
+      adminPortalUrl: string;
+    },
+  ): Promise<void> {
+    const adminEmail = process.env.SUPPORT_ADMIN_EMAIL || 'punith.vs74064@gmail.com';
+    await this.mailer.sendMail({
+      to: adminEmail,
+      subject: `[LaaS] New Support Ticket - ${context.subject}`,
+      template: 'support-ticket-admin',
+      context,
+    });
+  }
+
+  async sendSupportTicketConfirmation(
+    to: string,
+    context: {
+      ticketId: string;
+      userName: string;
+      category: string;
+      subject: string;
+      description: string;
+      submittedAt: string;
+      docsUrl: string;
+    },
+  ): Promise<void> {
+    await this.mailer.sendMail({
+      to,
+      subject: `LaaS: We received your support ticket - ${context.subject}`,
+      template: 'support-ticket-confirmation',
+      context,
+    });
+  }
 }

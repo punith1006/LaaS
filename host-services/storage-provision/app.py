@@ -400,6 +400,143 @@ def deprovision():
     return jsonify(ok=True), 200
 
 
+@app.route("/host-space", methods=["GET"])
+def get_host_space():
+    """
+    Return available and total space in the datapool.
+    Public endpoint (no secret required) - called by backend API.
+
+    Response:
+      {
+        "availableBytes": 48534556672,
+        "totalBytes": 107374182400,
+        "availableGb": 45.2,
+        "totalGb": 100.0
+      }
+    """
+    # Get pool space info
+    ok, out = _run_cmd(["zpool", "list", "-p", "-o", "size,free", "datapool"])
+    if not ok:
+        return jsonify(error=f"Failed to get pool space: {out}"), 500
+
+    lines = out.strip().split("\n")
+    if len(lines) < 2:
+        return jsonify(error="Unexpected zpool output format"), 500
+
+    # Parse header and data
+    headers = lines[0].split()
+    values = lines[1].split()
+    size_idx = headers.index("SIZE") if "SIZE" in headers else 0
+    free_idx = headers.index("FREE") if "FREE" in headers else 1
+
+    total_bytes = _parse_zfs_size(values[size_idx])
+    free_bytes = _parse_zfs_size(values[free_idx])
+
+    return jsonify({
+        "availableBytes": free_bytes,
+        "totalBytes": total_bytes,
+        "availableGb": round(free_bytes / (1024 ** 3), 2),
+        "totalGb": round(total_bytes / (1024 ** 3), 2),
+    }), 200
+
+
+@app.route("/upgrade-storage", methods=["POST"])
+def upgrade_storage():
+    """
+    Upgrade storage quota for an existing dataset.
+    Uses zfs set quota= to upgrade - instantaneous and safe.
+
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_...", "newQuotaGb": 10 }
+
+    Returns: { "ok": true, "storageUid": "...", "newQuotaGb": 10 }
+    On error: { "error": "..." }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+
+    storage_uid = data.get("storageUid") or ""
+    new_quota_gb = data.get("newQuotaGb")
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Validate newQuotaGb
+    if not isinstance(new_quota_gb, (int, float)) or not (1 <= new_quota_gb <= 50):
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Invalid newQuotaGb")
+        return jsonify(error="newQuotaGb must be between 1 and 50"), 400
+
+    new_quota_gb = int(new_quota_gb)
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Step 1: Check original dataset exists
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Dataset not found")
+        return jsonify(error="Dataset not found"), 404
+
+    # Step 2: Get current quota
+    ok, current_quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to get current quota")
+        return jsonify(error="Failed to get current quota"), 500
+    
+    current_quota_str = current_quota_str.strip()
+    if current_quota_str.lower() == "none":
+        current_quota_gb = 0
+    else:
+        current_quota_gb = _parse_zfs_size(current_quota_str) / (1024 ** 3)
+
+    if new_quota_gb <= int(current_quota_gb):
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"newQuotaGb must be greater than current ({current_quota_gb}GB)")
+        return jsonify(error=f"newQuotaGb ({new_quota_gb}) must be greater than current quota ({int(current_quota_gb)}GB)"), 400
+
+    # Step 3: Upgrade quota using zfs set (instant and safe!)
+    ok, out = _run_cmd(["sudo", "zfs", "set", f"quota={new_quota_gb}G", dataset], timeout=30)
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Quota update failed: {out}")
+        return jsonify(error=f"Failed to update quota: {out}"), 500
+
+    # Step 4: Verify the new quota
+    ok, verify_quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to verify new quota")
+        return jsonify(error="Failed to verify new quota"), 500
+    
+    verify_quota_str = verify_quota_str.strip()
+    verify_quota_gb = _parse_zfs_size(verify_quota_str) / (1024 ** 3)
+    
+    if abs(verify_quota_gb - new_quota_gb) > 0.1:
+        # Rollback to old quota
+        _run_cmd(["sudo", "zfs", "set", f"quota={int(current_quota_gb)}G", dataset])
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Quota verification failed: expected {new_quota_gb}GB, got {verify_quota_gb}GB")
+        return jsonify(error="Quota verification failed, rolled back to original"), 500
+
+    log_event(request_id, client_ip, storage_uid, "upgrade_success", f"Upgraded from {int(current_quota_gb)}GB to {new_quota_gb}GB")
+    return jsonify({
+        "ok": True,
+        "storageUid": storage_uid,
+        "previousQuotaGb": int(current_quota_gb),
+        "newQuotaGb": new_quota_gb,
+    }), 200
+
+
 def _parse_zfs_size(value: str) -> int:
     """
     Parse a ZFS size string like '24K', '5.23G', '1234567890' into bytes as integer.

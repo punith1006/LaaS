@@ -1647,22 +1647,58 @@ export function LandingPage() {
       </section>
 
       {/* ── CTA BANNER ── */}
-      <section style={{ background: `linear-gradient(135deg, #0e1a3a 0%, #0b0d18 100%)`, padding: "80px 48px", textAlign: "center", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: -100, left: "50%", transform: "translateX(-50%)", width: 700, height: 400, background: `radial-gradient(ellipse, ${ACCENT_GLOW} 0%, transparent 70%)`, pointerEvents: "none" }} />
-        <div style={{ position: "relative" }}>
-          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Ready to launch your first GPU session?</h2>
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "rgba(255,255,255,0.6)", marginBottom: 36, lineHeight: 1.7, maxWidth: 480, margin: "0 auto 36px" }}>Sign up with your university email or institutional SSO and be running model training within 60 seconds.</p>
-          <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+      <section 
+        style={{ 
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#050810", 
+          textAlign: "center", 
+          position: "relative", 
+          overflow: "hidden" 
+        }}
+      >
+        {/* Video Background - Full section cover */}
+        <video
+          src="/Image_Assets/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "center center",
+            zIndex: 0,
+          }}
+        />
+        {/* Gradient Overlay for Text Contrast */}
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          background: "linear-gradient(180deg, rgba(5,8,16,0.9) 0%, rgba(5,8,16,0.6) 40%, rgba(5,8,16,0.6) 60%, rgba(5,8,16,0.9) 100%)",
+          zIndex: 1,
+        }} />
+        {/* Content - Centered */}
+        <div style={{ position: "relative", zIndex: 2, maxWidth: 700 }}>
+          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.2rem, 5vw, 3.8rem)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15, textShadow: "0 4px 30px rgba(0,0,0,0.8)" }}>Ready to launch your first GPU session?</h2>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1rem, 2vw, 1.25rem)", color: "rgba(255,255,255,0.9)", marginBottom: 40, lineHeight: 1.7, maxWidth: 560, margin: "0 auto 40px" }}>Sign up with your university email or institutional SSO and be running model training within 60 seconds.</p>
+          <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
             <Link href="/signup"
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 36px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 8, textDecoration: "none", boxShadow: `0 4px 24px rgba(79,110,247,0.5)`, transition: "all 0.2s" }}
-              onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 700, borderRadius: 10, textDecoration: "none", boxShadow: `0 6px 30px rgba(79,110,247,0.6)`, transition: "all 0.2s" }}
+              onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-3px)"; }}
               onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
               Create Account →
             </Link>
             <Link href="/signin"
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 36px", background: "transparent", color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 500, borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)", textDecoration: "none", transition: "all 0.2s" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = "translateY(0)"; }}>
+              style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: "rgba(255,255,255,0.1)", color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 600, borderRadius: 10, border: "2px solid rgba(255,255,255,0.4)", textDecoration: "none", transition: "all 0.2s" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.transform = "translateY(0)"; }}>
               Sign In
             </Link>
           </div>

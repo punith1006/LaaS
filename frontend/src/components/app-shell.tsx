@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutModal } from "./sign-out-modal";
+import { SupportModal } from "./support/support-modal";
 import { getIdToken, getTokenExpiresIn, getRefreshToken, clearTokens } from "@/lib/token";
 import { getBillingData, getPlatformHealth, PlatformHealth, refreshTokens } from "@/lib/api";
 
@@ -19,6 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
   const [hasActiveInstances, setHasActiveInstances] = useState(false);
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [platformHealth, setPlatformHealth] = useState<PlatformHealth | null>(null);
@@ -474,6 +476,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <line x1="12" y1="17" x2="12.01" y2="17" />
                   </svg>
                 ),
+                onClick: () => setIsSupportModalOpen(true),
               },
               {
                 label: "COMPANY",
@@ -485,11 +488,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                   </svg>
                 ),
+                disabled: true,
               },
-            ].map(({ label, icon }) => (
+            ].map(({ label, icon, onClick, disabled }) => (
               <button
                 key={label}
-                disabled
+                onClick={onClick}
+                disabled={disabled}
                 style={{
                   width: "100%",
                   display: "flex",
@@ -499,7 +504,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   padding: "0 16px",
                   background: "transparent",
                   border: "none",
-                  cursor: "default",
+                  cursor: disabled ? "default" : "pointer",
                   fontFamily: "var(--font-sans)",
                   fontSize: "var(--text-base)",
                   fontWeight: 400,
@@ -507,6 +512,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   letterSpacing: "var(--tracking-label)",
                   color: "var(--fgColor-default)",
                   textAlign: "left",
+                  opacity: disabled ? 0.5 : 1,
                 }}
               >
                 <span style={{ flexShrink: 0 }}>{icon}</span>
@@ -546,6 +552,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onClose={() => setIsSignOutModalOpen(false)}
         onConfirm={performSignOut}
         hasActiveInstances={hasActiveInstances}
+      />
+
+      {/* Support modal */}
+      <SupportModal
+        isOpen={isSupportModalOpen}
+        onClose={() => setIsSupportModalOpen(false)}
       />
     </div>
   );

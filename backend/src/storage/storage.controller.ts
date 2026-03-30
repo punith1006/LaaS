@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Body,
@@ -37,6 +38,13 @@ export class CreateStorageVolumeDto {
   @Min(MIN_QUOTA_GB)
   @Max(MAX_QUOTA_GB)
   quotaGb: number;
+}
+
+export class UpgradeStorageVolumeDto {
+  @IsInt()
+  @Min(MIN_QUOTA_GB + 1)
+  @Max(MAX_QUOTA_GB)
+  newQuotaGb: number;
 }
 
 interface StorageVolumeRow {
@@ -694,5 +702,194 @@ export class StorageController {
     // 3. Remove container mounts
 
     return { success: true };
+  }
+
+  /**
+   * Check if user has active sessions that would block storage operations.
+   */
+  @Get('volumes/active-sessions-check')
+  @HttpCode(HttpStatus.OK)
+  async checkActiveSessions(@Req() req: { user: { id: string } }) {
+    const userId = req.user.id;
+
+    // Find active sessions with stateful storage
+    const sessions = await this.prisma.$queryRaw<{ id: string; instance_name: string | null; status: string }[]>`
+      SELECT id, instance_name, status
+      FROM sessions
+      WHERE user_id = ${userId}::uuid
+        AND storage_mode = 'stateful'
+        AND status IN ('running', 'starting', 'reconnecting')
+    `;
+
+    return {
+      hasActiveSessions: sessions.length > 0,
+      sessionCount: sessions.length,
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        instanceName: s.instance_name || 'Unnamed Instance',
+        status: s.status,
+      })),
+    };
+  }
+
+  /**
+   * Check available host storage space.
+   */
+  @Get('volumes/host-space-check')
+  @HttpCode(HttpStatus.OK)
+  async checkHostSpace() {
+    const spaceInfo = await this.storageService.getHostSpace();
+
+    if (!spaceInfo) {
+      throw new ServiceUnavailableException('Unable to check host storage space');
+    }
+
+    return spaceInfo;
+  }
+
+  /**
+   * Upgrade storage volume quota.
+   */
+  @Patch('volumes/:id')
+  @HttpCode(HttpStatus.OK)
+  async upgradeVolume(
+    @Param('id') id: string,
+    @Body() dto: UpgradeStorageVolumeDto,
+    @Req() req: FastifyRequest & { user: { id: string; email: string } },
+  ) {
+    const userId = req.user.id;
+    const { newQuotaGb } = dto;
+
+    // 1. Find the volume and verify ownership
+    const volumes = await this.prisma.$queryRaw<StorageVolumeRow[]>`
+      SELECT id, name, storage_uid, quota_bytes, used_bytes, status
+      FROM user_storage_volumes
+      WHERE id = ${id}::uuid AND user_id = ${userId}::uuid AND status = 'active'
+      LIMIT 1
+    `;
+
+    if (volumes.length === 0) {
+      throw new NotFoundException('Storage volume not found');
+    }
+
+    const volume = volumes[0];
+    const currentQuotaGb = Number(volume.quota_bytes) / (1024 * 1024 * 1024);
+
+    // 2. Validate upgrade request
+    if (newQuotaGb <= currentQuotaGb) {
+      throw new BadRequestException(
+        `New size must be greater than current size (${Math.floor(currentQuotaGb)}GB)`,
+      );
+    }
+
+    if (newQuotaGb > MAX_QUOTA_GB) {
+      throw new BadRequestException(`Maximum storage size is ${MAX_QUOTA_GB}GB`);
+    }
+
+    // 3. Check for active sessions
+    const activeSessions = await this.prisma.$queryRaw<{ instance_name: string | null }[]>`
+      SELECT instance_name
+      FROM sessions
+      WHERE user_id = ${userId}::uuid
+        AND storage_mode = 'stateful'
+        AND status IN ('running', 'starting', 'reconnecting')
+    `;
+
+    if (activeSessions.length > 0) {
+      const names = activeSessions.map((s) => s.instance_name || 'Unnamed Instance').join(', ');
+      throw new BadRequestException(
+        `Cannot upgrade while instances are running: ${names}. Please stop all instances first.`,
+      );
+    }
+
+    // 4. Check host space availability
+    const spaceInfo = await this.storageService.getHostSpace();
+    if (spaceInfo) {
+      const requiredGb = newQuotaGb - Math.floor(currentQuotaGb);
+      if (spaceInfo.availableGb < requiredGb) {
+        throw new BadRequestException(
+          `Insufficient host storage space. Available: ${spaceInfo.availableGb.toFixed(1)}GB, Required: ${requiredGb}GB`,
+        );
+      }
+    }
+
+    // 5. Perform ZFS upgrade on host
+    const upgradeResult = await this.storageService.upgradeStorageQuota(volume.storage_uid, newQuotaGb);
+
+    if (!upgradeResult.ok) {
+      throw new InternalServerErrorException(
+        `Storage upgrade failed: ${upgradeResult.error}. Your storage is unchanged.`,
+      );
+    }
+
+    // 6. Update database in transaction
+    const newQuotaBytes = BigInt(newQuotaGb) * BigInt(1024) ** BigInt(3);
+    const previousQuotaBytes = volume.quota_bytes;
+    const extensionBytes = newQuotaBytes - previousQuotaBytes;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Create extension record
+      await tx.$executeRaw`
+        INSERT INTO storage_extensions (id, user_id, storage_volume_id, extension_type, previous_quota_bytes, new_quota_bytes, extension_bytes, amount_cents, currency, created_at)
+        VALUES (
+          gen_random_uuid()::uuid,
+          ${userId}::uuid,
+          ${volume.id}::uuid,
+          'user_upgrade',
+          ${previousQuotaBytes},
+          ${newQuotaBytes},
+          ${extensionBytes},
+          0,
+          'INR',
+          NOW()
+        )
+      `;
+
+      // Update volume quota
+      await tx.$executeRaw`
+        UPDATE user_storage_volumes
+        SET quota_bytes = ${newQuotaBytes}, updated_at = NOW()
+        WHERE id = ${volume.id}::uuid
+      `;
+    });
+
+    // 7. Audit log
+    try {
+      await this.auditService.log({
+        userId,
+        action: 'filestore.upgrade',
+        category: 'storage',
+        status: 'success',
+        details: {
+          volumeId: volume.id,
+          name: volume.name,
+          storageUid: volume.storage_uid,
+          previousQuotaGb: Math.floor(currentQuotaGb),
+          newQuotaGb,
+        },
+        ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+        userAgent: req.headers?.['user-agent'] || undefined,
+      });
+    } catch {
+      // Don't let audit failures break the main flow
+    }
+
+    // 8. Calculate billing info
+    const pricePerGbMonth = 7.00;
+    const monthlyEstimate = newQuotaGb * pricePerGbMonth;
+    const hourlyRate = (newQuotaGb * 700) / 730 / 100;
+
+    return {
+      id: volume.id,
+      name: volume.name,
+      storageUid: volume.storage_uid,
+      quotaGb: newQuotaGb,
+      usedGb: Number(volume.used_bytes) / (1024 * 1024 * 1024),
+      status: 'active',
+      allocationType: 'user_created',
+      previousQuotaGb: Math.floor(currentQuotaGb),
+      monthlyEstimate,
+      hourlyRate,
+    };
   }
 }
