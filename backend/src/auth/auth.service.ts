@@ -32,7 +32,10 @@ export class AuthService {
     private auditService: AuditService,
   ) {}
 
-  async checkEmail(email: string): Promise<void> {
+  async checkEmail(email: string): Promise<{
+    available: true;
+    institution?: { name: string; shortName: string | null; slug: string };
+  }> {
     const normalised = email.toLowerCase();
 
     const existing = await this.prisma.user.findFirst({
@@ -42,6 +45,32 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
+
+    // Domain-based institution detection
+    const domain = '@' + normalised.split('@')[1];
+    const matchedUniversity = await this.prisma.university.findFirst({
+      where: {
+        domainSuffixes: { has: domain },
+        isActive: true,
+        deletedAt: null,
+      },
+      select: {
+        name: true,
+        shortName: true,
+        slug: true,
+      },
+    });
+
+    return {
+      available: true,
+      institution: matchedUniversity
+        ? {
+            name: matchedUniversity.name,
+            shortName: matchedUniversity.shortName,
+            slug: matchedUniversity.slug,
+          }
+        : undefined,
+    };
   }
 
   async sendOtp(email: string): Promise<void> {
@@ -132,23 +161,56 @@ export class AuthService {
       data: { usedAt: new Date() },
     });
 
-    const publicOrg = await this.prisma.organization.findFirst({
-      where: { slug: 'public' },
+    // --- Domain-based institution detection ---
+    const domain = '@' + normalised.split('@')[1];
+
+    const matchedUniversity = await this.prisma.university.findFirst({
+      where: {
+        domainSuffixes: { has: domain },
+        isActive: true,
+        deletedAt: null,
+      },
+      include: {
+        organizations: {
+          where: { isActive: true, deletedAt: null },
+          take: 1,
+        },
+      },
     });
-    if (!publicOrg) {
-      throw new BadRequestException('Public organization not seeded');
+
+    const isInstitutionSignup = !!matchedUniversity && matchedUniversity.organizations.length > 0;
+
+    let authType: string;
+    let defaultOrgId: string;
+    let roleName: string;
+    let storageUid: string | null = null;
+
+    if (isInstitutionSignup) {
+      authType = 'institution_local';
+      defaultOrgId = matchedUniversity!.organizations[0].id;
+      roleName = 'student';
+      storageUid = 'u_' + randomBytes(12).toString('hex');
+    } else {
+      const publicOrg = await this.prisma.organization.findFirst({
+        where: { slug: 'public' },
+      });
+      if (!publicOrg) {
+        throw new BadRequestException('Public organization not seeded');
+      }
+      authType = 'public_local';
+      defaultOrgId = publicOrg.id;
+      roleName = 'public_user';
     }
 
-    const publicUserRole = await this.prisma.role.findFirst({
-      where: { name: 'public_user' },
+    const role = await this.prisma.role.findFirst({
+      where: { name: roleName },
     });
-    if (!publicUserRole) {
-      throw new BadRequestException('Public user role not seeded');
+    if (!role) {
+      throw new BadRequestException(`${roleName} role not seeded`);
     }
 
     const passwordHash = await bcrypt.hash(payload.password, SALT_ROUNDS);
 
-    // Local/public users do not get a storageUid. Storage is reserved for institution SSO only.
     const user = await this.prisma.user.create({
       data: {
         email: normalised,
@@ -156,17 +218,19 @@ export class AuthService {
         passwordHash,
         firstName: payload.firstName,
         lastName: payload.lastName,
-        authType: 'public_local',
-        defaultOrgId: publicOrg.id,
+        authType,
+        defaultOrgId,
         isActive: true,
+        storageUid,
+        storageProvisioningStatus: isInstitutionSignup ? 'pending' : null,
       },
     });
 
     await this.prisma.userOrgRole.create({
       data: {
         userId: user.id,
-        organizationId: publicOrg.id,
-        roleId: publicUserRole.id,
+        organizationId: defaultOrgId,
+        roleId: role.id,
       },
     });
 
@@ -182,6 +246,68 @@ export class AuthService {
     }
 
     await this.mail.sendWelcomeEmail(user.email, user.firstName);
+
+    // --- Storage provisioning for institution signup (10GB) ---
+    if (isInstitutionSignup && storageUid) {
+      const INSTITUTION_QUOTA_GB = 10;
+      const result = await this.storage.provisionUserQuota(storageUid, user.id, INSTITUTION_QUOTA_GB);
+
+      if (result.ok) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            storageProvisioningStatus: 'provisioned',
+            storageProvisionedAt: new Date(),
+            storageProvisioningError: null,
+          },
+        });
+
+        // Create UserStorageVolume record
+        const quotaBytes = BigInt(INSTITUTION_QUOTA_GB) * BigInt(1024) ** BigInt(3);
+        const zfsDatasetPath = `datapool/users/${storageUid}`;
+        const nfsExportPath = `/mnt/nfs/users/${storageUid}`;
+
+        await this.prisma.$queryRaw`
+          INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at, price_per_gb_cents_month)
+          VALUES (
+            gen_random_uuid()::uuid,
+            ${user.id}::uuid,
+            'default',
+            ${storageUid},
+            ${zfsDatasetPath},
+            ${nfsExportPath},
+            'ubuntu22',
+            ${quotaBytes},
+            0::bigint,
+            'institution_signup',
+            'active',
+            NOW(),
+            NOW(),
+            NOW(),
+            0
+          )
+        `;
+      } else {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            storageProvisioningStatus: 'failed',
+            storageProvisioningError: result.error ?? 'Unknown error',
+          },
+        });
+      }
+
+      // Auto-set college name in UserProfile
+      await this.prisma.userProfile.upsert({
+        where: { userId: user.id },
+        update: { collegeName: matchedUniversity!.name },
+        create: {
+          userId: user.id,
+          collegeName: matchedUniversity!.name,
+          isOnboardingComplete: false,
+        },
+      });
+    }
 
     return this.issueTokens(user);
   }

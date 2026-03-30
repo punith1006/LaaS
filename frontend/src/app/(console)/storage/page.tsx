@@ -96,6 +96,7 @@ export default function StoragePage() {
   // Live storage usage from ZFS (fetched via billing endpoint)
   const [liveUsedGb, setLiveUsedGb] = useState<number | null>(null);
   const [liveUsagePercent, setLiveUsagePercent] = useState<number | null>(null);
+  const [creditBalance, setCreditBalance] = useState<number>(0);
 
   // Calculate totals - prefer live ZFS data over DB-cached values
   const totalAllocated = storages.reduce((sum, s) => sum + s.quotaGb, 0);
@@ -120,6 +121,7 @@ export default function StoragePage() {
         if (billing) {
           setLiveUsedGb(billing.storageUsedGb);
           setLiveUsagePercent(billing.storageUsagePercent);
+          setCreditBalance(billing.creditBalance);
         }
       } catch (error) {
         console.error("Failed to fetch live storage usage:", error);
@@ -247,6 +249,7 @@ export default function StoragePage() {
       if (billing) {
         setLiveUsedGb(billing.storageUsedGb);
         setLiveUsagePercent(billing.storageUsagePercent);
+        setCreditBalance(billing.creditBalance);
       }
     } catch (error) {
       console.error('Failed to refresh usage:', error);
@@ -1152,6 +1155,7 @@ export default function StoragePage() {
         <CreateStorageModal
           onClose={() => setIsCreateModalOpen(false)}
           onSuccess={handleStorageCreated}
+          creditBalance={creditBalance}
         />
       )}
 
@@ -1709,9 +1713,11 @@ function NewFolderModal({
 function CreateStorageModal({
   onClose,
   onSuccess,
+  creditBalance,
 }: {
   onClose: () => void;
   onSuccess: (volume: StorageVolume) => void;
+  creditBalance: number;
 }) {
   const [name, setName] = useState("");
   const [sizeGb, setSizeGb] = useState(5);
@@ -1791,12 +1797,18 @@ function CreateStorageModal({
     return `${gb} GB`;
   };
 
+  // Storage cost: Rs.7 per GB per month
+  const STORAGE_COST_PER_GB_PER_MONTH = 7;
+  const estimatedMonthlyCost = sizeGb * STORAGE_COST_PER_GB_PER_MONTH;
+  const hasEnoughCredits = creditBalance >= estimatedMonthlyCost;
+
   const isValid =
     name.trim().length > 0 &&
     !nameError &&
     !nameChecking &&
     sizeGb >= 5 &&
-    sizeGb <= 10;
+    sizeGb <= 10 &&
+    hasEnoughCredits;
 
   const handleSubmit = async () => {
     if (!isValid || isSubmitting) return;
@@ -2170,6 +2182,70 @@ function CreateStorageModal({
               </div>
             </div>
           </div>
+
+          {/* Insufficient Credits Warning */}
+          {!hasEnoughCredits && (
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                padding: "12px 16px",
+                marginTop: "16px",
+                backgroundColor: isDarkMode ? "rgba(231, 103, 66, 0.08)" : "rgba(231, 103, 66, 0.06)",
+                border: `1px solid ${isDarkMode ? "#ff6742" : "#e70000"}`,
+                borderRadius: "4px",
+              }}
+            >
+              <span style={{ color: isDarkMode ? "#ff6742" : "#e70000", flexShrink: 0, marginTop: "2px" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+              </span>
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.875rem",
+                    fontWeight: 500,
+                    color: isDarkMode ? "#ff6742" : "#e70000",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Insufficient credits
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.8125rem",
+                    color: "var(--fgColor-default)",
+                    lineHeight: "1.4",
+                  }}
+                >
+                  Estimated cost: <strong>₹{estimatedMonthlyCost}/month</strong> for {sizeGb} GB.
+                  You have <strong>₹{creditBalance.toFixed(2)}</strong> available.
+                  {" "}
+                  <a
+                    href="/billing"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onClose();
+                      window.location.href = "/billing";
+                    }}
+                    style={{
+                      color: isDarkMode ? "#6c9aff" : "#3a73ff",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Add credits
+                  </a>
+                  {" "}to continue.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Submit error */}
           {submitError && (

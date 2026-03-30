@@ -130,6 +130,39 @@ async function main() {
     update: {},
   });
 
+  // Seed KSRCE University
+  const ksrceUniversity = await prisma.university.upsert({
+    where: { slug: 'ksrce' },
+    update: {},
+    create: {
+      name: 'K.S. Rangasamy College of Engineering',
+      shortName: 'KSRCE',
+      slug: 'ksrce',
+      domainSuffixes: ['@ksrc.in'],
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+      isActive: true,
+    },
+  });
+
+  // Seed KSRCE Organization (linked to University)
+  const ksrceOrg = await prisma.organization.upsert({
+    where: { slug: 'ksrce' },
+    update: {},
+    create: {
+      name: 'KSRCE',
+      slug: 'ksrce',
+      orgType: 'university',
+      universityId: ksrceUniversity.id,
+      isActive: true,
+    },
+  });
+
+  console.log('Seeded KSRCE university and organization:', {
+    universityId: ksrceUniversity.id,
+    orgId: ksrceOrg.id,
+  });
+
   // Seed GPU compute configs
   for (const config of COMPUTE_CONFIGS) {
     await prisma.computeConfig.upsert({

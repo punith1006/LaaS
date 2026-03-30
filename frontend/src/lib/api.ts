@@ -116,7 +116,16 @@ export async function signIn(
   return mock;
 }
 
-export async function checkEmail(email: string): Promise<void> {
+export interface CheckEmailResponse {
+  available: boolean;
+  institution?: {
+    name: string;
+    shortName: string | null;
+    slug: string;
+  };
+}
+
+export async function checkEmail(email: string): Promise<CheckEmailResponse> {
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/api/auth/check-email`, {
       method: "POST",
@@ -128,9 +137,10 @@ export async function checkEmail(email: string): Promise<void> {
       const msg = Array.isArray(data.message) ? data.message[0] : data.message;
       throw new Error(msg || "Email validation failed");
     }
-    return;
+    return res.json();
   }
   await delay(400);
+  return { available: true };
 }
 
 export async function sendOtp(email: string): Promise<void> {

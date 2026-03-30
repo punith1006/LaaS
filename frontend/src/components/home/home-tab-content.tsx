@@ -437,8 +437,8 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
       {/* Low Runway Warning */}
       {billingData?.runway !== null && billingData?.runway !== undefined && billingData.runway <= 1 && (
         <div style={{
-          backgroundColor: "#FEF3C7",
-          border: "1px solid #F59E0B",
+          backgroundColor: "rgba(245, 158, 11, 0.08)",
+          border: "1px solid rgba(245, 158, 11, 0.3)",
           borderRadius: "4px",
           padding: "16px",
           marginBottom: "24px",
@@ -448,7 +448,7 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
         }}>
           <div style={{ flexShrink: 0, marginTop: "2px" }}>
             {/* Orange warning triangle icon - 20x20, strokeWidth 1.5 */}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
               <line x1="12" y1="9" x2="12" y2="13" />
               <line x1="12" y1="17" x2="12.01" y2="17" />
@@ -460,14 +460,14 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
               fontWeight: 600,
               textTransform: "uppercase" as const,
               letterSpacing: "0.06em",
-              color: "#D97706",
+              color: "#F59E0B",
               marginBottom: "4px",
             }}>
               LOW RUNWAY
             </div>
             <p style={{
               fontSize: "0.875rem",
-              color: "#92400E",
+              color: "rgba(245, 158, 11, 0.7)",
               margin: 0,
               lineHeight: 1.5,
             }}>

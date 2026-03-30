@@ -15,6 +15,12 @@ export interface OnboardingData {
   country?: string;
 }
 
+export interface InstitutionInfo {
+  name: string;
+  shortName: string | null;
+  slug: string;
+}
+
 export interface SignupState {
   email: string;
   password: string;
@@ -23,6 +29,7 @@ export interface SignupState {
   lastName: string;
   currentStep: 1 | 2 | 3;
   onboardingData: OnboardingData;
+  institution: InstitutionInfo | null;
 }
 
 const initialAgreedPolicies: Record<PolicySlug, boolean> = {
@@ -45,6 +52,7 @@ type SignupActions = {
   setStep2: (firstName: string, lastName: string) => void;
   setPolicy: (slug: PolicySlug, agreed: boolean) => void;
   setOnboardingData: (data: Partial<OnboardingData>) => void;
+  setInstitution: (institution: InstitutionInfo | null) => void;
   reset: () => void;
   hasStep1Data: () => boolean;
   hasEmail: () => boolean;
@@ -58,6 +66,7 @@ const initialState: SignupState = {
   lastName: "",
   currentStep: 1,
   onboardingData: initialOnboardingData,
+  institution: null,
 };
 
 export const useSignupStore = create<SignupState & SignupActions>()(
@@ -81,6 +90,7 @@ export const useSignupStore = create<SignupState & SignupActions>()(
         set((state) => ({
           onboardingData: { ...state.onboardingData, ...data },
         })),
+      setInstitution: (institution) => set({ institution }),
       reset: () => set(initialState),
       hasStep1Data: () => {
         const s = get();

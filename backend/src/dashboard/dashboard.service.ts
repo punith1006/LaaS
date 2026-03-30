@@ -332,9 +332,9 @@ export class DashboardService {
     `;
 
     // Filter out SSO default volumes (5GB free for SSO students)
-    // Only charge for 'user_created' or 'purchased' volumes
+    // Also exclude institution_signup volumes (free for institution students)
     const chargeableVolumes = activeVolumes.filter(
-      (v) => v.allocation_type !== 'sso_default',
+      (v) => v.allocation_type !== 'sso_default' && v.allocation_type !== 'institution_signup',
     );
 
     // Calculate storage hourly rate (in paise/cents per hour)

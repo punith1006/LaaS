@@ -378,7 +378,8 @@ def deprovision():
             return jsonify(error=nfs_err), 500
 
     # Destroy ZFS dataset (30s timeout for large datasets)
-    ok, out = _run_cmd(["sudo", "zfs", "destroy", dataset], timeout=30)
+    # Use -f flag to force unmount and destroy even with snapshots
+    ok, out = _run_cmd(["sudo", "zfs", "destroy", "-f", dataset], timeout=30)
     if not ok:
         log_event(request_id, client_ip, storage_uid, "deprovision_failed", f"zfs destroy failed: {out}")
         return jsonify(error=f"Failed to destroy dataset: {out}"), 500

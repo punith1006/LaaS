@@ -23,9 +23,9 @@ export class AuthController {
   constructor(private auth: AuthService) {}
 
   @Post('check-email')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   async checkEmail(@Body() dto: CheckEmailDto) {
-    await this.auth.checkEmail(dto.email);
+    return this.auth.checkEmail(dto.email);
   }
 
   @Post('send-otp')

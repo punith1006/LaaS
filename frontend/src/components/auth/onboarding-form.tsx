@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { FooterLinks } from "@/components/auth/footer-links";
 import { useSignupStore } from "@/stores/signup-store";
-import { saveOnboardingProfile } from "@/lib/api";
+import { saveOnboardingProfile, getMe } from "@/lib/api";
 import { Check, ChevronRight, ChevronLeft, Cpu, FlaskConical, BookOpen, Code, Layers, Lightbulb, PenTool, Film, Gamepad2, Building, Beaker, GraduationCap } from "lucide-react";
 
 // ============================================
@@ -191,6 +191,32 @@ export function OnboardingForm() {
       router.replace("/signup");
     }
   }, [hasEmail, router]);
+
+  // Pre-fill form for institution students
+  useEffect(() => {
+    const prefillForInstitutionUser = async () => {
+      // Only pre-fill if fields are empty (not already set from store)
+      if (profession || country) return;
+
+      try {
+        const user = await getMe();
+        if (user?.authType === 'institution_local' || user?.authType === 'university_sso') {
+          // Pre-select profession as "student" for institution users
+          if (!profession) {
+            setProfession('student');
+          }
+          // Pre-select country as "IN" for institution users
+          if (!country) {
+            setCountry('IN');
+          }
+        }
+      } catch {
+        // Silently ignore - user might not be authenticated yet
+      }
+    };
+
+    prefillForInstitutionUser();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll to top on step change
   useEffect(() => {

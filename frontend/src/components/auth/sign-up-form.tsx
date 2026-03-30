@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -19,7 +19,7 @@ import { PolicyModal } from "@/components/auth/policy-modal";
 import { registerStep1Schema, type RegisterStep1Input } from "@/lib/validations";
 import { useSignupStore } from "@/stores/signup-store";
 import { POLICY_SLUGS, type PolicySlug } from "@/config/policies";
-import { checkEmail } from "@/lib/api";
+import { checkEmail, type CheckEmailResponse } from "@/lib/api";
 
 export function SignUpForm() {
   const router = useRouter();
@@ -27,7 +27,7 @@ export function SignUpForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [policyModalSlug, setPolicyModalSlug] = useState<PolicySlug | null>(null);
 
-  const { setStep1, agreedPolicies, setPolicy } = useSignupStore();
+  const { setStep1, agreedPolicies, setPolicy, setInstitution } = useSignupStore();
 
   const {
     register,
@@ -40,10 +40,18 @@ export function SignUpForm() {
   });
 
   const password = watch("password", "");
+  const emailValue = watch("email", "");
+
+  // Clear institution state when email changes
+  useEffect(() => {
+    setDetectedInstitution(null);
+    setInstitution(null);
+  }, [emailValue]);
 
   const allPoliciesAgreed = POLICY_SLUGS.every((s) => agreedPolicies[s]);
   const [showPolicyErrors, setShowPolicyErrors] = useState(false);
   const policyErrorMsg = "You must agree to the terms and conditions to continue.";
+  const [detectedInstitution, setDetectedInstitution] = useState<{ name: string; shortName: string | null; slug: string } | null>(null);
 
   const onSubmit = async (data: RegisterStep1Input) => {
     if (!allPoliciesAgreed) {
@@ -54,7 +62,14 @@ export function SignUpForm() {
     setShowPolicyErrors(false);
     setIsLoading(true);
     try {
-      await checkEmail(data.email);
+      const result = await checkEmail(data.email);
+      if (result?.institution) {
+        setDetectedInstitution(result.institution);
+        setInstitution(result.institution);
+      } else {
+        setDetectedInstitution(null);
+        setInstitution(null);
+      }
       setStep1(data.email, data.password, agreedPolicies);
       router.push("/signup/details");
     } catch (e) {
@@ -88,6 +103,26 @@ export function SignUpForm() {
           />
           {errors.email && (
             <p className="text-sm text-red-500">{errors.email.message}</p>
+          )}
+          {detectedInstitution && (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "8px 12px",
+              backgroundColor: "#F0FDF4",
+              border: "1px solid #BBF7D0",
+              borderRadius: "4px",
+              marginTop: "8px",
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              <span style={{ fontSize: "0.8125rem", color: "#16a34a", fontWeight: 500 }}>
+                Recognized as {detectedInstitution.shortName || detectedInstitution.name} student
+              </span>
+            </div>
           )}
         </div>
 

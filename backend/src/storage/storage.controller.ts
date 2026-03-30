@@ -426,14 +426,20 @@ export class StorageController {
       );
     }
 
-    // Check for duplicate name using raw SQL
-    const existing = await this.prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM user_storage_volumes
-      WHERE user_id = ${userId}::uuid AND name = ${trimmedName} AND status != 'wiped'
+    // Check for existing volume with same name (including wiped records)
+    // The unique constraint is on (user_id, name) regardless of status
+    const existing = await this.prisma.$queryRaw<{ id: string; status: string }[]>`
+      SELECT id, status FROM user_storage_volumes
+      WHERE user_id = ${userId}::uuid AND name = ${trimmedName}
       LIMIT 1
     `;
 
     if (existing.length > 0) {
+      if (existing[0].status === 'wiped') {
+        throw new BadRequestException(
+          `A storage volume named '${trimmedName}' was previously created and deleted. Please use a different name.`,
+        );
+      }
       throw new BadRequestException('A storage volume with this name already exists');
     }
 

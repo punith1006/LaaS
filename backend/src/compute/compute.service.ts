@@ -2517,7 +2517,7 @@ export class ComputeService {
       where: {
         userId,
         status: 'active',
-        storageUid: { not: 'sso_default' },
+        allocationType: { notIn: ['sso_default', 'institution_signup'] },
       },
       select: { quotaBytes: true, pricePerGbCentsMonth: true },
     });

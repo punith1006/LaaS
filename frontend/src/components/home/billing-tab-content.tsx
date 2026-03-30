@@ -1384,8 +1384,8 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                   style={{
                     flex: 1,
                     minWidth: "140px",
-                    backgroundColor: "#FFFBEB",
-                    border: "1px solid #F59E0B",
+                    backgroundColor: "rgba(245, 158, 11, 0.08)",
+                    border: "1px solid rgba(245, 158, 11, 0.3)",
                     borderRadius: "4px",
                     padding: "16px",
                   }}
@@ -1414,7 +1414,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                         height="20"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#D97706"
+                        stroke="#F59E0B"
                         strokeWidth="1.5"
                       >
                         <circle cx="12" cy="12" r="10" />
@@ -1426,7 +1426,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                         style={{
                           fontFamily: "var(--font-sans)",
                           fontSize: "var(--text-xs)",
-                          color: "#D97706",
+                          color: "#F59E0B",
                           marginBottom: "2px",
                         }}
                       >
@@ -1447,7 +1447,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                         style={{
                           fontFamily: "var(--font-sans)",
                           fontSize: "var(--text-xs)",
-                          color: "#D97706",
+                          color: "rgba(245, 158, 11, 0.7)",
                           marginTop: "2px",
                         }}
                       >
@@ -1465,8 +1465,8 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                   style={{
                     flex: 1,
                     minWidth: "140px",
-                    backgroundColor: "#FEF2F2",
-                    border: "1px solid #EF4444",
+                    backgroundColor: "rgba(239, 68, 68, 0.08)",
+                    border: "1px solid rgba(239, 68, 68, 0.3)",
                     borderRadius: "4px",
                     padding: "16px",
                   }}
@@ -1495,7 +1495,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                         height="20"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#DC2626"
+                        stroke="#EF4444"
                         strokeWidth="1.5"
                       >
                         <circle cx="12" cy="12" r="10" />
@@ -1507,7 +1507,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                         style={{
                           fontFamily: "var(--font-sans)",
                           fontSize: "var(--text-xs)",
-                          color: "#DC2626",
+                          color: "#EF4444",
                           marginBottom: "2px",
                         }}
                       >
@@ -1528,7 +1528,7 @@ export function BillingTabContent({ user }: BillingTabContentProps) {
                         style={{
                           fontFamily: "var(--font-sans)",
                           fontSize: "var(--text-xs)",
-                          color: "#DC2626",
+                          color: "rgba(239, 68, 68, 0.7)",
                           marginTop: "2px",
                         }}
                       >

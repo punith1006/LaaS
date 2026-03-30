@@ -33,7 +33,7 @@ export class BillingService {
       const usersWithVolumes = await this.prisma.userStorageVolume.findMany({
         where: {
           status: 'active',
-          allocationType: { notIn: ['sso_default'] },
+          allocationType: { notIn: ['sso_default', 'institution_signup'] },
         },
         select: {
           id: true,

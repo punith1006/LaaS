@@ -546,6 +546,13 @@ export class StorageService {
         return { ok: false, error: errorMsg };
       }
 
+      // Also check the JSON body ok field (Python returns 200 with {error: ...} on failure)
+      if (!data.ok) {
+        const errorMsg = data.error || 'Deprovision failed';
+        this.logger.error(`Deprovision failed for storageUid=${storageUid}: ${errorMsg}`);
+        return { ok: false, error: errorMsg };
+      }
+
       this.logger.log(`Storage deprovisioned for storageUid=${storageUid}`);
       return { ok: true };
     } catch (err) {
