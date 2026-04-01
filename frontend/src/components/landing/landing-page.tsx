@@ -440,7 +440,7 @@
 //               Ship Faster.
 //             </h1>
 //             <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", lineHeight: 1.75, color: "var(--fgColor-muted)", maxWidth: 460, marginBottom: 36, animation: "fadeUp 0.4s ease 0.4s both" }}>
-//               LaaS gives KSRCE students and researchers instant access to NVIDIA 4090&amp; H100 GPUs, 15 GB persistent storage, and Jupyter notebooks — secured by university SSO.
+//               LaaS gives KSRCE students and researchers instant access to NVIDIA 4090&amp; H100 GPUs, upto100 GB persistent storage, and Jupyter notebooks — secured by university SSO.
 //             </p>
 //             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", animation: "fadeUp 0.4s ease 0.5s both" }}>
 //               <Link href="/signup" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 30px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
@@ -893,13 +893,13 @@ const termLines = [
   { t: "ok", s: "✓  Authenticated via KSRCE SSO" },
   { t: "ok", s: "✓  Storage provisioned  up to 100 GB ZFS" },
   { t: "", s: "" },
-  { t: "cmd", s: "$ laas launch --gpu 4090 --type jupyter" },
+  { t: "cmd", s: "$ laas launch --gpu 5090 --type jupyter" },
   { t: "muted", s: "  Selecting node …" },
   { t: "muted", s: "  Pulling image  laas/jupyter:cuda12" },
   { t: "ok", s: "✓  Session live in 8s" },
   { t: "url", s: "  → https://sess.laas.io/xk9f2a" },
   { t: "", s: "" },
-  { t: "muted", s: "  GPU  4090 24 GB     vCPU 8     RAM 32 GB" },
+  { t: "muted", s: "  GPU  4x RTX 5090 32 GB     vCPU 64     RAM 256 GB" },
   { t: "cursor", s: "▊" },
 ];
 
@@ -1131,11 +1131,11 @@ function FeatureComparison() {
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="9" x2="19" y2="9" /><line x1="5" y1="15" x2="19" y2="15" /></svg>
               Consistency
             </div>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: "1.2rem", fontWeight: 800, color: "var(--fgColor-default)", marginBottom: 8, lineHeight: 1.25 }}>Same env on CPU and 4090— guaranteed</div>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.88rem", color: "var(--fgColor-muted)", lineHeight: 1.7 }}>Code on Epi-CPU, scale to 4090without touching a single config. Environment drift is a cloud problem, not yours.</p>
+            <div style={{ fontFamily: "var(--font-sans)", fontSize: "1.2rem", fontWeight: 800, color: "var(--fgColor-default)", marginBottom: 8, lineHeight: 1.25 }}>Same env on CPU and RTX 5090— guaranteed</div>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.88rem", color: "var(--fgColor-muted)", lineHeight: 1.7 }}>Code on Epi-CPU, scale to RTX 5090 without touching a single config. Environment drift is a cloud problem, not yours.</p>
           </div>
           <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-            {[["Epi-CPU", "#888"], ["GPU-S", "#8b5cf6"], ["4090", "#4f8ef7"]].map(([label, color]) => (
+            {[["Epi-CPU", "#888"], ["GPU-S", "#8b5cf6"], ["RTX 5090", "#4f8ef7"]].map(([label, color]) => (
               <div key={label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ width: 80, height: 28, borderRadius: 7, background: `${color}22`, border: `1px solid ${color}44`, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <span style={{ fontFamily: "var(--font-mono),monospace", fontSize: "0.68rem", color: color as string, fontWeight: 700 }}>{label}</span>
@@ -1375,8 +1375,8 @@ export function LandingPage() {
 
   const stats = [
     { val: 500, suffix: "+", label: "Active Students" },
-    { val: 24, suffix: " GB", label: "GPU VRAM (4090)" },
-    { val: 15, suffix: " GB", label: "Storage / User" },
+    { val: 128, suffix: " GB", label: "Cluster GPU VRAM" },
+    { val: "Upto 100", suffix: "GB", label: "Storage / User" },
     { val: 99, suffix: "%", label: "Uptime SLA" },
   ];
 
@@ -1389,7 +1389,7 @@ export function LandingPage() {
   ];
 
   const faqs = [
-    { q: "What types of GPUs are available on LaaS?", a: "LaaS provides access to NVIDIA RTX 4090 GPUs with 24 GB VRAM. Fractional GPU allocation via HAMI allows multiple users to share a single GPU efficiently for lighter workloads." },
+    { q: "What types of GPUs are available on LaaS?", a: "LaaS provides access to NVIDIA RTX 5090 GPUs across a 4-node cluster. Each GPU has 32 GB VRAM, and fractional GPU allocation via HAMI allows multiple users to share a single GPU efficiently for lighter workloads." },
     { q: "How is storage handled across sessions?", a: "Institution SSO users receive up to 100 GB of persistent ZFS storage on first login. This dataset is mounted automatically into every session, so your datasets, notebooks, and code persist indefinitely between sessions." },
     { q: "Can I access my session via SSH?", a: "Yes. Every session exposes an SSH endpoint. You can upload your public SSH keys through the Account → SSH Keys panel and connect directly from your local terminal." },
     { q: "How does billing work?", a: "LaaS uses a wallet-based credit system with per-second billing charges. Active sessions burn credits at the configured compute rate. Paused sessions only incur minimal storage fees. You can set spend limits and view a real-time daily spend chart on your dashboard." },
@@ -1398,10 +1398,10 @@ export function LandingPage() {
   ];
 
   const pricing = [
-    { title: "Spark", price: "₹35", vcpu: 2, memory: "4 GB", vram: "2 GB", hami: "8%", maxConc: 8, bestFor: "Small PyTorch inference, Jupyter notebooks, educational projects", badge: undefined, highlight: false },
-    { title: "Blaze", price: "₹65", vcpu: 4, memory: "8 GB", vram: "4 GB", hami: "17%", maxConc: 4, bestFor: "Model fine-tuning, GPU-accelerated rendering, professional development", badge: "Popular", highlight: true },
-    { title: "Inferno", price: "₹105", vcpu: 8, memory: "16 GB", vram: "8 GB", hami: "33%", maxConc: 2, bestFor: "Large model training, complex 3D rendering, GPU-intensive simulations", badge: undefined, highlight: false },
-    { title: "Supernova", price: "₹155", vcpu: 12, memory: "32 GB", vram: "16 GB", hami: "67%", maxConc: 1, bestFor: "Large-scale deep learning, exclusive research sessions, production inference", badge: "Exclusive", highlight: false },
+    { title: "Spark", price: "₹35", vcpu: 2, memory: "4 GB", vram: "2 GB", hami: "8%", maxConc: 64, bestFor: "Small PyTorch inference, Jupyter notebooks, educational projects", badge: undefined, highlight: false },
+    { title: "Blaze", price: "₹65", vcpu: 4, memory: "8 GB", vram: "4 GB", hami: "17%", maxConc: 32, bestFor: "Model fine-tuning, GPU-accelerated rendering, professional development", badge: "Popular", highlight: true },
+    { title: "Inferno", price: "₹105", vcpu: 8, memory: "16 GB", vram: "8 GB", hami: "33%", maxConc: 16, bestFor: "Large model training, complex 3D rendering, GPU-intensive simulations", badge: undefined, highlight: false },
+    { title: "Supernova", price: "₹155", vcpu: 12, memory: "32 GB", vram: "16 GB", hami: "67%", maxConc: 8, bestFor: "Large-scale deep learning, exclusive research sessions, production inference", badge: "Exclusive", highlight: false },
   ];
   // desc field removed — replaced by bestFor in new PricingCard
 
@@ -1457,7 +1457,7 @@ export function LandingPage() {
               Work Anywhere. Create Everywhere.
             </h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", lineHeight: 1.65, color: "var(--fgColor-muted)", maxWidth: 440, marginBottom: 24, animation: "fadeUp 0.4s ease 0.4s both" }}>
-              LaaS gives KSRCE students and researchers instant access to NVIDIA RTX 4090 GPUs with 24 GB VRAM, up to 100 GB persistent storage, and Jupyter notebooks — secured by university SSO.
+              LaaS gives KSRCE students and researchers instant access to NVIDIA RTX 5090 GPUs across a 4-node cluster with 32 GB VRAM per GPU, up to 100 GB persistent storage, and Jupyter notebooks — secured by university SSO.
             </p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", animation: "fadeUp 0.4s ease 0.5s both" }}>
               <Link href="/signup"
@@ -1488,7 +1488,10 @@ export function LandingPage() {
           {stats.map((s, i) => (
             <div key={i} style={{ padding: "32px 24px", borderRight: i < stats.length - 1 ? "1px solid var(--borderColor-default)" : "none", textAlign: "center" }}>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: "2.2rem", fontWeight: 800, color: "var(--fgColor-default)", lineHeight: 1, marginBottom: 6 }}>
-                <Counter end={s.val} suffix={s.suffix} />
+                {"val" in s && typeof s.val === "string" 
+                  ? `${s.val}${s.suffix}` 
+                  : <Counter end={s.val as number} suffix={s.suffix} />
+                }
               </div>
               <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--fgColor-muted)" }}>{s.label}</div>
             </div>
@@ -1554,11 +1557,11 @@ export function LandingPage() {
                 <span style={{ marginLeft: "auto", fontSize: "0.72rem", color: "var(--fgColor-muted)" }}>ssh student@sess.laas.io</span>
               </div>
               <div style={{ padding: "18px 22px" }}>
-                <div style={{ color: "var(--fgColor-muted)" }}>Welcome to LaaS Node gpu-01.ksrce.edu.in</div>
-                <div style={{ color: "var(--fgColor-muted)" }}>NVIDIA 409024 GB · CUDA 12.2 · Ubuntu 22.04</div>
+                <div style={{ color: "var(--fgColor-muted)" }}>Welcome to LaaS — 4-Node GPU Cluster</div>
+                <div style={{ color: "var(--fgColor-muted)" }}>NVIDIA RTX 5090 · 32 GB VRAM · CUDA 12.x · Ubuntu 22.04</div>
                 <div style={{ height: 12 }} />
                 <div style={{ color: "var(--fgColor-default)" }}>$ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader</div>
-                <div style={{ color: "#22c55e" }}>NVIDIA 4090-SXM4-24GB, 24576 MiB</div>
+                <div style={{ color: "#22c55e" }}>NVIDIA GeForce RTX 5090, 32768 MiB</div>
                 <div style={{ height: 8 }} />
                 <div style={{ color: "var(--fgColor-default)" }}>$ du -sh ~/data/</div>
                 <div style={{ color: "var(--fgColor-muted)" }}>3.2G    /home/student/data/</div>
@@ -1660,11 +1663,11 @@ export function LandingPage() {
       {/* ── CTA BANNER ── */}
       <section 
         style={{ 
-          minHeight: "100vh",
+          minHeight: `${(1 / zoom) * 100}vh`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#050810", 
+          background: "#050810",
           textAlign: "center", 
           position: "relative", 
           overflow: "hidden" 
@@ -1692,11 +1695,11 @@ export function LandingPage() {
         <div style={{
           position: "absolute",
           inset: 0,
-          background: "linear-gradient(180deg, rgba(5,8,16,0.9) 0%, rgba(5,8,16,0.6) 40%, rgba(5,8,16,0.6) 60%, rgba(5,8,16,0.9) 100%)",
+          background: "linear-gradient(180deg, rgba(5,8,16,0.7) 0%, rgba(5,8,16,0.4) 40%, rgba(5,8,16,0.4) 60%, rgba(5,8,16,0.7) 100%)",
           zIndex: 1,
         }} />
         {/* Content - Centered */}
-        <div style={{ position: "relative", zIndex: 2, maxWidth: 700 }}>
+        <div style={{ position: "relative", zIndex: 2, maxWidth: 700, transform: "translateY(-15vh)" }}>
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.2rem, 5vw, 3.8rem)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15, textShadow: "0 4px 30px rgba(0,0,0,0.8)" }}>Ready to launch your first GPU session?</h2>
           <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1rem, 2vw, 1.25rem)", color: "rgba(255,255,255,0.9)", marginBottom: 40, lineHeight: 1.7, maxWidth: 560, margin: "0 auto 40px" }}>Sign up with your university email or institutional SSO and be running model training within 60 seconds.</p>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
