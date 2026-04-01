@@ -2478,11 +2478,14 @@ function UpgradeStorageModal({
   volume: StorageVolume;
 }) {
   const [newQuotaGb, setNewQuotaGb] = useState(Math.min(Math.floor(volume.quotaGb) + 1, 10));
+  const [isDragging, setIsDragging] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   const currentQuotaGb = Math.floor(volume.quotaGb);
+  const maxQuota = 10;
+  const minNewQuota = currentQuotaGb + 1;
 
   // Dark mode detection
   useEffect(() => {
@@ -2502,15 +2505,19 @@ function UpgradeStorageModal({
   const monthlyEstimate = newQuotaGb * pricePerGbMonth;
   const hourlyRate = (newQuotaGb * 700) / 730 / 100;
 
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setNewQuotaGb(parseInt(e.target.value, 10));
+  const handleSizeChange = (newSize: number) => {
+    setNewQuotaGb(Math.max(minNewQuota, Math.min(maxQuota, newSize)));
   };
 
+  const handleMouseDown = () => setIsDragging(true);
+  const handleMouseUp = () => setIsDragging(false);
+
+  const formatSize = (gb: number) => `${gb} GB`;
+
+  const isValid = newQuotaGb > currentQuotaGb;
+
   const handleUpgrade = async () => {
-    if (newQuotaGb <= currentQuotaGb) {
-      setSubmitError("Please select a size larger than current allocation");
-      return;
-    }
+    if (!isValid || isSubmitting) return;
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -2526,26 +2533,30 @@ function UpgradeStorageModal({
     }
   };
 
-  // Calculate slider background gradient
-  const sliderProgress = ((newQuotaGb - currentQuotaGb - 1) / (10 - currentQuotaGb - 1)) * 100 || 0;
+  // Calculate slider percentage (minNewQuota to maxQuota)
+  const sliderPercent = maxQuota > minNewQuota ? ((newQuotaGb - minNewQuota) / (maxQuota - minNewQuota)) * 100 : 0;
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Modal Overlay */}
       <div
         onClick={onClose}
+        onMouseUp={handleMouseUp}
         style={{
           position: "fixed",
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: "rgba(11, 11, 11, 0.15)",
-          zIndex: 100,
+          backgroundColor: isDarkMode ? "rgba(11, 11, 11, 0.60)" : "rgba(11, 11, 11, 0.15)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       />
 
-      {/* Modal */}
+      {/* Modal Container */}
       <div
         style={{
           position: "fixed",
@@ -2553,113 +2564,156 @@ function UpgradeStorageModal({
           left: "50%",
           transform: "translate(-50%, -50%)",
           width: "100%",
-          maxWidth: "400px",
+          maxWidth: "420px",
+          maxHeight: "95vh",
           backgroundColor: "var(--bgColor-default)",
           border: "1px solid var(--borderColor-default)",
-          borderRadius: "8px",
-          zIndex: 101,
-          overflow: "hidden",
+          borderRadius: 0,
+          zIndex: 1001,
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "none",
         }}
       >
-        {/* Header */}
+        {/* Modal Header */}
         <div
           style={{
-            padding: "16px 20px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "16px 24px",
             borderBottom: "1px solid var(--borderColor-default)",
           }}
         >
           <h2
             style={{
               fontFamily: "var(--font-sans)",
-              fontSize: "1rem",
-              fontWeight: 600,
+              fontSize: "1.125rem",
+              fontWeight: 400,
               color: "var(--fgColor-default)",
               margin: 0,
             }}
           >
             Upgrade File Store
           </h2>
-        </div>
-
-        <div style={{ padding: "20px" }}>
-          {/* Info Banner */}
-          <div
+          <button
+            onClick={onClose}
             style={{
-              backgroundColor: "#1e40af",
-              borderRadius: "4px",
-              padding: "12px 16px",
-              marginBottom: "20px",
+              width: "24px",
+              height: "24px",
+              backgroundColor: "transparent",
+              border: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: "var(--fgColor-default)",
+              padding: 0,
             }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Modal Content */}
+        <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+          {/* Info Callout - Blue themed */}
+          <div
+            style={{
+              backgroundColor: isDarkMode ? "#00094A" : "#CEDEFF",
+              border: "1px solid var(--borderColor-info, #3A73FF)",
+              borderRadius: "4px",
+              padding: "12px",
+              marginBottom: "24px",
+              display: "flex",
+              gap: "8px",
+              alignItems: "flex-start",
+            }}
+          >
+            {/* Info icon */}
+            <div style={{ flexShrink: 0, marginTop: "1px" }}>
               <svg
-                width="16"
-                height="16"
+                width="22"
+                height="22"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#93c5fd"
-                strokeWidth="2"
+                stroke="var(--fgColor-default)"
+                strokeWidth="1.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                style={{ flexShrink: 0, marginTop: "2px" }}
               >
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="16" x2="12" y2="12" />
                 <line x1="12" y1="8" x2="12.01" y2="8" />
               </svg>
-              <p
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.8125rem",
-                  color: "#dbeafe",
-                  margin: 0,
-                  lineHeight: 1.5,
-                }}
-              >
-                Upgrade your storage allocation. Your data will be migrated to the new storage with zero downtime.
-                Billing will be adjusted to the new size.
-              </p>
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.875rem",
+                lineHeight: "1.375rem",
+                fontWeight: 400,
+                color: "var(--fgColor-default)",
+              }}
+            >
+              Upgrade your storage allocation. Your data will remain intact and billing will be adjusted to the new size.
             </div>
           </div>
 
-          {/* Name Field (Read-only) */}
-          <div style={{ marginBottom: "20px" }}>
-            <label
-              style={{
-                display: "block",
-                fontFamily: "var(--font-sans)",
-                fontSize: "0.75rem",
-                fontWeight: 500,
-                color: "var(--fgColor-muted)",
-                marginBottom: "8px",
-              }}
-            >
-              Name
-            </label>
-            <input
-              type="text"
-              value={volume.name}
-              readOnly
-              style={{
-                width: "100%",
-                fontFamily: "var(--font-sans)",
-                fontSize: "0.875rem",
-                color: "var(--fgColor-muted)",
-                backgroundColor: "var(--bgColor-muted)",
-                border: "1px solid var(--borderColor-muted)",
-                borderRadius: "4px",
-                padding: "0 12px",
-                height: "40px",
-                outline: "none",
-                boxSizing: "border-box",
-                cursor: "not-allowed",
-              }}
-            />
-          </div>
+          {/* Form */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {/* Name Field (Read-only) */}
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.75rem",
+                  fontWeight: 400,
+                  lineHeight: "1rem",
+                  color: "var(--fgColor-default)",
+                  paddingBottom: "4px",
+                }}
+              >
+                Name
+              </label>
+              <input
+                type="text"
+                value={volume.name}
+                readOnly
+                style={{
+                  width: "100%",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "0.875rem",
+                  fontWeight: 400,
+                  lineHeight: "1.375rem",
+                  color: "var(--fgColor-muted)",
+                  backgroundColor: "transparent",
+                  border: "1px solid #818178",
+                  borderRadius: "4px",
+                  padding: "8px",
+                  height: "40px",
+                  outline: "none",
+                  boxSizing: "border-box",
+                  cursor: "not-allowed",
+                }}
+              />
+            </div>
 
-          {/* Current Size Display */}
-          <div style={{ marginBottom: "16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            {/* Current Size */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span
                 style={{
                   fontFamily: "var(--font-sans)",
@@ -2677,156 +2731,222 @@ function UpgradeStorageModal({
                   color: "var(--fgColor-default)",
                 }}
               >
-                {currentQuotaGb} GB
+                {formatSize(currentQuotaGb)}
               </span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span
+
+            {/* New Size Field */}
+            <div>
+              <div
                 style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--fgColor-muted)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
                 }}
               >
-                New Size
-              </span>
-              <span
+                <label
+                  style={{
+                    display: "block",
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    fontWeight: 400,
+                    lineHeight: "1rem",
+                    color: "var(--fgColor-default)",
+                    paddingBottom: "4px",
+                  }}
+                >
+                  New Size
+                </label>
+              </div>
+              
+              {/* Current size display */}
+              <div
                 style={{
                   fontFamily: "var(--font-sans)",
-                  fontSize: "1.25rem",
+                  fontSize: "1.5rem",
                   fontWeight: 600,
                   color: "var(--fgColor-default)",
+                  marginBottom: "12px",
+                  marginTop: "4px",
                 }}
               >
-                {newQuotaGb} GB
-              </span>
-            </div>
-          </div>
+                {formatSize(newQuotaGb)}
+              </div>
 
-          {/* Size Slider */}
-          <div style={{ marginBottom: "20px" }}>
-            <input
-              type="range"
-              min={currentQuotaGb + 1}
-              max={10}
-              step={1}
-              value={newQuotaGb}
-              onChange={handleSliderChange}
-              style={{
-                width: "100%",
-                height: "4px",
-                borderRadius: "2px",
-                outline: "none",
-                cursor: "pointer",
-                appearance: "none",
-                WebkitAppearance: "none",
-                background: `linear-gradient(to right, var(--fgColor-info) ${sliderProgress}%, var(--borderColor-muted) ${sliderProgress}%)`,
-              }}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "8px" }}>
-              <span
+              {/* Slider */}
+              <div
                 style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--fgColor-muted)",
+                  position: "relative",
+                  height: "4px",
+                  backgroundColor: "var(--bgColor-muted, #D7D6CE)",
+                  borderRadius: "2px",
+                  cursor: "pointer",
+                  marginTop: "8px",
+                }}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const percent = Math.max(0, Math.min(1, x / rect.width));
+                  handleSizeChange(Math.round(percent * (maxQuota - minNewQuota)) + minNewQuota);
                 }}
               >
-                {currentQuotaGb + 1} GB
-              </span>
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--fgColor-muted)",
-                }}
-              >
-                10 GB
-              </span>
-            </div>
-          </div>
+                {/* Slider fill */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: `${sliderPercent}%`,
+                    backgroundColor: "var(--fgColor-default)",
+                    borderRadius: "2px",
+                    transition: isDragging ? "none" : "width 0.1s ease",
+                  }}
+                />
+                
+                {/* Slider thumb */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: `${sliderPercent}%`,
+                    transform: "translate(-50%, -50%)",
+                    width: "16px",
+                    height: "16px",
+                    backgroundColor: "var(--fgColor-default)",
+                    border: "none",
+                    borderRadius: "50%",
+                    cursor: "grab",
+                    transition: isDragging ? "none" : "left 0.1s ease",
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    handleMouseDown();
+                  }}
+                  onMouseUp={handleMouseUp}
+                  onMouseMove={(e) => {
+                    if (!isDragging) return;
+                    const slider = e.currentTarget.parentElement;
+                    if (!slider) return;
+                    const rect = slider.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const percent = Math.max(0, Math.min(1, x / rect.width));
+                    handleSizeChange(Math.round(percent * (maxQuota - minNewQuota)) + minNewQuota);
+                  }}
+                />
+              </div>
 
-          {/* Price Estimate */}
-          <div
-            style={{
-              backgroundColor: "var(--bgColor-muted)",
-              border: "1px solid var(--borderColor-default)",
-              borderRadius: "4px",
-              padding: "12px 16px",
-              marginBottom: "20px",
-              display: "flex",
-              justifyContent: "space-around",
-            }}
-          >
-            <div style={{ textAlign: "center" }}>
-              <p
+              {/* Min/Max labels */}
+              <div
                 style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--fgColor-muted)",
-                  margin: "0 0 4px 0",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginTop: "8px",
                 }}
               >
-                Monthly
-              </p>
-              <p
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.875rem",
-                  fontWeight: 600,
-                  color: "var(--fgColor-default)",
-                  margin: 0,
-                }}
-              >
-                Rs.{monthlyEstimate.toFixed(2)}
-              </p>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    color: "var(--fgColor-muted)",
+                  }}
+                >
+                  {minNewQuota} GB
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    color: "var(--fgColor-muted)",
+                  }}
+                >
+                  {maxQuota} GB
+                </span>
+              </div>
             </div>
+
+            {/* Price Estimate */}
             <div
               style={{
-                width: "1px",
-                backgroundColor: "var(--borderColor-default)",
+                backgroundColor: "var(--bgColor-muted)",
+                border: "1px solid var(--borderColor-default)",
+                borderRadius: "4px",
+                padding: "12px 16px",
+                display: "flex",
+                justifyContent: "space-around",
               }}
-            />
-            <div style={{ textAlign: "center" }}>
-              <p
+            >
+              <div style={{ textAlign: "center" }}>
+                <p
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    color: "var(--fgColor-muted)",
+                    margin: "0 0 4px 0",
+                  }}
+                >
+                  Monthly
+                </p>
+                <p
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    color: "var(--fgColor-default)",
+                    margin: 0,
+                  }}
+                >
+                  Rs.{monthlyEstimate.toFixed(2)}
+                </p>
+              </div>
+              <div
                 style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.75rem",
-                  color: "var(--fgColor-muted)",
-                  margin: "0 0 4px 0",
+                  width: "1px",
+                  backgroundColor: "var(--borderColor-default)",
                 }}
-              >
-                Hourly
-              </p>
-              <p
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "0.875rem",
-                  fontWeight: 600,
-                  color: "var(--fgColor-default)",
-                  margin: 0,
-                }}
-              >
-                Rs.{hourlyRate.toFixed(3)}
-              </p>
+              />
+              <div style={{ textAlign: "center" }}>
+                <p
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.75rem",
+                    color: "var(--fgColor-muted)",
+                    margin: "0 0 4px 0",
+                  }}
+                >
+                  Hourly
+                </p>
+                <p
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    color: "var(--fgColor-default)",
+                    margin: 0,
+                  }}
+                >
+                  Rs.{hourlyRate.toFixed(3)}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Error Message */}
+          {/* Submit error */}
           {submitError && (
             <div
               style={{
                 backgroundColor: "transparent",
-                border: "1px solid #f85149",
+                border: "1px solid var(--fgColor-critical, #E70000)",
                 borderRadius: "4px",
-                padding: "12px 16px",
-                marginBottom: "16px",
+                padding: "12px",
+                marginTop: "16px",
               }}
             >
               <p
                 style={{
                   fontFamily: "var(--font-sans)",
                   fontSize: "0.8125rem",
-                  color: "#f85149",
+                  color: "var(--fgColor-critical, #E70000)",
                   margin: 0,
                 }}
               >
@@ -2835,14 +2955,18 @@ function UpgradeStorageModal({
             </div>
           )}
 
-          {/* Buttons */}
+          {/* Button Row */}
           <div
             style={{
               display: "flex",
-              gap: "12px",
               justifyContent: "flex-end",
+              gap: "16px",
+              marginTop: "24px",
+              paddingTop: "16px",
+              borderTop: "1px solid var(--borderColor-default)",
             }}
           >
+            {/* Cancel Button */}
             <button
               onClick={onClose}
               disabled={isSubmitting}
@@ -2850,63 +2974,79 @@ function UpgradeStorageModal({
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: 500,
-                color: "var(--fgColor-default)",
+                color: "var(--fgColor-mild, #2E2E2E)",
                 backgroundColor: "transparent",
-                border: "1px solid var(--borderColor-default)",
+                border: "1px solid #818178",
                 borderRadius: "4px",
-                padding: "0 16px",
-                height: "36px",
+                padding: "0 24px",
+                height: "40px",
                 cursor: isSubmitting ? "not-allowed" : "pointer",
-                opacity: isSubmitting ? 0.6 : 1,
+                opacity: isSubmitting ? 0.4 : 1,
               }}
             >
               Cancel
             </button>
+
+            {/* Upgrade Storage Button */}
             <button
               onClick={handleUpgrade}
-              disabled={isSubmitting || newQuotaGb <= currentQuotaGb}
+              disabled={!isValid || isSubmitting}
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: 500,
-                color: "var(--fgColor-inverse)",
-                backgroundColor: "var(--fgColor-default)",
-                border: "1px solid var(--fgColor-default)",
+                color: isDarkMode ? "#161616" : "#E7E6D9",
+                backgroundColor: isValid && !isSubmitting
+                  ? (isDarkMode ? "#BFBEB4" : "#2E2E2E")
+                  : (isDarkMode ? "#636363" : "#818178"),
+                border: "1px solid transparent",
                 borderRadius: "4px",
-                padding: "0 16px",
-                height: "36px",
-                cursor: isSubmitting || newQuotaGb <= currentQuotaGb ? "not-allowed" : "pointer",
-                opacity: isSubmitting || newQuotaGb <= currentQuotaGb ? 0.6 : 1,
-                transition: "opacity 0.15s ease",
+                padding: "0 24px",
+                height: "40px",
+                cursor: isValid && !isSubmitting ? "pointer" : "not-allowed",
+                opacity: isValid && !isSubmitting ? 1 : 0.4,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                transition: "background-color 0.15s ease, color 0.15s ease",
               }}
               onMouseEnter={(e) => {
-                if (!isSubmitting && newQuotaGb > currentQuotaGb) {
-                  e.currentTarget.style.opacity = "0.85";
+                if (isValid && !isSubmitting) {
+                  if (isDarkMode) {
+                    e.currentTarget.style.backgroundColor = "#F0EFE2";
+                    e.currentTarget.style.color = "#0B0B0B";
+                  } else {
+                    e.currentTarget.style.backgroundColor = "#0B0B0B";
+                    e.currentTarget.style.color = "#F0EFE2";
+                  }
                 }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = isSubmitting || newQuotaGb <= currentQuotaGb ? "0.6" : "1";
+                if (isValid && !isSubmitting) {
+                  if (isDarkMode) {
+                    e.currentTarget.style.backgroundColor = "#BFBEB4";
+                    e.currentTarget.style.color = "#161616";
+                  } else {
+                    e.currentTarget.style.backgroundColor = "#2E2E2E";
+                    e.currentTarget.style.color = "#E7E6D9";
+                  }
+                }
               }}
             >
-              {isSubmitting ? (
-                <>
-                  <div
-                    style={{
-                      width: "12px",
-                      height: "12px",
-                      border: "2px solid var(--fgColor-inverse)",
-                      borderTopColor: "transparent",
-                      borderRadius: "50%",
-                      animation: "spin 1s linear infinite",
-                      display: "inline-block",
-                      marginRight: "6px",
-                    }}
-                  />
-                  Upgrading...
-                </>
-              ) : (
-                "Upgrade Storage"
+              {isSubmitting && (
+                <div
+                  style={{
+                    width: "14px",
+                    height: "14px",
+                    border: `2px solid ${isDarkMode ? "#161616" : "#E7E6D9"}`,
+                    borderTopColor: "transparent",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
               )}
+              {isSubmitting ? "Upgrading..." : "Upgrade Storage"}
             </button>
           </div>
         </div>

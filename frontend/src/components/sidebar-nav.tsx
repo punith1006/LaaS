@@ -43,7 +43,7 @@ const navSections: NavSection[] = [
     id: "hub",
     label: "THE HUB",
     items: [
-      { id: "templates", label: "Templates" },
+      { id: "templates", label: "Templates (available soon)" },
     ],
   },
   {
@@ -59,8 +59,7 @@ const navSections: NavSection[] = [
     label: "ACCOUNT",
     items: [
       { id: "profile", label: "Profile" },
-      { id: "ssh-keys", label: "SSH Keys" },
-      { id: "api-keys", label: "API Keys" },
+      { id: "ssh-keys", label: "SSH Keys (available soon)" },
       { id: "billing", label: "Billing", href: "/billing" },
     ],
   },

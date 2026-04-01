@@ -272,25 +272,32 @@ def get_laas_containers() -> List[Dict[str, Any]]:
 
 
 def get_used_ports() -> set:
-    """Get currently used nginx ports from running LaaS containers."""
+    """Get currently used nginx ports from running LaaS containers.
+    
+    Reads host port bindings from docker inspect to get actual allocated host ports.
+    """
     containers = get_laas_containers()
     used_ports = set()
     
     for container in containers:
-        # Inspect for NGINX_PORT env var
+        # Inspect for host port bindings (e.g., "8080/tcp" -> host port 8101)
         ok, out = _run_cmd([
             "docker", "inspect", "--format",
-            '{{range .Config.Env}}{{println .}}{{end}}',
+            '{{json .NetworkSettings.Ports}}',
             container["id"]
         ])
-        if ok:
-            for line in out.split("\n"):
-                if line.startswith("NGINX_PORT="):
-                    try:
-                        port = int(line.split("=")[1])
-                        used_ports.add(port)
-                    except (ValueError, IndexError):
-                        pass
+        if ok and out.strip():
+            try:
+                ports_data = json.loads(out.strip())
+                # Look for the 8080/tcp mapping (nginx internal port -> host port)
+                if "8080/tcp" in ports_data:
+                    bindings = ports_data["8080/tcp"]
+                    if bindings and len(bindings) > 0:
+                        host_port = int(bindings[0].get("HostPort", 0))
+                        if host_port > 0:
+                            used_ports.add(host_port)
+            except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+                pass
     return used_ports
 
 

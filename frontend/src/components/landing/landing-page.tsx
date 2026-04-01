@@ -1113,6 +1113,17 @@ function FeatureComparison() {
           <div className="vs-row"><span style={{ color: "#ef4444", fontSize: "0.7rem", fontWeight: 800 }}>✕</span><span style={{ color: "var(--fgColor-muted)", textDecoration: "line-through", opacity: 0.6 }}>CLI-only cloud defaults</span></div>
         </div>
 
+        {/* Demo Video — spans 2 rows */}
+        <video
+          src="/Image_Assets/hf_20260322_011532_86f9b93a-2ffc-42fd-8735-12a4c55ab536.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="bento-animate"
+          style={{ gridRow: "span 2", width: "100%", height: "100%", minHeight: 400, objectFit: "cover", borderRadius: 16, transitionDelay: "0.25s" }}
+        />
+
         {/* Card 5: Predictable Envs — spans 2 */}
         <div className="bento-card bento-animate" style={{ gridColumn: "span 2", padding: "28px 32px", display: "flex", gap: 32, alignItems: "center", transitionDelay: "0.3s" }}>
           <div style={{ flex: 1 }}>
@@ -1589,8 +1600,8 @@ export function LandingPage() {
       </section>
 
       {/* ── WHY CHOOSE US ── */}
-      <section id="features">
-        <div className="land-section">
+      <section id="features" style={{ background: "#000", padding: "48px 0" }}>
+        <div className="land-section" style={{ background: "#000" }}>
           <div style={{ textAlign: "center", marginBottom: 56 }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Why Choose Us</div>
             <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em" }}>Built for Academia, Better than Cloud</h2>
@@ -1627,7 +1638,7 @@ export function LandingPage() {
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 32px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 8, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
               onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
               onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
-              Start Free — No Credit Card →
+              STUDENT? Start Free — No Credit Card →
             </Link>
           </div>
         </div>

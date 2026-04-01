@@ -85,10 +85,10 @@ mkdir -p /tmp/vgpulock 2>/dev/null
 # IMPORTANT: space-separated, fake_sysconf FIRST (proven working order from Full_Setup.txt)
 _HAMI_PRELOAD="/usr/lib/fake_sysconf.so /usr/lib/libvgpu.so"
 if [ -f /usr/lib/libvgpu.so ]; then
-    python3() { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/python3 "$@"; }
-    python()  { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/python "$@"; }
-    nvcc()    { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/local/cuda/bin/nvcc "$@"; }
-    jupyter() { LD_PRELOAD="$_HAMI_PRELOAD" command /usr/bin/jupyter "$@"; }
+    python3() { LD_PRELOAD="$_HAMI_PRELOAD" command python3 "$@"; }
+    python()  { LD_PRELOAD="$_HAMI_PRELOAD" command python "$@"; }
+    nvcc()    { LD_PRELOAD="$_HAMI_PRELOAD" command nvcc "$@"; }
+    jupyter() { LD_PRELOAD="$_HAMI_PRELOAD" command jupyter "$@"; }
 fi
 
 # Smart sudo wrapper: strip LD_PRELOAD so system tools dont crash
@@ -100,5 +100,5 @@ sudo() {
 apt()     { env -u LD_PRELOAD /usr/bin/apt "$@"; }
 apt-get() { env -u LD_PRELOAD /usr/bin/apt-get "$@"; }
 dpkg()    { env -u LD_PRELOAD /usr/bin/dpkg "$@"; }
-pip()     { env -u LD_PRELOAD /usr/bin/pip "$@"; }
-pip3()    { env -u LD_PRELOAD /usr/bin/pip3 "$@"; }
+pip()     { LD_PRELOAD= command pip "$@"; }
+pip3()    { LD_PRELOAD= command pip3 "$@"; }

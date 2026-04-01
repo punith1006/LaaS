@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaaS - Lab as a Service | KSRCE AI Infrastructure</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ─── CSS Variables ─────────────────────────────────────────────────────── */
+    :root {
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+      
+      /* Light theme (default) */
+      --fgColor-default: #1a1a2e;
+      --fgColor-muted: #6b7280;
+      --bgColor-default: #f5f5f0;
+      --bgColor-mild: #ececea;
+      --bgColor-muted: #e0e0dc;
+      --borderColor-default: #d4d4cd;
+      
+      /* Accent colors */
+      --accent: #4f6ef7;
+      --accent-dark: #3a56d4;
+      --accent-glow: rgba(79,110,247,0.18);
+    }
+    
+    html.dark {
+      --fgColor-default: #e8e8f0;
+      --fgColor-muted: #8b92a0;
+      --bgColor-default: #080a12;
+      --bgColor-mild: #0f1118;
+      --bgColor-muted: #161822;
+      --borderColor-default: #1e2030;
+    }
+    
+    /* ─── Base Reset ────────────────────────────────────────────────────────── */
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html {
+      zoom: calc(100vw / 1280);
+    }
+    
+    body {
+      font-family: var(--font-sans);
+      background: var(--bgColor-default);
+      color: var(--fgColor-default);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    
+    /* ─── Animations ────────────────────────────────────────────────────────── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* ─── Layout Classes ────────────────────────────────────────────────────── */
+    .land-section {
+      padding: 90px 48px;
+      max-width: 1140px;
+      margin: 0 auto;
+    }
+    
+    @media (max-width: 860px) {
+      .hero-split { flex-direction: column !important; }
+      .land-section { padding: 64px 20px; }
+    }
+    
+    /* ─── Scroll Reveal ─────────────────────────────────────────────────────── */
+    .reveal-on-scroll {
+      opacity: 0;
+      transform: translateY(30px) scale(0.98);
+      transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+      will-change: opacity, transform;
+    }
+    .reveal-on-scroll.revealed {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    
+    /* ─── Bento Grid Styles ─────────────────────────────────────────────────── */
+    .bento-card {
+      position: relative;
+      background: var(--bgColor-mild);
+      border: 1px solid var(--borderColor-default);
+      border-radius: 20px;
+      overflow: hidden;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+    .bento-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(320px circle at var(--mx,50%) var(--my,50%), rgba(79,110,247,0.07), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.4s;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .bento-card:hover::before { opacity: 1; }
+    .bento-card:hover { border-color: rgba(79,110,247,0.35); transform: translateY(-3px); }
+    .bento-card > * { position: relative; z-index: 1; }
+    
+    .bento-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-radius: 6px;
+      padding: 3px 10px;
+      margin-bottom: 14px;
+    }
+    
+    .vs-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-sans);
+      font-size: 0.82rem;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--bgColor-muted);
+      border: 1px solid var(--borderColor-default);
+      margin-bottom: 6px;
+    }
+    
+    .bento-animate {
+      opacity: 0;
+      transform: translateY(28px) scale(0.97);
+      transition: opacity 0.65s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.65s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.3s, box-shadow 0.3s;
+    }
+    .bento-animate.bento-revealed {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    
+    /* ─── Pricing Table Styles ──────────────────────────────────────────────── */
+    .pricing-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .pricing-table th {
+      font-family: var(--font-sans);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--fgColor-muted);
+      text-align: left;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--borderColor-default);
+    }
+    .pricing-table th:last-child { text-align: right; }
+    .pricing-table td {
+      font-family: var(--font-sans);
+      font-size: 0.92rem;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--borderColor-default);
+      color: var(--fgColor-default);
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .pricing-table td:last-child { text-align: right; }
+    .pricing-table tr:last-child td { border-bottom: none; }
+    .pricing-row { transition: background 0.15s; }
+    .pricing-row:hover td { background: var(--bgColor-muted); }
+    .pricing-row.featured td { background: rgba(79,110,247,0.06); }
+    .pricing-row.featured:hover td { background: rgba(79,110,247,0.1); }
+    
+    /* ─── Step Cards ────────────────────────────────────────────────────────── */
+    .step-card {
+      position: relative;
+      overflow: hidden;
+      background: var(--bgColor-mild);
+      border: 1px solid var(--borderColor-default);
+      border-radius: 18px;
+      padding: 24px 20px 22px;
+      transition: all 0.35s cubic-bezier(0.23,1,0.32,1);
+      cursor: default;
+    }
+    .step-card:hover {
+      transform: translateY(-8px);
+    }
+    .step-card.featured {
+      transform: translateY(-6px);
+    }
+    
+    /* ─── FAQ Styles ────────────────────────────────────────────────────────── */
+    .faq-item {
+      border-bottom: 1px solid var(--borderColor-default);
+      overflow: hidden;
+    }
+    .faq-btn {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: none;
+      padding: 18px 0;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .faq-btn span:first-child {
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--fgColor-default);
+    }
+    .faq-icon {
+      color: var(--fgColor-muted);
+      font-size: 1.2rem;
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+    }
+    .faq-item.open .faq-icon {
+      transform: rotate(45deg);
+    }
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+    .faq-item.open .faq-answer {
+      max-height: 300px;
+    }
+    .faq-answer p {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      line-height: 1.7;
+      color: var(--fgColor-muted);
+      margin: 0 0 18px;
+    }
+    
+    /* ─── Dock Card Effect ──────────────────────────────────────────────────── */
+    .dock-card {
+      transform-origin: bottom center;
+      transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      will-change: transform;
+    }
+    
+    /* ─── Links ─────────────────────────────────────────────────────────────── */
+    a {
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     NAVIGATION
+═══════════════════════════════════════════════════════════════════════════ -->
+<nav id="main-nav" style="position: fixed; top: 0; left: 0; right: 0; z-index: 200; height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 48px; background: transparent; border-bottom: 1px solid transparent; transition: all 0.3s ease;">
+  <span style="font-family: var(--font-sans); font-size: 1.1rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fgColor-default);">LaaS</span>
+  
+  <div class="nav-links" style="display: flex; align-items: center; gap: 32px;">
+    <a href="#features" class="nav-link" style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-muted); transition: color 0.15s;">Features</a>
+    <a href="#how-it-works" class="nav-link" style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-muted); transition: color 0.15s;">How It Works</a>
+    <a href="#pricing" class="nav-link" style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-muted); transition: color 0.15s;">Pricing</a>
+    <a href="#faq" class="nav-link" style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-muted); transition: color 0.15s;">FAQ</a>
+  </div>
+  
+  <div class="nav-right" style="display: flex; align-items: center; gap: 10px;">
+    <button id="theme-toggle" style="background: transparent; border: 1px solid var(--borderColor-default); border-radius: 6px; width: 34px; height: 34px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--fgColor-muted); transition: all 0.15s;">
+      <svg id="sun-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg id="moon-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+    <a href="/signin" class="btn-signin" style="font-family: var(--font-sans); font-size: 0.875rem; font-weight: 500; color: var(--fgColor-default); padding: 7px 18px; border: 1px solid var(--borderColor-default); border-radius: 6px; transition: all 0.15s;">Sign In</a>
+    <a href="/signup" class="btn-signup" style="font-family: var(--font-sans); font-size: 0.875rem; font-weight: 600; color: #fff; padding: 7px 20px; background-color: #4f6ef7; border-radius: 6px; border: 1px solid #4f6ef7; transition: all 0.15s; box-shadow: 0 0 20px rgba(79,110,247,0.18);">Get Started →</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     HERO SECTION
+═══════════════════════════════════════════════════════════════════════════ -->
+<section id="hero" style="position: relative; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; overflow: hidden;">
+  <!-- Particles Canvas -->
+  <canvas id="particles-canvas" style="position: absolute; inset: 0; pointer-events: none; z-index: 0;"></canvas>
+  
+  <!-- Radial glow top-left -->
+  <div style="position: absolute; top: -120px; left: -120px; width: 600px; height: 600px; background: radial-gradient(circle, rgba(79,110,247,0.18) 0%, transparent 70%); pointer-events: none; z-index: 0;"></div>
+  
+  <div class="hero-split" style="display: flex; align-items: center; gap: 48px; padding: 72px 48px 56px; max-width: 1140px; margin: 0 auto; width: 100%; position: relative; z-index: 1;">
+    <!-- Left -->
+    <div style="flex: 1 1 52%; min-width: 0;">
+      <div style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; background: var(--bgColor-mild); border: 1px solid #4f6ef7; border-radius: 9999px; margin-bottom: 20px; animation: fadeUp 0.4s ease 0.1s both;">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: #22c55e;"></span>
+        <span style="font-family: var(--font-sans); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #4f6ef7;">KSRCE AI Lab Infrastructure</span>
+      </div>
+      <h1 style="font-family: var(--font-sans); font-size: clamp(2.4rem, 5vw, 4rem); font-weight: 800; line-height: 1.1; color: var(--fgColor-default); margin-bottom: 10px; letter-spacing: -0.02em; animation: fadeUp 0.4s ease 0.2s both;">
+        Your Remote AI Workstation.
+      </h1>
+      <h2 style="font-family: var(--font-sans); font-size: clamp(1.6rem, 3.5vw, 2.6rem); font-weight: 700; line-height: 1.2; color: #4f6ef7; margin-bottom: 16px; letter-spacing: -0.02em; animation: fadeUp 0.4s ease 0.3s both;">
+        Work Anywhere. Create Everywhere.
+      </h2>
+      <p style="font-family: var(--font-sans); font-size: 0.95rem; line-height: 1.65; color: var(--fgColor-muted); max-width: 440px; margin-bottom: 24px; animation: fadeUp 0.4s ease 0.4s both;">
+        LaaS gives KSRCE students and researchers instant access to NVIDIA RTX 4090 GPUs with 24 GB VRAM, up to 100 GB persistent storage, and Jupyter notebooks — secured by university SSO.
+      </p>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; animation: fadeUp 0.4s ease 0.5s both;">
+        <a href="/signup" class="btn-primary" style="display: inline-flex; align-items: center; gap: 8px; padding: 13px 26px; background: #4f6ef7; color: #fff; font-family: var(--font-sans); font-size: 0.95rem; font-weight: 700; border-radius: 8px; border: 1px solid #4f6ef7; box-shadow: 0 4px 24px rgba(79,110,247,0.18); transition: all 0.2s;">Launch a GPU →</a>
+        <a href="#how-it-works" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 8px; padding: 13px 26px; background: transparent; color: var(--fgColor-default); font-family: var(--font-sans); font-size: 0.95rem; font-weight: 500; border-radius: 8px; border: 1px solid var(--borderColor-default); transition: all 0.2s;">See How It Works</a>
+      </div>
+    </div>
+    
+    <!-- Right — Terminal -->
+    <div style="flex: 1 1 48%; min-width: 0; animation: fadeUp 0.5s ease 0.5s both;">
+      <div id="hero-terminal" style="background: var(--bgColor-mild); border: 1px solid var(--borderColor-default); border-radius: 10px; overflow: hidden; font-family: var(--font-mono), ui-monospace, monospace; font-size: 0.82rem; line-height: 1.75;">
+        <div style="display: flex; gap: 7px; padding: 10px 16px; background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-default); align-items: center;">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b;"></span>
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e;"></span>
+          <span style="margin-left: auto; font-size: 0.72rem; color: var(--fgColor-muted);">laas — bash</span>
+        </div>
+        <div id="terminal-content" style="padding: 18px 22px; min-height: 240px;"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     STATS BAR
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="reveal-on-scroll" style="border-top: 1px solid var(--borderColor-default); border-bottom: 1px solid var(--borderColor-default); background: var(--bgColor-mild);">
+  <div class="stats-grid" style="max-width: 1140px; margin: 0 auto; padding: 0 48px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+    <div class="stat-item" style="padding: 32px 24px; border-right: 1px solid var(--borderColor-default); text-align: center;">
+      <div style="font-family: var(--font-sans); font-size: 2.2rem; font-weight: 800; color: var(--fgColor-default); line-height: 1; margin-bottom: 6px;"><span class="counter" data-end="500">0</span>+</div>
+      <div style="font-family: var(--font-sans); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fgColor-muted);">Active Students</div>
+    </div>
+    <div class="stat-item" style="padding: 32px 24px; border-right: 1px solid var(--borderColor-default); text-align: center;">
+      <div style="font-family: var(--font-sans); font-size: 2.2rem; font-weight: 800; color: var(--fgColor-default); line-height: 1; margin-bottom: 6px;"><span class="counter" data-end="24">0</span> GB</div>
+      <div style="font-family: var(--font-sans); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fgColor-muted);">GPU VRAM</div>
+    </div>
+    <div class="stat-item" style="padding: 32px 24px; border-right: 1px solid var(--borderColor-default); text-align: center;">
+      <div style="font-family: var(--font-sans); font-size: 2.2rem; font-weight: 800; color: var(--fgColor-default); line-height: 1; margin-bottom: 6px;"><span class="counter" data-end="15">0</span> GB</div>
+      <div style="font-family: var(--font-sans); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fgColor-muted);">Storage / User</div>
+    </div>
+    <div class="stat-item" style="padding: 32px 24px; text-align: center;">
+      <div style="font-family: var(--font-sans); font-size: 2.2rem; font-weight: 800; color: var(--fgColor-default); line-height: 1; margin-bottom: 6px;"><span class="counter" data-end="99">0</span>%</div>
+      <div style="font-family: var(--font-sans); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fgColor-muted);">Uptime SLA</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TRUSTED BY
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="reveal-on-scroll trusted-by" style="border-bottom: 1px solid var(--borderColor-default); padding: 28px 48px; text-align: center;">
+  <div style="font-family: var(--font-sans); font-size: 0.75rem; font-weight: 600; color: var(--fgColor-muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 20px;">
+    Powering institutions that push boundaries
+  </div>
+  <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 20px 48px;">
+    <span style="font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; color: var(--fgColor-muted); letter-spacing: 0.03em;">KSRCE</span>
+    <span style="font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; color: var(--fgColor-muted); letter-spacing: 0.03em;">Partner Colleges</span>
+    <span style="font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; color: var(--fgColor-muted); letter-spacing: 0.03em;">Research Groups</span>
+    <span style="font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; color: var(--fgColor-muted); letter-spacing: 0.03em;">Industry Labs</span>
+    <span style="font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; color: var(--fgColor-muted); letter-spacing: 0.03em;">Govt. R&amp;D Units</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     HOW IT WORKS
+═══════════════════════════════════════════════════════════════════════════ -->
+<section id="how-it-works">
+  <div class="land-section reveal-on-scroll">
+    <div style="text-align: center; margin-bottom: 56px;">
+      <div style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4f6ef7; margin-bottom: 10px;">How It Works</div>
+      <h2 style="font-family: var(--font-sans); font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; color: var(--fgColor-default); letter-spacing: -0.02em; margin-bottom: 14px;">Launch AI Workspaces<br>in Minutes</h2>
+      <p style="font-family: var(--font-sans); font-size: 1rem; color: var(--fgColor-muted); max-width: 500px; margin: 0 auto; line-height: 1.7;">From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
+    </div>
+    <div id="steps-row" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; align-items: center;">
+      <!-- Step cards will be inserted by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     YOUR GPU YOUR TERMINAL
+═══════════════════════════════════════════════════════════════════════════ -->
+<section class="reveal-on-scroll" style="background: var(--bgColor-mild); border-top: 1px solid var(--borderColor-default); border-bottom: 1px solid var(--borderColor-default);">
+  <div class="land-section hero-split" style="display: flex; gap: 56px; align-items: center;">
+    <!-- Left — terminal -->
+    <div style="flex: 1; min-width: 0;">
+      <div style="background: var(--bgColor-muted); border: 1px solid var(--borderColor-default); border-radius: 10px; overflow: hidden; font-family: var(--font-mono), ui-monospace, monospace; font-size: 0.82rem; line-height: 1.8;">
+        <div style="background: var(--bgColor-mild); border-bottom: 1px solid var(--borderColor-default); padding: 10px 18px; display: flex; align-items: center; gap: 8px;">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b;"></span>
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e;"></span>
+          <span style="margin-left: auto; font-size: 0.72rem; color: var(--fgColor-muted);">ssh student@sess.laas.io</span>
+        </div>
+        <div style="padding: 18px 22px;">
+          <div style="color: var(--fgColor-muted);">Welcome to LaaS Node gpu-01.ksrce.edu.in</div>
+          <div style="color: var(--fgColor-muted);">NVIDIA 4090 24 GB · CUDA 12.2 · Ubuntu 22.04</div>
+          <div style="height: 12px;"></div>
+          <div style="color: var(--fgColor-default);">$ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader</div>
+          <div style="color: #22c55e;">NVIDIA 4090-SXM4-24GB, 24576 MiB</div>
+          <div style="height: 8px;"></div>
+          <div style="color: var(--fgColor-default);">$ du -sh ~/data/</div>
+          <div style="color: var(--fgColor-muted);">3.2G    /home/student/data/</div>
+          <div style="height: 8px;"></div>
+          <div style="color: var(--fgColor-default);">$ python train.py --epochs 50 --model resnet50</div>
+          <div style="color: #22c55e;">Epoch  1/50  loss: 2.4132  acc: 0.312 ✓</div>
+          <div style="color: #22c55e;">Epoch  2/50  loss: 1.9820  acc: 0.418 ✓</div>
+          <div style="color: #4f6ef7;">▊</div>
+        </div>
+      </div>
+    </div>
+    <!-- Right -->
+    <div style="flex: 1; min-width: 0;">
+      <div style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4f6ef7; margin-bottom: 10px;">Full Linux Access</div>
+      <h2 style="font-family: var(--font-sans); font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 800; color: var(--fgColor-default); letter-spacing: -0.02em; margin-bottom: 20px; line-height: 1.15;">Your GPU,<br>Your Terminal</h2>
+      <p style="font-family: var(--font-sans); font-size: 0.95rem; line-height: 1.75; color: var(--fgColor-muted); margin-bottom: 28px;">Get root-level SSH access to your GPU node. Run any workload — training, inference, data processing — with no restrictions. Your home directory persists across all sessions.</p>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="color: #22c55e; flex-shrink: 0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-default);">Instance &amp; session management from dashboard</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="color: #22c55e; flex-shrink: 0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-default);">Managed background runs with log tailing</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="color: #22c55e; flex-shrink: 0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-default);">File transfer via SCP, SFTP or browser UI</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="color: #22c55e; flex-shrink: 0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-default);">Agent-native API for CI/CD automation</span>
+        </div>
+      </div>
+      <div style="margin-top: 32px;">
+        <a href="/signup" class="btn-primary" style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 26px; background: #4f6ef7; color: #fff; font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600; border-radius: 7px; transition: all 0.2s;">Start Free →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     WHY CHOOSE US (Bento Grid)
+═══════════════════════════════════════════════════════════════════════════ -->
+<section id="features">
+  <div class="land-section">
+    <div style="text-align: center; margin-bottom: 56px;">
+      <div style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4f6ef7; margin-bottom: 10px;">Why Choose Us</div>
+      <h2 style="font-family: var(--font-sans); font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; color: var(--fgColor-default); letter-spacing: -0.02em;">Built for Academia, Better than Cloud</h2>
+      <p style="font-family: var(--font-sans); font-size: 1rem; color: var(--fgColor-muted); margin-top: 12px; max-width: 640px; margin: 12px auto 0; line-height: 1.6;">LaaS eliminates the hidden costs and complexity of AWS/GCP, offering zero-setup persistent storage and tailored institutional integration.</p>
+    </div>
+    
+    <div id="bento-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 48px;">
+      <!-- Card 1: Storage — spans 2 cols -->
+      <div class="bento-card bento-animate bento-storage" style="grid-column: span 2; padding: 32px 36px; display: flex; gap: 40px; align-items: center; transition-delay: 0s;">
+        <div style="flex: 1;">
+          <div class="bento-tag" style="background: rgba(79,142,247,0.12); color: #4f8ef7; border: 1px solid rgba(79,142,247,0.25);">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            Persistent Storage
+          </div>
+          <div style="font-family: var(--font-sans); font-size: 1.3rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 10px; line-height: 1.25;">Your data outlives every session</div>
+          <p style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-muted); line-height: 1.7; margin-bottom: 20px;">No more re-uploading gigabytes of datasets before every run. Your persistent ZFS volume mounts automatically every time.</p>
+          <div class="vs-row"><span style="color: #22c55e;">✓</span><span style="color: var(--fgColor-default); font-weight: 600;">Up to 100 GB Zero-setup ZFS — always mounted</span></div>
+          <div class="vs-row"><span style="color: #ef4444; font-size: 0.7rem; font-weight: 800;">✕</span><span style="color: var(--fgColor-muted); text-decoration: line-through; opacity: 0.6;">Manual cloud volumes — re-attach each session</span></div>
+        </div>
+        <div style="text-align: center; flex-shrink: 0;">
+          <div style="font-family: var(--font-sans); font-size: 4.5rem; font-weight: 800; line-height: 1; letter-spacing: -0.04em; background: linear-gradient(135deg, #4f8ef7, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">100</div>
+          <div style="font-family: var(--font-sans); font-size: 1rem; font-weight: 700; color: var(--fgColor-muted); letter-spacing: 0.06em; text-transform: uppercase;">GB</div>
+          <div style="font-family: var(--font-sans); font-size: 0.72rem; color: var(--fgColor-muted); margin-top: 4px;">per user, always-on</div>
+        </div>
+      </div>
+
+      <!-- Card 2: Zero Egress -->
+      <div class="bento-card bento-animate" style="padding: 28px 26px; transition-delay: 0.1s;">
+        <div class="bento-tag" style="background: rgba(0,212,255,0.08); color: #00d4ff; border: 1px solid rgba(0,212,255,0.2);">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Zero Egress
+        </div>
+        <div style="font-family: var(--font-sans); font-size: 1.1rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px; line-height: 1.25;">No bandwidth tax on your models</div>
+        <p style="font-family: var(--font-sans); font-size: 0.85rem; color: var(--fgColor-muted); line-height: 1.7; margin-bottom: 16px;">Move massive checkpoints on our high-speed local network. AWS charges per-GB — we don't.</p>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: rgba(0,212,255,0.06); border-radius: 10px; border: 1px solid rgba(0,212,255,0.15);">
+          <span style="font-family: var(--font-sans); font-size: 1.6rem; font-weight: 800; color: #00d4ff;">$0</span>
+          <span style="font-family: var(--font-sans); font-size: 0.78rem; color: var(--fgColor-muted); line-height: 1.4;">egress fees,<br>ever</span>
+        </div>
+      </div>
+
+      <!-- Card 3: SSO -->
+      <div class="bento-card bento-animate" style="padding: 28px 26px; transition-delay: 0.15s;">
+        <div class="bento-tag" style="background: rgba(16,245,164,0.08); color: #10f5a4; border: 1px solid rgba(16,245,164,0.2);">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Auth
+        </div>
+        <div style="font-family: var(--font-sans); font-size: 1.1rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px; line-height: 1.25;">Sign in with your university ID</div>
+        <p style="font-family: var(--font-sans); font-size: 0.85rem; color: var(--fgColor-muted); line-height: 1.7; margin-bottom: 18px;">KSRCE SSO — no new passwords, no separate signup. One credential for everything.</p>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bgColor-muted); border-radius: 10px; border: 1px solid var(--borderColor-default);">
+          <div style="width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #10f5a4, #4f8ef7); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 800; color: #fff;">KS</div>
+          <div>
+            <div style="font-family: var(--font-sans); font-size: 0.78rem; font-weight: 600; color: var(--fgColor-default);">student@ksrce.edu.in</div>
+            <div style="font-family: var(--font-sans); font-size: 0.68rem; color: #10f5a4;">✓ SSO Verified</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Instant GUI -->
+      <div class="bento-card bento-animate" style="padding: 28px 26px; transition-delay: 0.22s;">
+        <div class="bento-tag" style="background: rgba(139,92,246,0.1); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.25);">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          GUI Desktop
+        </div>
+        <div style="font-family: var(--font-sans); font-size: 1.1rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px; line-height: 1.25;">Full KDE desktop in your browser</div>
+        <p style="font-family: var(--font-sans); font-size: 0.85rem; color: var(--fgColor-muted); line-height: 1.7; margin-bottom: 16px;">PyTorch, HuggingFace, CUDA — pre-installed. No setup, no config files, no env hell.</p>
+        <div class="vs-row"><span style="color: #22c55e;">✓</span><span style="color: var(--fgColor-default); font-weight: 600;">KDE Plasma + CUDA 12.2</span></div>
+        <div class="vs-row"><span style="color: #ef4444; font-size: 0.7rem; font-weight: 800;">✕</span><span style="color: var(--fgColor-muted); text-decoration: line-through; opacity: 0.6;">CLI-only cloud defaults</span></div>
+      </div>
+
+      <!-- Card 5: Predictable Envs — spans 2 -->
+      <div class="bento-card bento-animate bento-consistency" style="grid-column: span 2; padding: 28px 32px; display: flex; gap: 32px; align-items: center; transition-delay: 0.3s;">
+        <div style="flex: 1;">
+          <div class="bento-tag" style="background: rgba(249,115,22,0.1); color: #f97316; border: 1px solid rgba(249,115,22,0.25);">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="9" x2="19" y2="9"/><line x1="5" y1="15" x2="19" y2="15"/></svg>
+            Consistency
+          </div>
+          <div style="font-family: var(--font-sans); font-size: 1.2rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px; line-height: 1.25;">Same env on CPU and 4090 — guaranteed</div>
+          <p style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-muted); line-height: 1.7;">Code on Epi-CPU, scale to 4090 without touching a single config. Environment drift is a cloud problem, not yours.</p>
+        </div>
+        <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 80px; height: 28px; border-radius: 7px; background: rgba(136,136,136,0.13); border: 1px solid rgba(136,136,136,0.27); display: flex; align-items: center; justify-content: center;">
+              <span style="font-family: var(--font-mono), monospace; font-size: 0.68rem; color: #888; font-weight: 700;">Epi-CPU</span>
+            </div>
+            <span style="font-family: var(--font-mono), monospace; font-size: 0.65rem; color: var(--fgColor-muted);">pytorch==2.3 cuda==12.2</span>
+            <span style="color: #22c55e; font-size: 0.75rem;">✓</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 80px; height: 28px; border-radius: 7px; background: rgba(139,92,246,0.13); border: 1px solid rgba(139,92,246,0.27); display: flex; align-items: center; justify-content: center;">
+              <span style="font-family: var(--font-mono), monospace; font-size: 0.68rem; color: #8b5cf6; font-weight: 700;">GPU-S</span>
+            </div>
+            <span style="font-family: var(--font-mono), monospace; font-size: 0.65rem; color: var(--fgColor-muted);">pytorch==2.3 cuda==12.2</span>
+            <span style="color: #22c55e; font-size: 0.75rem;">✓</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 80px; height: 28px; border-radius: 7px; background: rgba(79,142,247,0.13); border: 1px solid rgba(79,142,247,0.27); display: flex; align-items: center; justify-content: center;">
+              <span style="font-family: var(--font-mono), monospace; font-size: 0.68rem; color: #4f8ef7; font-weight: 700;">4090</span>
+            </div>
+            <span style="font-family: var(--font-mono), monospace; font-size: 0.65rem; color: var(--fgColor-muted);">pytorch==2.3 cuda==12.2</span>
+            <span style="color: #22c55e; font-size: 0.75rem;">✓</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 6: Bare-metal — full width -->
+      <div class="bento-card bento-animate bento-baremetal" style="grid-column: span 3; padding: 28px 36px; display: flex; align-items: center; gap: 48px; transition-delay: 0.38s;">
+        <div style="flex: 1;">
+          <div class="bento-tag" style="background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.25);">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+            Bare-metal
+          </div>
+          <div style="font-family: var(--font-sans); font-size: 1.2rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px;">Raw hardware. No noisy neighbours.</div>
+          <p style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-muted); line-height: 1.7;">AMD Ryzen 9 + NVMe, not throttled virtual vCPUs sharing a hypervisor with 40 other tenants.</p>
+        </div>
+        <div style="flex-shrink: 0; width: 280px;">
+          <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="font-family: var(--font-sans); font-size: 0.75rem; color: var(--fgColor-muted);">LaaS (bare-metal)</span>
+              <span style="font-family: var(--font-mono), monospace; font-size: 0.72rem; color: #4f8ef7; font-weight: 700;">94%</span>
+            </div>
+            <div style="height: 5px; background: var(--bgColor-muted); border-radius: 4px; overflow: hidden;">
+              <div style="height: 100%; width: 94%; background: #4f8ef7; border-radius: 4px; opacity: 0.85;"></div>
+            </div>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="font-family: var(--font-sans); font-size: 0.75rem; color: var(--fgColor-muted);">AWS EC2 (vCPU)</span>
+              <span style="font-family: var(--font-mono), monospace; font-size: 0.72rem; color: #ef4444; font-weight: 700;">58%</span>
+            </div>
+            <div style="height: 5px; background: var(--bgColor-muted); border-radius: 4px; overflow: hidden;">
+              <div style="height: 100%; width: 58%; background: #ef4444; border-radius: 4px; opacity: 0.85;"></div>
+            </div>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="font-family: var(--font-sans); font-size: 0.75rem; color: var(--fgColor-muted);">GCP Compute</span>
+              <span style="font-family: var(--font-mono), monospace; font-size: 0.72rem; color: #ef4444; font-weight: 700;">54%</span>
+            </div>
+            <div style="height: 5px; background: var(--bgColor-muted); border-radius: 4px; overflow: hidden;">
+              <div style="height: 100%; width: 54%; background: #ef4444; border-radius: 4px; opacity: 0.85;"></div>
+            </div>
+          </div>
+          <div style="font-family: var(--font-sans); font-size: 0.65rem; color: var(--fgColor-muted); margin-top: 6px; opacity: 0.6;">CPU benchmark score (relative)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     PRICING
+═══════════════════════════════════════════════════════════════════════════ -->
+<section id="pricing" style="background: var(--bgColor-mild); border-top: 1px solid var(--borderColor-default); border-bottom: 1px solid var(--borderColor-default);">
+  <div class="land-section">
+    <div style="text-align: center; margin-bottom: 56px;">
+      <div style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4f6ef7; margin-bottom: 10px;">Pricing</div>
+      <h2 style="font-family: var(--font-sans); font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; color: var(--fgColor-default); letter-spacing: -0.02em; margin-bottom: 12px;">Pay as you go</h2>
+      <p style="font-family: var(--font-sans); font-size: 1rem; color: var(--fgColor-muted); max-width: 520px; margin: 0 auto; line-height: 1.7;">Our pricing model lets you pay only for what you use. No minimum commitments. Paused instances only incur storage fees.</p>
+    </div>
+    
+    <div class="pricing-wrapper" style="margin-bottom: 32px; background: var(--bgColor-default); border: 1px solid var(--borderColor-default); border-radius: 14px; overflow: hidden;">
+      <table class="pricing-table">
+        <thead>
+          <tr>
+            <th>Tier</th>
+            <th>vCPUs</th>
+            <th>RAM</th>
+            <th>GPU VRAM</th>
+            <th>HAMI %</th>
+            <th>Max Sessions</th>
+            <th>₹/hour</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="pricing-row">
+            <td>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-weight: 800; font-size: 0.97rem;">Spark</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--fgColor-muted); margin-top: 3px; font-weight: 400;">Small PyTorch inference, Jupyter notebooks</div>
+            </td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">2</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">4 GB</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">2 GB</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">8%</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">8</td>
+            <td><span style="font-family: var(--font-mono), monospace; font-size: 1.05rem; font-weight: 800; color: var(--fgColor-default);">₹35</span><span style="font-family: var(--font-sans); font-size: 0.72rem; color: var(--fgColor-muted); margin-left: 3px;">/hr</span></td>
+          </tr>
+          <tr class="pricing-row featured">
+            <td>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-weight: 800; font-size: 0.97rem;">Blaze</span>
+                <span style="font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; background: #4f6ef7; color: #fff; border-radius: 4px; padding: 2px 7px;">Popular</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--fgColor-muted); margin-top: 3px; font-weight: 400;">Model fine-tuning, GPU-accelerated rendering</div>
+            </td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">4</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">8 GB</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">4 GB</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">17%</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">4</td>
+            <td><span style="font-family: var(--font-mono), monospace; font-size: 1.05rem; font-weight: 800; color: #4f6ef7;">₹65</span><span style="font-family: var(--font-sans); font-size: 0.72rem; color: var(--fgColor-muted); margin-left: 3px;">/hr</span></td>
+          </tr>
+          <tr class="pricing-row">
+            <td>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-weight: 800; font-size: 0.97rem;">Inferno</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--fgColor-muted); margin-top: 3px; font-weight: 400;">Large model training, complex 3D rendering</div>
+            </td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">8</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">16 GB</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">8 GB</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">33%</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">2</td>
+            <td><span style="font-family: var(--font-mono), monospace; font-size: 1.05rem; font-weight: 800; color: var(--fgColor-default);">₹105</span><span style="font-family: var(--font-sans); font-size: 0.72rem; color: var(--fgColor-muted); margin-left: 3px;">/hr</span></td>
+          </tr>
+          <tr class="pricing-row">
+            <td>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-weight: 800; font-size: 0.97rem;">Supernova</span>
+                <span style="font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; background: #4f6ef7; color: #fff; border-radius: 4px; padding: 2px 7px;">Exclusive</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--fgColor-muted); margin-top: 3px; font-weight: 400;">Large-scale deep learning, exclusive research</div>
+            </td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">12</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">32 GB</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">16 GB</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">67%</td>
+            <td style="font-family: var(--font-mono), monospace; font-weight: 600;">1</td>
+            <td><span style="font-family: var(--font-mono), monospace; font-size: 1.05rem; font-weight: 800; color: var(--fgColor-default);">₹155</span><span style="font-family: var(--font-sans); font-size: 0.72rem; color: var(--fgColor-muted); margin-left: 3px;">/hr</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- All plans include -->
+    <div class="plans-include" style="background: var(--bgColor-default); border: 1px solid var(--borderColor-default); border-radius: 10px; padding: 28px 32px;">
+      <div style="font-family: var(--font-sans); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fgColor-muted); margin-bottom: 18px;">All plans include</div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px 40px;">
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="color: #22c55e;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-default);">Persistent ZFS storage</span></div>
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="color: #22c55e;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-default);">SSH &amp; browser file access</span></div>
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="color: #22c55e;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-default);">Pre-built ML images (CUDA, PyTorch)</span></div>
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="color: #22c55e;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-default);">University SSO login</span></div>
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="color: #22c55e;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-default);">Real-time billing dashboard</span></div>
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="color: #22c55e;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-default);">Session pause / resume</span></div>
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="color: #22c55e;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-default);">Spend limit controls</span></div>
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="color: #22c55e;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span style="font-family: var(--font-sans); font-size: 0.875rem; color: var(--fgColor-default);">Priority email support</span></div>
+      </div>
+    </div>
+    
+    <div style="text-align: center; margin-top: 32px;">
+      <a href="/signup" class="btn-primary" style="display: inline-flex; align-items: center; gap: 8px; padding: 13px 32px; background: #4f6ef7; color: #fff; font-family: var(--font-sans); font-size: 1rem; font-weight: 700; border-radius: 8px; box-shadow: 0 4px 24px rgba(79,110,247,0.18); transition: all 0.2s;">STUDENT? Start Free — No Credit Card →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     FAQ
+═══════════════════════════════════════════════════════════════════════════ -->
+<section id="faq">
+  <div class="land-section">
+    <div style="text-align: center; margin-bottom: 56px;">
+      <div style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4f6ef7; margin-bottom: 10px;">FAQ</div>
+      <h2 style="font-family: var(--font-sans); font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; color: var(--fgColor-default); letter-spacing: -0.02em;">Frequently Asked Questions</h2>
+    </div>
+    <div id="faq-container" style="max-width: 780px; margin: 0 auto;">
+      <!-- FAQ items will be inserted by JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     CTA BANNER (with video)
+═══════════════════════════════════════════════════════════════════════════ -->
+<section data-section="cta" style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #050810; text-align: center; position: relative; overflow: hidden;">
+  <!-- Video Background -->
+  <video src="./video.mp4" autoplay muted loop playsinline preload="auto" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center center; z-index: 0;"></video>
+  
+  <!-- Gradient Overlay -->
+  <div style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,8,16,0.9) 0%, rgba(5,8,16,0.6) 40%, rgba(5,8,16,0.6) 60%, rgba(5,8,16,0.9) 100%); z-index: 1;"></div>
+  
+  <!-- Content -->
+  <div style="position: relative; z-index: 2; max-width: 700px; padding: 0 24px;">
+    <h2 style="font-family: var(--font-sans); font-size: clamp(2.2rem, 5vw, 3.8rem); font-weight: 800; color: #ffffff; letter-spacing: -0.02em; margin-bottom: 20px; line-height: 1.15; text-shadow: 0 4px 30px rgba(0,0,0,0.8);">Ready to launch your first GPU session?</h2>
+    <p style="font-family: var(--font-sans); font-size: clamp(1rem, 2vw, 1.25rem); color: rgba(255,255,255,0.9); margin-bottom: 40px; line-height: 1.7; max-width: 560px; margin: 0 auto 40px;">Sign up with your university email or institutional SSO and be running model training within 60 seconds.</p>
+    <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+      <a href="/signup" class="btn-cta-primary" style="display: inline-flex; align-items: center; gap: 10px; padding: 16px 40px; background: #4f6ef7; color: #fff; font-family: var(--font-sans); font-size: 1.1rem; font-weight: 700; border-radius: 10px; box-shadow: 0 6px 30px rgba(79,110,247,0.6); transition: all 0.2s;">Create Account →</a>
+      <a href="/signin" class="btn-cta-secondary" style="display: inline-flex; align-items: center; gap: 10px; padding: 16px 40px; background: rgba(255,255,255,0.1); color: #fff; font-family: var(--font-sans); font-size: 1.1rem; font-weight: 600; border-radius: 10px; border: 2px solid rgba(255,255,255,0.4); transition: all 0.2s;">Sign In</a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     FOOTER
+═══════════════════════════════════════════════════════════════════════════ -->
+<footer class="main-footer" style="border-top: 1px solid var(--borderColor-default); padding: 28px 48px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; background: var(--bgColor-default);">
+  <span style="font-family: var(--font-sans); font-size: 1rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fgColor-default);">LaaS</span>
+  <span style="font-family: var(--font-sans); font-size: 0.8rem; color: var(--fgColor-muted);">KSRCE AI Lab — Lab as a Service Platform · © 2025</span>
+  <div style="display: flex; gap: 24px;">
+    <a href="#" class="footer-link" style="font-family: var(--font-sans); font-size: 0.8rem; color: var(--fgColor-muted); transition: color 0.15s;">Privacy</a>
+    <a href="#" class="footer-link" style="font-family: var(--font-sans); font-size: 0.8rem; color: var(--fgColor-muted); transition: color 0.15s;">Terms</a>
+    <a href="#" class="footer-link" style="font-family: var(--font-sans); font-size: 0.8rem; color: var(--fgColor-muted); transition: color 0.15s;">Docs</a>
+    <a href="#pricing" class="footer-link" style="font-family: var(--font-sans); font-size: 0.8rem; color: var(--fgColor-muted); transition: color 0.15s;">Pricing</a>
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  // ─── Auto-Fit Zoom ──────────────────────────────────────────────────────────
+  let currentZoom = 1;
+  const heroSection = document.getElementById('hero');
+  const ctaSection = document.querySelector('[data-section="cta"]');
+
+  function setZoomValue() {
+    currentZoom = window.innerWidth / 1280;
+    document.documentElement.style.zoom = String(currentZoom);
+    // Compensate hero min-height for zoom
+    if (heroSection) {
+      heroSection.style.minHeight = ((1 / currentZoom) * 100) + 'vh';
+    }
+    // Compensate CTA min-height for zoom
+    if (ctaSection) {
+      ctaSection.style.minHeight = ((1 / currentZoom) * 100) + 'vh';
+    }
+  }
+  setZoomValue();
+  window.addEventListener('resize', setZoomValue);
+
+  // ─── Data ────────────────────────────────────────────────────────────────────
+  const termLines = [
+    { t: "cmd", s: "$ laas login --sso ksrce.edu.in" },
+    { t: "ok", s: "✓  Authenticated via KSRCE SSO" },
+    { t: "ok", s: "✓  Storage provisioned  up to 100 GB ZFS" },
+    { t: "", s: "" },
+    { t: "cmd", s: "$ laas launch --gpu 4090 --type jupyter" },
+    { t: "muted", s: "  Selecting node …" },
+    { t: "muted", s: "  Pulling image  laas/jupyter:cuda12" },
+    { t: "ok", s: "✓  Session live in 8s" },
+    { t: "url", s: "  → https://sess.laas.io/xk9f2a" },
+    { t: "", s: "" },
+    { t: "muted", s: "  GPU  4090 24 GB     vCPU 8     RAM 32 GB" },
+    { t: "cursor", s: "▊" }
+  ];
+
+  const steps = [
+    { num: "01", title: "Choose Template", color: "#4f8ef7", glow: "rgba(79,142,247,0.18)", glow2: "rgba(79,142,247,0.1)", border: "rgba(79,142,247,0.25)", items: ["Jupyter Notebook", "VS Code Server", "Stateful Desktop", "Custom CLI"], icon: "template" },
+    { num: "02", title: "Configure Resources", color: "#8b5cf6", glow: "rgba(139,92,246,0.18)", glow2: "rgba(139,92,246,0.1)", border: "rgba(139,92,246,0.25)", items: ["Pick GPU tier", "Set memory & vCPU", "Choose OS image", "Set session duration"], icon: "config" },
+    { num: "03", title: "Launch Instance", color: "#00d4ff", glow: "rgba(0,212,255,0.15)", glow2: "rgba(0,212,255,0.08)", border: "rgba(0,212,255,0.22)", items: ["One-click launch", "Ready in < 30s", "Auto-mount storage", "SSO identity injected"], icon: "launch" },
+    { num: "04", title: "Development Tools", color: "#10f5a4", glow: "rgba(16,245,164,0.15)", glow2: "rgba(16,245,164,0.08)", border: "rgba(16,245,164,0.22)", items: ["Full terminal access", "SSH key support", "File upload/download", "Live port forwarding"], icon: "tools" },
+    { num: "05", title: "Manage & Monitor", color: "#f97316", glow: "rgba(249,115,22,0.15)", glow2: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.22)", items: ["Pause / Resume", "Real-time billing", "Session event log", "Quota analytics"], icon: "deploy" }
+  ];
+
+  const faqs = [
+    { q: "What types of GPUs are available on LaaS?", a: "LaaS provides access to NVIDIA RTX 4090 GPUs with 24 GB VRAM. Fractional GPU allocation via HAMI allows multiple users to share a single GPU efficiently for lighter workloads." },
+    { q: "How is storage handled across sessions?", a: "Institution SSO users receive up to 100 GB of persistent ZFS storage on first login. This dataset is mounted automatically into every session, so your datasets, notebooks, and code persist indefinitely between sessions." },
+    { q: "Can I access my session via SSH?", a: "Yes. Every session exposes an SSH endpoint. You can upload your public SSH keys through the Account → SSH Keys panel and connect directly from your local terminal." },
+    { q: "How does billing work?", a: "LaaS uses a wallet-based credit system with per-second billing charges. Active sessions burn credits at the configured compute rate. Paused sessions only incur minimal storage fees. You can set spend limits and view a real-time daily spend chart on your dashboard." },
+    { q: "Do I need to set up Keycloak for university SSO?", a: "Admins configure the Keycloak IDP federation (SAML or OIDC) once per institution. After that, all students and faculty can sign in using their existing university email credentials — no additional signup required." },
+    { q: "What happens when a session is idle?", a: "Sessions that exceed a configurable idle threshold are automatically terminated to conserve resources. Files saved to the persistent storage volume are always preserved regardless of session termination status." }
+  ];
+
+  const icons = {
+    template: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
+    config: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    launch: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
+    tools: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+    deploy: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>'
+  };
+
+  // ─── Theme Toggle ────────────────────────────────────────────────────────────
+  let isDark = localStorage.getItem("darkMode") === "true";
+  
+  function updateTheme() {
+    document.documentElement.classList.toggle("dark", isDark);
+    document.getElementById("sun-icon").style.display = isDark ? "block" : "none";
+    document.getElementById("moon-icon").style.display = isDark ? "none" : "block";
+    localStorage.setItem("darkMode", String(isDark));
+  }
+  updateTheme();
+
+  document.getElementById("theme-toggle").addEventListener("click", function() {
+    isDark = !isDark;
+    updateTheme();
+  });
+
+  // ─── Nav Scroll Effect ───────────────────────────────────────────────────────
+  const nav = document.getElementById("main-nav");
+  window.addEventListener("scroll", function() {
+    const scrolled = window.scrollY > 30;
+    if (scrolled) {
+      nav.style.background = isDark ? "rgba(8,10,18,0.92)" : "rgba(245,245,240,0.92)";
+      nav.style.borderBottom = "1px solid var(--borderColor-default)";
+      nav.style.backdropFilter = "blur(14px)";
+    } else {
+      nav.style.background = "transparent";
+      nav.style.borderBottom = "1px solid transparent";
+      nav.style.backdropFilter = "none";
+    }
+  });
+
+  // ─── Particles Canvas ────────────────────────────────────────────────────────
+  const canvas = document.getElementById("particles-canvas");
+  const ctx = canvas.getContext("2d");
+  let animId;
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas);
+
+  const dots = Array.from({ length: 120 }, () => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: Math.random() * 1.5 + 0.3,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.3,
+    opacity: Math.random() * 0.5 + 0.1
+  }));
+
+  function drawParticles() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    dots.forEach(d => {
+      d.x += d.vx;
+      d.y += d.vy;
+      if (d.x < 0) d.x = canvas.width;
+      if (d.x > canvas.width) d.x = 0;
+      if (d.y < 0) d.y = canvas.height;
+      if (d.y > canvas.height) d.y = 0;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(100,160,255,${d.opacity})`;
+      ctx.fill();
+    });
+    dots.forEach((a, i) => {
+      dots.slice(i + 1).forEach(b => {
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (dist < 130) {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = `rgba(79,110,247,${0.07 * (1 - dist / 130)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      });
+    });
+    animId = requestAnimationFrame(drawParticles);
+  }
+  drawParticles();
+
+  // ─── Terminal Typing Animation ───────────────────────────────────────────────
+  const termContent = document.getElementById("terminal-content");
+  const colors = { cmd: "var(--fgColor-default)", ok: "#22c55e", muted: "var(--fgColor-muted)", url: "#4f6ef7", cursor: "#4f6ef7" };
+  let shown = 0;
+
+  function typeLine() {
+    if (shown < termLines.length) {
+      const line = termLines[shown];
+      const div = document.createElement("div");
+      div.style.color = colors[line.t] || "var(--fgColor-default)";
+      div.style.animation = "fadeUp 0.2s ease";
+      div.textContent = line.s;
+      termContent.appendChild(div);
+      shown++;
+      setTimeout(typeLine, 380);
+    }
+  }
+  typeLine();
+
+  // ─── Animated Counters ───────────────────────────────────────────────────────
+  const counters = document.querySelectorAll(".counter");
+  const counterObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && !entry.target.dataset.done) {
+        entry.target.dataset.done = "true";
+        const end = parseInt(entry.target.dataset.end, 10);
+        const dur = 1600, step = 16, inc = end / (dur / step);
+        let cur = 0;
+        const timer = setInterval(() => {
+          cur += inc;
+          if (cur >= end) {
+            entry.target.textContent = end.toLocaleString();
+            clearInterval(timer);
+          } else {
+            entry.target.textContent = Math.floor(cur).toLocaleString();
+          }
+        }, step);
+      }
+    });
+  }, { threshold: 0.4 });
+  counters.forEach(c => counterObserver.observe(c));
+
+  // ─── Scroll Reveal ───────────────────────────────────────────────────────────
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add("revealed");
+    });
+  }, { threshold: 0.1, rootMargin: "0px 0px -50px 0px" });
+  document.querySelectorAll(".reveal-on-scroll").forEach(e => revealObserver.observe(e));
+
+  // Bento reveal
+  const bentoObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add("bento-revealed");
+    });
+  }, { threshold: 0.1, rootMargin: "0px 0px -40px 0px" });
+  document.querySelectorAll(".bento-animate").forEach(e => bentoObserver.observe(e));
+
+  // ─── Bento Grid Mouse Spotlight ──────────────────────────────────────────────
+  const bentoGrid = document.getElementById("bento-grid");
+  bentoGrid.addEventListener("mousemove", function(e) {
+    const cards = bentoGrid.querySelectorAll(".bento-card");
+    cards.forEach(card => {
+      const rect = card.getBoundingClientRect();
+      card.style.setProperty("--mx", `${e.clientX - rect.left}px`);
+      card.style.setProperty("--my", `${e.clientY - rect.top}px`);
+    });
+  });
+
+  // ─── Step Cards Render ───────────────────────────────────────────────────────
+  const stepsRow = document.getElementById("steps-row");
+  steps.forEach((s, i) => {
+    const isFeatured = i === 2;
+    const isTall = i === 1 || i === 3;
+    const extraPad = isTall ? 16 : 0;
+    
+    const card = document.createElement("div");
+    card.className = "dock-card reveal-on-scroll";
+    card.style.transitionDelay = `${i * 0.12}s`;
+    
+    card.innerHTML = `
+      <div class="step-card${isFeatured ? ' featured' : ''}" style="
+        background: ${isFeatured ? `linear-gradient(160deg, ${s.glow2} 0%, var(--bgColor-mild) 60%)` : 'var(--bgColor-mild)'};
+        border: 1px solid ${isFeatured ? s.border : 'var(--borderColor-default)'};
+        padding: ${24 + extraPad}px 20px ${22 + extraPad}px;
+        box-shadow: ${isFeatured ? `0 24px 60px rgba(0,0,0,0.1), 0 0 50px ${s.glow}` : 'none'};
+      " data-color="${s.color}" data-glow="${s.glow}" data-glow2="${s.glow2}" data-border="${s.border}" data-featured="${isFeatured}">
+        ${isFeatured ? `<div style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, ${s.color}, transparent);"></div>` : ''}
+        <div class="step-topline" style="position: absolute; top: 0; left: 20%; right: 20%; height: 1px; background: transparent; transition: all 0.3s;"></div>
+        <div style="position: absolute; top: 14px; right: 16px; font-family: ui-monospace, monospace; font-size: ${isFeatured ? '3.4rem' : '2.8rem'}; font-weight: 800; color: ${s.color}; opacity: ${isFeatured ? 0.13 : 0.06}; line-height: 1; letter-spacing: -0.05em; user-select: none;">${s.num}</div>
+        <div style="width: ${isFeatured ? 52 : 44}px; height: ${isFeatured ? 52 : 44}px; border-radius: 12px; background: ${s.glow2}; border: 1px solid ${s.border}; display: flex; align-items: center; justify-content: center; color: ${s.color}; margin-bottom: 14px; box-shadow: ${isFeatured ? `0 0 20px ${s.glow}` : 'none'};">
+          ${icons[s.icon]}
+        </div>
+        <div style="display: inline-flex; align-items: center; gap: 4px; font-family: ui-monospace, monospace; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: ${s.color}; background: ${s.glow2}; border: 1px solid ${s.border}; border-radius: 6px; padding: 2px 8px; margin-bottom: 10px;">
+          ${isFeatured ? `<span style="width: 5px; height: 5px; border-radius: 50%; background: ${s.color}; display: inline-block;"></span>` : ''}
+          Step ${s.num}
+        </div>
+        <div style="font-family: var(--font-sans); font-size: ${isFeatured ? '1.05rem' : '0.97rem'}; font-weight: 700; color: var(--fgColor-default); margin-bottom: 12px; line-height: 1.3;">${s.title}</div>
+        <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 7px;">
+          ${s.items.map(it => `
+            <li style="display: flex; align-items: center; gap: 7px; font-family: var(--font-sans); font-size: 0.78rem; color: ${isFeatured ? 'var(--fgColor-default)' : 'var(--fgColor-muted)'}; transition: color 0.2s;">
+              <span class="step-dot" style="width: 5px; height: 5px; border-radius: 50%; background: ${s.color}; flex-shrink: 0; opacity: ${isFeatured ? 1 : 0.3}; transition: opacity 0.25s;"></span>
+              ${it}
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `;
+    
+    // Hover effects
+    const stepCard = card.querySelector('.step-card');
+    stepCard.addEventListener('mouseenter', function() {
+      if (!this.dataset.featured || this.dataset.featured === 'false') {
+        this.style.transform = 'translateY(-8px)';
+        this.style.borderColor = this.dataset.border;
+        this.style.boxShadow = `0 20px 50px rgba(0,0,0,0.1), 0 0 40px ${this.dataset.glow}`;
+        this.querySelector('.step-topline').style.background = `linear-gradient(90deg, transparent, ${this.dataset.color}, transparent)`;
+      }
+      this.querySelectorAll('li').forEach(li => li.style.color = 'var(--fgColor-default)');
+      this.querySelectorAll('.step-dot').forEach(dot => dot.style.opacity = '1');
+    });
+    stepCard.addEventListener('mouseleave', function() {
+      if (!this.dataset.featured || this.dataset.featured === 'false') {
+        this.style.transform = '';
+        this.style.borderColor = 'var(--borderColor-default)';
+        this.style.boxShadow = 'none';
+        this.querySelector('.step-topline').style.background = 'transparent';
+        this.querySelectorAll('li').forEach(li => li.style.color = 'var(--fgColor-muted)');
+        this.querySelectorAll('.step-dot').forEach(dot => dot.style.opacity = '0.3');
+      }
+    });
+    
+    stepsRow.appendChild(card);
+    revealObserver.observe(card);
+  });
+
+  // ─── Step Cards Dock Effect ──────────────────────────────────────────────────
+  stepsRow.addEventListener("mousemove", function(e) {
+    const rowRect = stepsRow.getBoundingClientRect();
+    const mouseX = e.clientX - rowRect.left;
+    const cards = stepsRow.querySelectorAll(".dock-card");
+    
+    cards.forEach(card => {
+      const rect = card.getBoundingClientRect();
+      const cardCenterX = rect.left + rect.width / 2 - rowRect.left;
+      const dist = Math.abs(mouseX - cardCenterX);
+      const t = Math.max(0, 1 - dist / 260);
+      const eased = t * t * (3 - 2 * t);
+      const scale = 1 + eased * 0.07;
+      const lift = eased * 6;
+      card.style.transform = `translateY(-${lift}px) scale(${scale})`;
+      card.style.zIndex = String(Math.round(eased * 10));
+    });
+  });
+
+  stepsRow.addEventListener("mouseleave", function() {
+    const cards = stepsRow.querySelectorAll(".dock-card");
+    cards.forEach(card => {
+      card.style.transform = "";
+      card.style.zIndex = "";
+    });
+  });
+
+  // ─── FAQ Accordion ───────────────────────────────────────────────────────────
+  const faqContainer = document.getElementById("faq-container");
+  faqs.forEach(f => {
+    const item = document.createElement("div");
+    item.className = "faq-item";
+    item.innerHTML = `
+      <button class="faq-btn">
+        <span>${f.q}</span>
+        <span class="faq-icon">+</span>
+      </button>
+      <div class="faq-answer">
+        <p>${f.a}</p>
+      </div>
+    `;
+    item.querySelector(".faq-btn").addEventListener("click", function() {
+      item.classList.toggle("open");
+    });
+    faqContainer.appendChild(item);
+  });
+
+  // ─── Button Hover Effects ────────────────────────────────────────────────────
+  // Nav links
+  document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('mouseenter', function() { this.style.color = 'var(--fgColor-default)'; });
+    link.addEventListener('mouseleave', function() { this.style.color = 'var(--fgColor-muted)'; });
+  });
+
+  // Theme toggle
+  const themeBtn = document.getElementById('theme-toggle');
+  themeBtn.addEventListener('mouseenter', function() { this.style.background = 'var(--bgColor-muted)'; this.style.color = 'var(--fgColor-default)'; });
+  themeBtn.addEventListener('mouseleave', function() { this.style.background = 'transparent'; this.style.color = 'var(--fgColor-muted)'; });
+
+  // Sign in button
+  document.querySelector('.btn-signin').addEventListener('mouseenter', function() { this.style.background = 'var(--bgColor-muted)'; });
+  document.querySelector('.btn-signin').addEventListener('mouseleave', function() { this.style.background = 'transparent'; });
+
+  // Sign up button
+  document.querySelector('.btn-signup').addEventListener('mouseenter', function() { this.style.backgroundColor = '#3a56d4'; });
+  document.querySelector('.btn-signup').addEventListener('mouseleave', function() { this.style.backgroundColor = '#4f6ef7'; });
+
+  // Primary buttons
+  document.querySelectorAll('.btn-primary').forEach(btn => {
+    btn.addEventListener('mouseenter', function() { this.style.background = '#3a56d4'; this.style.transform = 'translateY(-2px)'; });
+    btn.addEventListener('mouseleave', function() { this.style.background = '#4f6ef7'; this.style.transform = 'translateY(0)'; });
+  });
+
+  // Secondary buttons
+  document.querySelectorAll('.btn-secondary').forEach(btn => {
+    btn.addEventListener('mouseenter', function() { this.style.background = 'var(--bgColor-mild)'; this.style.transform = 'translateY(-2px)'; });
+    btn.addEventListener('mouseleave', function() { this.style.background = 'transparent'; this.style.transform = 'translateY(0)'; });
+  });
+
+  // CTA buttons
+  document.querySelectorAll('.btn-cta-primary').forEach(btn => {
+    btn.addEventListener('mouseenter', function() { this.style.background = '#3a56d4'; this.style.transform = 'translateY(-3px)'; });
+    btn.addEventListener('mouseleave', function() { this.style.background = '#4f6ef7'; this.style.transform = 'translateY(0)'; });
+  });
+  document.querySelectorAll('.btn-cta-secondary').forEach(btn => {
+    btn.addEventListener('mouseenter', function() { this.style.background = 'rgba(255,255,255,0.2)'; this.style.transform = 'translateY(-3px)'; });
+    btn.addEventListener('mouseleave', function() { this.style.background = 'rgba(255,255,255,0.1)'; this.style.transform = 'translateY(0)'; });
+  });
+
+  // Footer links
+  document.querySelectorAll('.footer-link').forEach(link => {
+    link.addEventListener('mouseenter', function() { this.style.color = 'var(--fgColor-default)'; });
+    link.addEventListener('mouseleave', function() { this.style.color = 'var(--fgColor-muted)'; });
+  });
+
+  // ─── Pricing Row Hover ───────────────────────────────────────────────────────
+  document.querySelectorAll('.pricing-row').forEach(row => {
+    const priceCell = row.querySelector('td:last-child span:first-child');
+    const isFeatured = row.classList.contains('featured');
+    row.addEventListener('mouseenter', function() {
+      if (priceCell && !isFeatured) priceCell.style.color = '#4f6ef7';
+    });
+    row.addEventListener('mouseleave', function() {
+      if (priceCell && !isFeatured) priceCell.style.color = 'var(--fgColor-default)';
+    });
+  });
+
+})();
+</script>
+
+</body>
+</html>

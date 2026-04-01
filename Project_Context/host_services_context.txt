@@ -1,0 +1,505 @@
+Objective
+Conduct a comprehensive investigation and documentation of the LaaS (Lab as a Service) project's critical infrastructure components including:
+Host services architecture and container lifecycle management
+Storage provisioning and ZFS/NFS integration
+Complete monitoring stack setup
+UI design system and component styling
+Architectural diagrams and database schema
+Investigation Findings
+1. Host Services Architecture
+Overview
+The LaaS platform uses two Python Flask HTTP services running on the GPU compute node that the backend communicates with via REST APIs with shared secret authentication:Locations:
+Session Orchestration: c:\Users\Punith\LaaS\host-services\session-orchestration\app.py (Port 9998)
+Storage Provision: c:\Users\Punith\LaaS\host-services\storage-provision\app.py (Port 9999)
+A. Session Orchestration Service (Port 9998)
+Purpose: Manages the complete Docker container lifecycle for GPU desktop sessions.Key Endpoints:
+Endpoint	Method	Purpose	Auth
+/health	GET	Returns Docker, GPU, Selkies image, MPS daemon status	None
+/sessions/launch	POST	Async session launch (returns immediately with launch ID)	X-Session-Secret
+/sessions/<name>/events	GET	Get real-time launch events and status	X-Session-Secret
+/sessions/<name>/status	GET	Get Docker container state	X-Session-Secret
+/sessions/<name>/stop	POST	Gracefully stop session (30s timeout)	X-Session-Secret
+/sessions/<name>/restart	POST	Restart container	X-Session-Secret
+/sessions/<name>/logs	GET	Get last 100 lines of container logs	X-Session-Secret
+/sessions	GET	List all active LaaS session containers	X-Session-Secret
+/resources	GET	Get CPU cores, ports, displays allocation status	X-Session-Secret
+Resource Allocation Strategy:
+CPU Cores: Allocatable range 2-15 (cores 0-1 reserved for OS); contiguous allocation only
+Ports: Nginx range 8100-8199; derived ports (Selkies +1000, metrics +11000)
+Displays: X display range 20-99
+Reserved Infrastructure Ports: 3000 (Grafana), 3001 (Uptime Kuma), 3100 (Loki), 8080 (cAdvisor internal), 8999 (cAdvisor published), 9090 (Prometheus), 9093 (Alertmanager), 9100 (Node Exporter), 9115 (Blackbox), 9400 (DCGM), 9500 (MPS), 9501 (Session Exporter), 9998 (Session Orch), 8180 (Keycloak)
+Session Launch Workflow (9 Steps):
+Scheduling - Validate launch parameters (session_id UUID, tier, vCPU 1-14, memory, VRAM, SM%)
+Allocating Ports - Find first available nginx port (8100-8199), display number, Selkies/metrics derived ports
+Allocating CPUs - Find contiguous block of requested cores from 2-15
+Validating NFS Mount - For stateful sessions only; verify /mnt/nfs/users/<storage_uid> exists and is writable
+Creating Container - Build comprehensive Docker command with:
+GPU access (--gpus all)
+Resource limits (CPU cores, memory, pids-limit)
+Security (seccomp, capabilities, AppArmor)
+Environment variables (CUDA, HAMi, MPS, TURN, Selkies)
+Volume mounts (MPS pipes, HAMi libs, sudoers, bash configs, lxcfs, storage)
+Docker labels for monitoring (session_id, user_id, tier, node)
+Starting Container - Launch with 30s timeout
+Waiting for Desktop - Poll nginx port (2s intervals, 120s max) until HTTP 200 response
+Health Checking - Verify WebRTC stream accessibility
+Ready - Mark session ready with connection info (ports, password, URL, hostname)
+Tier Slugs: spark, blaze, inferno, supernovaNetworking Modes:
+Bridge Mode (Isolated): Containers on laas-sessions network; HTTP ports published to host
+Host Mode (Legacy POC): Full host network access (deprecated; security risk)
+Container Specification Example:
+plaintext
+- Name: laas-<session_id[:8]>
+- Hostname: ws-<random_hex>
+- Image: ghcr.io/selkies-project/nvidia-egl-desktop:latest
+- GPU: All (with HAMi enforced VRAM/SM limits)
+- Memory: Per-tier (1-64GB)
+- Capabilities: DROP ALL + minimal adds (CHOWN, DAC_OVERRIDE, SETUID, etc.)
+- Security Options: seccomp filter, AppArmor docker-default
+- IPC: host (required for Selkies WebRTC shared memory + HAMi MPS)
+- Environment Variables: DISPLAY, CUDA_DEVICE_MEMORY_LIMIT_0, CUDA_DEVICE_SM_LIMIT, TURN settings
+Key Security Features:
+Seccomp filter blocks dangerous syscalls (mount, unshare, setns, kexec, module loading)
+Sudoers policy denies dangerous operations (module loading, filesystem operations, networking)
+LD_PRELOAD stripping for system tools
+lxcfs for fake resource virtualization
+HAMi-core libvgpu.so for VRAM/SM enforcement
+B. Storage Provision Service (Port 9999)
+Purpose: Manages ZFS user storage provisioning, deprovisioning, and file operations.Key Endpoints:
+Endpoint	Method	Purpose	Auth
+/health	GET	Check service and ZFS pool availability	None
+/provision	POST	Create ZFS dataset with quota for user	X-Provision-Secret
+/deprovision	POST	Destroy ZFS dataset (idempotent)	X-Provision-Secret
+/host-space	GET	Get datapool total/available space	None
+/upgrade-storage	POST	Increase storage quota safely	X-Provision-Secret
+/storage/usage/<storage_uid>	GET	Get used bytes vs quota	X-Provision-Secret
+/files/<storage_uid>	GET	List files in user storage	X-Provision-Secret
+/files/<storage_uid>/mkdir	POST	Create folder	X-Provision-Secret
+/files/<storage_uid>/upload	POST	Upload files (multipart)	X-Provision-Secret
+/files/<storage_uid>/download	GET	Download file	X-Provision-Secret
+/files/<storage_uid>/delete	DELETE	Delete file/folder recursively	X-Provision-Secret
+Storage Architecture:
+ZFS Pool: datapool (e.g., RTX 5090 node with large NVMe)
+Dataset Structure: datapool/users/<storage_uid>
+Storage UID Format: u_[0-9a-f]{24} (52 chars total)
+Default Quota: 5GB (configurable 1-50GB)
+Mount Point: /mnt/nfs/users/<storage_uid>
+Container Mount: /home/ubuntu (bind mount inside container)
+Provisioning Flow:
+Pre-check: Verify datapool and datapool/users dataset exist
+Run provision script: sudo /usr/local/bin/provision-user-storage.sh <storage_uid> <quota_gb>
+Post-verify: Check dataset exists with correct quota
+Optional NFS setup (if ENABLE_NFS_AUTOMOUNT=true):
+Add export line to /etc/exports
+Create mount at /mnt/nfs/users/<storage_uid>
+Add /etc/fstab entry
+Deprovisioning Flow (Idempotent):
+Validate storage_uid format
+If NFS automount enabled: unmount, remove exports/fstab
+Destroy ZFS dataset with -f flag (force unmount + snapshots)
+Verify destruction
+Remove mountpoint directory
+Quota Upgrade Strategy:
+Uses zfs set quota=<new_gb>G (instantaneous, safe)
+Validates new quota > current quota
+Verifies upgrade succeeded; rolls back on failure
+ZFS Size Parser:
+Accepts formats: 24K, 5.23G, 1234567890 (bytes)
+Multipliers: B=1, K=1024, M=1024², G=1024³, T/P/E follow
+File Operations Security:
+Directory traversal prevention (rejects .., normalizes paths)
+Quota enforcement (OS/ZFS prevents writes beyond quota)
+Secure filename handling (werkzeug.utils.secure_filename)
+PermissionError handling for filesystem issues
+2. Host Configuration Files
+Location: c:\Users\Punith\LaaS\host-services\config\
+bash.bashrc
+Injected into all containers; provides:
+Electron app sandbox disable (for VS Code, Chrome, Slack)
+LD_PRELOAD setup for resource interceptors (fake_sysconf.so, libvgpu.so)
+HAMi VRAM/SM enforcement via LD_PRELOAD wrapping (Python, NVCC, Jupyter)
+Smart sudo wrapper (strips LD_PRELOAD to prevent system tool crashes)
+Package manager wrappers (apt, pip) that strip LD_PRELOAD
+nvidia-smi-wrapper
+Shells out to real /usr/bin/nvidia-smi.real; intercepts output to:
+Show per-container VRAM limit instead of full GPU memory
+Reads limit from CUDA_DEVICE_MEMORY_LIMIT_0 or /tmp/cudevshr.cache
+Replaces VRAM display: sed "s|/ [0-9]*MiB|/ ${LIMIT_MIB}MiB|g"
+passwd-wrapper
+Strips LD_PRELOAD environment to prevent HAMi conflicts during password change
+seccomp-gpu-desktop.json
+Seccomp filter (default ALLOW) that blocks dangerous syscalls:
+Kernel module operations (kexec_load, init_module, delete_module)
+BPF (bpf), process inspection (process_vm_writev/readv)
+Keying (add_key, keyctl, request_key)
+Namespace operations (unshare, setns)
+System operations (reboot, swapon, mount, umount2, pivot_root)
+Returns ERRNO 1 on attempt
+sudoers
+Base sudoers file (overrides base image); includes @includedir /etc/sudoers.d
+sudoers-laas-user
+Comprehensive sudo policy for ubuntu user:
+Grant: Full sudo (NOPASSWD: ALL)
+Deny: Module loading, filesystem operations, networking, containerization, code interpretation
+Defense in depth: Denies both symlink AND real binary paths
+Environment: Clears LD_PRELOAD and LD_LIBRARY_PATH automatically
+supervisord-hami.conf
+Process supervisor config managing all container services:
+entrypoint (priority 1) - Desktop environment startup
+dbus (priority 1) - D-Bus system daemon
+selkies-gstreamer (priority 20) - WebRTC encoder (if not using KasmVNC)
+kasmvnc (priority 20) - Alternative VNC encoder
+nginx (priority 30) - Reverse proxy for WebRTC
+pipewire-group (priority 10) - Audio daemon group (pipewire, wireplumber, pipewire-pulse)
+3. Storage Provisioning Setup
+README Reference: c:\Users\Punith\LaaS\host-services\storage-provision\README.mdPrerequisites on Host:
+bash
+sudo cp /path/to/provision-user-storage.sh /usr/local/bin/
+sudo chmod +x /usr/local/bin/provision-user-storage.sh
+echo 'zenith ALL=(root) NOPASSWD: /usr/local/bin/provision-user-storage.sh' | sudo tee /etc/sudoers.d/laas-provision
+Environment Variables:
+PROVISION_SECRET (required) - Shared secret for X-Provision-Secret header
+PORT (optional, default 9999)
+PROVISION_SCRIPT_PATH (default /usr/local/bin/provision-user-storage.sh)
+ENABLE_NFS_AUTOMOUNT (false by default; set true for single-host POC)
+NFS_EXPORT_CLIENT (default 127.0.0.1)
+NFS_MOUNT_ROOT (default /mnt/nfs/users)
+Backend Configuration:
+plaintext
+USER_STORAGE_PROVISION_URL=http://100.100.66.101:9999/provision
+USER_STORAGE_PROVISION_SECRET=<shared-secret>
+4. Monitoring Stack Architecture
+Location: c:\Users\Punith\LaaS\monitoring_setup_files\
+Stack Overview
+The monitoring stack is a complete, production-ready observability solution deployed via Docker Compose:
+plaintext
+┌─ Sources ─────────────────────────────────────────┐
+│  GPU (DCGM)  Host (node-exporter)  Containers (cAdvisor)
+│  MPS (mps-exporter)  Sessions (session-exporter)
+│  Logs (Promtail)  Endpoints (Blackbox)
+└────────────────────────────────────────────────────┘
+                        ↓
+┌─ Collection ──────────────────────────────────────┐
+│  Prometheus (15s scrape)  Loki (log aggregation)
+└────────────────────────────────────────────────────┘
+                        ↓
+┌─ Outputs ─────────────────────────────────────────┐
+│  Grafana Dashboards  Alertmanager → Telegram/Email
+│  Uptime Kuma (status page)
+└────────────────────────────────────────────────────┘
+Core Components
+Component	Port	Purpose	Key Config
+Prometheus	9090	Metrics store + alerting rules	30-day retention, 20GB max
+Grafana	3000	Dashboards + visualization	11.5.0, Loki native integration
+Alertmanager	9093	Alert routing (Telegram/Email)	Inhibition rules, deduplication
+Loki	3100	Log aggregation	Label-indexed, low overhead
+Promtail	—	Log shipper	Docker + systemd journal
+node-exporter	9100	Host metrics	CPU/RAM/disk/NFS/ZFS/systemd
+cAdvisor	8999	Per-container resources	Docker labels preserved
+DCGM Exporter	9400	GPU telemetry	NVIDIA official, 5s collection
+Blackbox Exporter	9115	Endpoint probing	TURN, portal, health checks
+mps-exporter	9500	CUSTOM - MPS state, NVENC count	Exports fault events, VRAM tracking
+session-exporter	9501	CUSTOM - Session lifecycle metrics	Writes file_sd targets for Selkies
+Uptime Kuma	3001	Service status page	Docker-aware monitoring
+Prometheus Configuration
+Scrape Jobs:
+node-exporter (host metrics)
+cAdvisor (container resource)
+dcgm-exporter (GPU)
+blackbox-exporter (probes)
+mps-exporter (MPS state)
+session-exporter (sessions)
+prometheus (self)
+file_sd (Selkies per-session metrics from orchestrator)
+Storage: 30-day retention, 20GB hard capAlerting: Rules stored in prometheus/rules/ directory (6 files)
+Critical Monitoring Gaps Addressed
+nvidia-patch Regression - NVENC session limit re-applied after driver updates
+lxcfs Stoppage - Detects when resource virtualization fails (security issue)
+ZFS/NFS Mount Health - Monitors file-backed pool for MVP
+Per-User Storage Quota - Alerts at 85% usage
+CUDA_NVRTC_ARCH Mismatch - Tracks architecture per container
+MPS Fault Frequency - Trends faults to detect systematic issues
+TURN Relay Ratio - Monitors WebRTC connection type distribution
+coturn Metrics - Native Prometheus metrics on port 9641
+Docker Storage Creep - Monitors overlay partition (500GB NVMe) at 80%
+Session Network Isolation - Validates bridge networking (not host)
+Custom Exporters
+mps-exporter (Port 9500):
+Exports: mps_daemon_state, mps_fault_total, nvenc_active_sessions, mps_active_clients, gpu_vram_orchestrator_allocated
+Monitors CUDA MPS daemon health and NVENC session count
+Custom because no existing tool monitors MPS fault state
+session-exporter (Port 9501):
+Exports: active_sessions_total (by tier, type, node), vram_allocated_mb, session_uptime
+Writes file_sd targets for Selkies /metrics scraping
+Bridges Docker API → Prometheus metrics
+Docker Compose Network
+Network: laas-monitoring (172.30.0.0/24)
+Volumes: prometheus_data, grafana_data, loki_data, alertmanager_data, uptime_kuma_data
+Grafana Dashboards
+Import from Community (Grafana ID):
+1860 - Node Exporter Full
+12239 - NVIDIA DCGM Exporter
+14282 - cAdvisor Exporter
+10619 - Docker Container & Host
+Custom LaaS Dashboards (build in UI):
+Fleet Overview: Active sessions, tier breakdown, VRAM%, GPU temp, NVENC sessions, MPS state, host RAM%, Docker storage%
+GPU Deep Dive: VRAM per container, SM util, NVENC util, power draw, clock speed, memory BW, PCIe throughput, MPS faults, ECC errors
+Session Analytics: Sessions started (24h), duration histogram, per-user storage%, WebRTC FPS, ICE type distribution, startup times
+Alerting & Channels
+Telegram Setup:
+Message @BotFather → /newbot
+Get token (1234567890:ABC...)
+Start chat with bot
+curl "https://api.telegram.org/bot<TOKEN>/getUpdates" → find TELEGRAM_CHAT_ID
+Add to .env, restart alertmanager
+Example Alert Testing:
+bash
+curl -X POST http://localhost:9093/api/v1/alerts \
+  -H 'Content-Type: application/json' \
+  -d '[{"labels":{"alertname":"TestAlert","severity":"warning","node":"node-mvp"},"annotations":{"summary":"Test alert"}}]'
+Port Reference & Firewall
+Port	Service	External Access
+3000	Grafana	Yes (via Cloudflare/Tailscale)
+3001	Uptime Kuma	Yes (via Cloudflare/Tailscale)
+3100	Loki	Internal only
+9090	Prometheus	Internal only
+9093	Alertmanager	Internal only
+9100	node-exporter	Internal only
+8999	cAdvisor	Internal only
+9400	DCGM	Internal only
+9500	MPS Exporter	Internal only
+9501	Session Exporter	Internal only
+9115	Blackbox	Internal only
+Multi-Node Expansion
+When scaling from MVP (single host) to production (4-node fleet):
+Update prometheus.yml static_configs to scrape all nodes
+Each node runs its own mps-exporter and session-exporter
+Prometheus instance on NAS/management node
+Aggregate labels for role='compute'
+5. Design System
+Location: c:\Users\Punith\LaaS\Design\
+Design Philosophy: "Utilitarian Minimalism"
+Also called "Linear-style UI" or "Functional Flat Design" — emphasizes purpose over decoration, popular in developer-facing SaaS.
+Typography
+Font Families:
+plaintext
+Primary: "Suisse Intl", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
+Monospace: "Suisse Intl Mono", "SF Mono", Consolas, monospace
+Font Weights:
+400: Body text, secondary elements
+500: Navigation items, labels
+600: Headings, emphasis
+700: Page titles, strong emphasis
+Scale (Desktop):
+Element	Size	Line Height	Letter Spacing
+H1	32px	40px	-0.04em
+H2	24px	32px	0.02em
+Body MD	14px	22px	—
+Body SM	12px	16px	—
+Monospace	14px	—	—
+Scale (Mobile):
+Element	Size	Line Height
+H1	24px	32px
+H2	18px	24px
+Color Palette - Light Theme
+Background:
+--bgColor-default: #F0EFE2 (main content)
+--bgColor-mild: #E7E6D9 (sidebar, header)
+--bgColor-muted: #D7D6CE (sections, table headers)
+--bgColor-elevated: #F0EFE2 (modals, dropdowns)
+Foreground:
+--fgColor-default: #0B0B0B (primary text, near-black)
+--fgColor-mild: #2E2E2E (secondary text)
+--fgColor-muted: #636363 (tertiary, placeholders)
+--fgColor-shell: #E7E6D9 (header/shell text)
+Semantic:
+--fgColor-accent: #6236F4 (ultraviolet)
+--fgColor-info: #3A73FF
+--fgColor-success: #009C00
+--fgColor-warning: #D98B0C
+--fgColor-critical: #E70000
+Borders:
+--borderColor-default: #BFBEB4
+--borderColor-strong: #9F9F96
+--borderColor-muted: #D7D6CE
+Color Palette - Dark Theme
+Background:
+--bgColor-default: #0B0B0B (main)
+--bgColor-mild: #161616 (sidebar, header)
+--bgColor-muted: #2E2E2E (sections)
+--bgColor-elevated: #222222 (modals)
+Foreground:
+--fgColor-default: #F0EFE2 (cream)
+--fgColor-mild: #BFBEB4 (secondary)
+--fgColor-muted: #818178 (tertiary)
+Semantic (Dark):
+--fgColor-accent: #7565F6 (lighter violet)
+--fgColor-info: #6C9AFF
+--fgColor-success: #05C004
+--fgColor-warning: #FDA422
+--fgColor-critical: #FF6742
+Spacing & Sizing
+Border Radius:
+none: 0px
+sm: 2px
+md: 4px (buttons, inputs)
+lg: 8px (cards, modals)
+Component Heights:
+Header: 60px
+Sidebar: 256px width
+Nav item: 40px
+Button (default): 40px
+Button (compact): 32px
+Input: 40px
+Table row: 48px
+Standard Spacing:
+xs: 4px (tight)
+sm: 8px (icon gaps)
+md: 12px (element padding)
+lg: 16px (section padding)
+xl: 24px (page margins)
+xxl: 32px (large gaps)
+Layout Structure
+Navigation:
+Left sidebar with icon + uppercase label pairs
+Padding: 0 12px, height 40px, gap 8px
+Uppercase, letter-spacing 0.06em
+File Store UI
+Table Structure:
+Columns: File Name | Type | Size | Updated On | Actions (40px)
+Headers: uppercase, letter-spacing 0.06em, font-weight 500
+Row height: 48px (touch target)
+Hover: alternating backgrounds (not alternating rows)
+File Icons:
+Container: 32x32px, 4px border-radius, background var(--bgColor-muted)
+Folder: info blue (#3A73FF) stroke
+File: muted gray stroke
+strokeWidth: 1.5 (NOT 2), size 16x16px inline
+stroke-linecap/linejoin: round
+Empty state: 40x40px, 0.6 opacity
+Breadcrumb & Navigation:
+"Back" button with left arrow
+Clickable path segments with chevron separators
+Current folder highlighted
+Action Menu:
+Portal-rendered dropdown (z-index: 9999)
+Options: Download, Delete (critical color for delete)
+Interactive Elements
+Buttons:
+Primary CTA: solid dark button, light text (high contrast, no gradients)
+Secondary: outlined/ghost button
+Highlights only where functionally necessary
+Status indicators are the only "color" used
+General Rules:
+No decorative elements, gradients, or illustrations
+Flat hierarchy — depth implied by spacing, not shadows
+Tables and data presented raw and clean
+Heavy whitespace — content breathes
+6. Architectural Diagrams
+Location: c:\Users\Punith\LaaS\docs\diagrams\
+01 - HLD Application Architecture
+8-layer vertical architecture showing data flow from user browser through access layer, frontend, backend, modules, data layer, host services, compute fleet, and monitoring.Key Layers:
+User Browser
+Access Layer (Cloudflare, Tailscale, TURN)
+Frontend (Next.js 15, React 19, Tailwind, Zustand)
+Backend API (NestJS 11/Fastify, JWT, Keycloak)
+Core Modules (Auth, Storage, Billing, Dashboard, Sessions)
+Data Layer (PostgreSQL, Prisma, Redis)
+Host Services (Python Flask, MPS, HAMi)
+Compute Fleet (4× RTX 5090, Docker, Selkies, ZFS NAS)
+Monitoring (Prometheus, Grafana, Loki, Alertmanager)
+02 - Data Flow Diagram
+4 key flows in sequence diagram format:
+Authentication Flow: Browser → Frontend → Backend → Keycloak → Database → JWT tokens
+Session Launch Flow: Browser → Backend → Orchestrator → Docker → WebRTC URL
+File Operations Flow: Browser → Backend → Flask (with secret) → ZFS → Result
+Billing Flow: Session ends → Calculate duration → Debit wallet → Record transaction → Invoice
+03 - Infrastructure Architecture
+Physical topology:
+Internet → Cloudflare Tunnel / Tailscale VPN → Management Switch (Mikrotik 10GbE)
+Compute Fleet: 4 nodes (9950X3D, RTX 5090, 64GB each)
+NAS: TrueNAS with 12TB ZFS RAIDZ1
+All nodes connected via 10GbE NFS
+VLANs: Mgmt:10, Stateful:20, Ephemeral:30, Proxy:40
+04 - Auth Architecture
+3 authentication paths:
+University SSO (Primary): Browser → Keycloak → University IdP → SAML/OIDC → Flask provision → ZFS create
+Local Login: Email + password → Database → JWT
+OAuth (Google/GitHub): Keycloak OAuth redirect → callback → JWT
+05 - File Store Architecture
+7-node pipeline:
+Browser (File Store UI) →[REST + JWT]→ Backend →[X-Provision-Secret]→ Flask →[ZFS/OS]→ ZFS Dataset
+ZFS Dataset → NFS Export → Mount on compute node → Bind mount into container home
+Operations: List, Mkdir, Upload, Download, Delete
+06 - GPU Fractional Architecture
+Shows GPU sharing model:
+GPU: RTX 5090 (32GB VRAM)
+Concurrent Containers: Pro (4GB), Power (8GB), Pro (4GB), Max (16GB)
+Enforcement Stack:
+HAMi-core (libvgpu.so, CUDA interception)
+CUDA MPS (VRAM pinning, SM partitioning)
+Selkies EGL (VirtualGL, WebRTC, NVENC)
+07 - Monitoring Architecture
+Left-to-right flow:
+Sources: GPU (DCGM), Host (node-exporter), Containers (cAdvisor), MPS, Sessions, Logs
+Collection: Prometheus (15s scrape), Promtail → Loki, Blackbox
+Outputs: Grafana, Alertmanager → Telegram, Uptime Kuma
+08 - Billing & Payment Flow
+Sequence diagram:
+Browser requests order (₹500) → Backend → Razorpay → Order ID
+Browser → Razorpay Checkout → Payment success
+Verification: Backend → Razorpay (verify signature) → Database (credit wallet, log, invoice) → Browser
+09 - Session Lifecycle
+State diagram with 7 states:
+Pending (user requests) → Starting (node selected) → Running (container healthy)
+Running loops (reconnect) → Stopping (user ends / timeout) → Ended
+Running may transition to Failed (GPU fault) → Starting (auto-recovery)
+Ended → [*] with billing captured
+10 - Database ERD
+8 core tables:
+users (id PK, email UK, status, created_at)
+wallets (id, user_id FK, balance_cents, lifetime_spent)
+user_storage_volumes (id, user_id FK, storage_uid UK, quota_bytes)
+sessions (id, user_id FK, node_id FK, compute_config_id FK, status, started_at)
+nodes (id, hostname UK, available_vram_bytes, status)
+compute_configs (id, tier UK, vram_gb, rate_per_hour_cents)
+wallet_transactions (id, wallet_id FK, type, amount_cents)
+payment_transactions (id, user_id FK, razorpay_order_id UK, status)
+Relationships:
+users ||--|| wallets, users ||--o{ user_storage_volumes, users ||--o{ sessions, users ||--o{ payment_transactions
+wallets ||--o{ wallet_transactions, sessions }o--|| compute_configs, sessions }o--|| nodes
+Key Risks & Caveats
+Port Conflicts: The reserved ports list in session orchestration is hardcoded; changes require code modification
+Storage Quota: Default 5GB is not enforced at the API level; relies on ZFS quota mechanism
+NFS Automount Fragile: Single-host POC uses file-backed ZFS; production must validate with native pools
+Monitoring Gaps: Custom exporters (mps-exporter, session-exporter) are critical but not standardized
+Bridge Networking Migration: POC uses host networking; bridge mode migration requires careful testing
+HAMi Compliance: Resource limits enforced at CUDA level; CPU limits depend on docker --cpuset-cpus
+Session Secret Leakage: X-Session-Secret transmitted in headers (use TLS in production)
+lxcfs Dependency: System-wide tool; failure affects all containers silently
+Recommendations
+Immediate: Add health checks for lxcfs and nvidia-patch status to monitoring stack
+Documentation: Create runbook for nvidia-patch re-application after driver updates
+Testing: Validate bridge networking mode thoroughly before production
+Security: Enforce TLS 1.3+ for all HTTP APIs (both on host and backend)
+Scaling: Plan orchestrator integration with Prometheus file_sd discovery
+Capacity: Monitor Docker overlay partition monthly; add automated cleanup cron
+Alerting: Implement MPS fault frequency trending (3+ faults/hour threshold)
+File Paths Reference
+Host Services
+Session Orchestration: c:\Users\Punith\LaaS\host-services\session-orchestration\app.py
+Storage Provision: c:\Users\Punith\LaaS\host-services\storage-provision\app.py
+Storage README: c:\Users\Punith\LaaS\host-services\storage-provision\README.md
+Config files: c:\Users\Punith\LaaS\host-services\config\ (7 files)
+Monitoring Stack
+Docker Compose: c:\Users\Punith\LaaS\monitoring_setup_files\docker-compose.yml
+Setup README: c:\Users\Punith\LaaS\monitoring_setup_files\README.md
+Root compose: c:\Users\Punith\LaaS\monitoring_setup_files\laas-monitoring\docker-compose.yml
+Design System
+Main template: c:\Users\Punith\LaaS\Design\LAAS-DESIGN-TEMPLATE.md
+CSS auxiliary: c:\Users\Punith\LaaS\Design\Lambda-CSS_Auxilary_Style.txt (2221 lines)
+CSS reference: c:\Users\Punith\LaaS\Design\Lambda-CSS_Full_Ref.txt (107KB)
+Template summary: c:\Users\Punith\LaaS\Design\template.txt
+Architecture Diagrams
+All 10 diagrams: c:\Users\Punith\LaaS\docs\diagrams\ (.mmd format)
+This comprehensive report documents the complete infrastructure, services, monitoring, and design system architecture of the LaaS platform, providing a solid foundation for future development, maintenance, and scaling efforts.
