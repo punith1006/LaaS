@@ -1208,7 +1208,6 @@ function PricingTable({ rows }: { rows: any[] }) {
     { key: "memory", label: "RAM" },
     { key: "vram", label: "GPU VRAM" },
     { key: "hami", label: "HAMI %" },
-    { key: "maxConc", label: "Max Sessions" },
     { key: "price", label: "₹/hour" },
   ] as const;
 
@@ -1274,7 +1273,6 @@ function PricingTable({ rows }: { rows: any[] }) {
                 <td style={{ fontFamily: "var(--font-mono),monospace", fontWeight: 600 }}>{row.memory}</td>
                 <td style={{ fontFamily: "var(--font-mono),monospace", fontWeight: 600 }}>{row.vram}</td>
                 <td style={{ fontFamily: "var(--font-mono),monospace", fontWeight: 600 }}>{row.hami}</td>
-                <td style={{ fontFamily: "var(--font-mono),monospace", fontWeight: 600 }}>{row.maxConc}</td>
                 <td>
                   <span style={{
                     fontFamily: "var(--font-mono),monospace", fontSize: "1.05rem", fontWeight: 800,
@@ -1398,10 +1396,10 @@ export function LandingPage() {
   ];
 
   const pricing = [
-    { title: "Spark", price: "₹35", vcpu: 2, memory: "4 GB", vram: "2 GB", hami: "8%", maxConc: 64, bestFor: "Small PyTorch inference, Jupyter notebooks, educational projects", badge: undefined, highlight: false },
-    { title: "Blaze", price: "₹65", vcpu: 4, memory: "8 GB", vram: "4 GB", hami: "17%", maxConc: 32, bestFor: "Model fine-tuning, GPU-accelerated rendering, professional development", badge: "Popular", highlight: true },
-    { title: "Inferno", price: "₹105", vcpu: 8, memory: "16 GB", vram: "8 GB", hami: "33%", maxConc: 16, bestFor: "Large model training, complex 3D rendering, GPU-intensive simulations", badge: undefined, highlight: false },
-    { title: "Supernova", price: "₹155", vcpu: 12, memory: "32 GB", vram: "16 GB", hami: "67%", maxConc: 8, bestFor: "Large-scale deep learning, exclusive research sessions, production inference", badge: "Exclusive", highlight: false },
+    { title: "Spark", price: "₹35", vcpu: 2, memory: "4 GB", vram: "2 GB", hami: "8%", bestFor: "Small PyTorch inference, Jupyter notebooks, educational projects", badge: undefined, highlight: false },
+    { title: "Blaze", price: "₹65", vcpu: 4, memory: "8 GB", vram: "4 GB", hami: "17%", bestFor: "Model fine-tuning, GPU-accelerated rendering, professional development", badge: "Popular", highlight: true },
+    { title: "Inferno", price: "₹105", vcpu: 8, memory: "16 GB", vram: "8 GB", hami: "33%", bestFor: "Large model training, complex 3D rendering, GPU-intensive simulations", badge: undefined, highlight: false },
+    { title: "Supernova", price: "₹155", vcpu: 12, memory: "32 GB", vram: "16 GB", hami: "67%", bestFor: "Large-scale deep learning, exclusive research sessions, production inference", badge: "Exclusive", highlight: false },
   ];
   // desc field removed — replaced by bestFor in new PricingCard
 
