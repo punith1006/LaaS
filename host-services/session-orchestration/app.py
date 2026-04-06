@@ -38,7 +38,7 @@ logger = logging.getLogger("laas-session-orchestration")
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 SESSION_SECRET = os.environ.get("SESSION_SECRET")
-HOST_IP = os.environ.get("HOST_IP", "100.100.66.101")
+HOST_IP = os.environ.get("HOST_IP", "192.168.10.92")
 SELKIES_IMAGE = os.environ.get("SELKIES_IMAGE", "ghcr.io/selkies-project/nvidia-egl-desktop:latest")
 NFS_MOUNT_ROOT = os.environ.get("NFS_MOUNT_ROOT", "/mnt/nfs/users")
 RESOURCE_LOCK_PATH = "/tmp/laas-resource-lock"
@@ -86,9 +86,9 @@ ALLOCATABLE_CORES = list(range(2, 16))
 # NOTE: For bridge networking, TURN_HOST must be an IP reachable from BOTH:
 #   1. The browser (WebRTC client) - for STUN/TURN ICE candidate discovery
 #   2. The container (via laas-sessions network) - for WebRTC relay traffic
-# Using host's public IP may fail from containers on isolated bridge networks;
-# use Tailscale IP (e.g., 100.100.66.101) or ensure iptables allows TURN traffic.
-TURN_HOST = os.environ.get("TURN_HOST", "100.100.66.101")
+# Using FortiClient VPN IP (192.168.10.92); ensure iptables DOCKER-USER chain
+# has conntrack ESTABLISHED rule to allow response traffic from containers.
+TURN_HOST = os.environ.get("TURN_HOST", "192.168.10.92")
 TURN_PORT = os.environ.get("TURN_PORT", "3478")
 TURN_USERNAME = os.environ.get("TURN_USERNAME", "selkies")
 TURN_PASSWORD = os.environ.get("TURN_PASSWORD", "wVIAbfwkgkxjaCiZVX4BDsdU")
