@@ -15,6 +15,7 @@ import { AuditService } from '../audit/audit.service';
 import { SessionTerminationReason } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import * as crypto from 'crypto';
+import OpenAI from 'openai';
 import {
   LaunchSessionDto,
   ResourceSummary,
@@ -2696,6 +2697,130 @@ export class ComputeService {
         data: { runwayWarning1HourSent: false },
       });
       this.logger.log(`User ${userId} runway restored (${runwayHours.toFixed(2)}hrs). Warning flag cleared.`);
+    }
+  }
+
+  // ============================================================================
+  // OPENAI / LLM ANALYSIS METHODS
+  // ============================================================================
+
+  private getOpenAIClient(): OpenAI {
+    return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+
+  async extractDocumentText(buffer: Buffer, mimetype: string): Promise<{ text: string; wordCount: number }> {
+    let text = '';
+    
+    if (mimetype === 'application/pdf') {
+      const pdfParse = require('pdf-parse');
+      const data = await pdfParse(buffer);
+      text = data.text;
+    } else if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      const mammoth = require('mammoth');
+      const result = await mammoth.extractRawText({ buffer });
+      text = result.value;
+    } else {
+      text = buffer.toString('utf-8');
+    }
+    
+    const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+    return { text: text.trim(), wordCount };
+  }
+
+  async analyzeWorkload(description: string, primaryGoal?: string): Promise<any> {
+    try {
+      const openai = this.getOpenAIClient();
+      
+      const systemPrompt = `You are a GPU compute resource advisor for an AI/ML lab platform called LaaS. 
+Analyze the user's workload description and extract structured requirements.
+The platform offers these GPU configurations on RTX 4090:
+- Spark: 2 vCPU, 4GB RAM, 2GB VRAM, 8% SM - ₹35/hr (small inference, Jupyter, educational)
+- Blaze: 4 vCPU, 8GB RAM, 4GB VRAM, 17% SM - ₹65/hr (fine-tuning, rendering, professional dev)
+- Inferno: 8 vCPU, 16GB RAM, 8GB VRAM, 33% SM - ₹105/hr (large model training, complex rendering)
+- Supernova: 12 vCPU, 32GB RAM, 16GB VRAM, 67% SM - ₹155/hr (large-scale deep learning, production inference)
+
+Respond ONLY with valid JSON matching this exact schema:
+{
+  "detectedGoal": "ml_training" | "inference" | "data_science" | "rendering" | "general_dev" | "research",
+  "detectedFrameworks": ["pytorch", "tensorflow", etc.],
+  "estimatedVramNeedGb": number (estimate based on workload),
+  "estimatedComputeIntensity": "low" | "medium" | "high",
+  "datasetSizeCategory": "small" | "medium" | "large" | "unknown",
+  "keyInsights": ["insight1", "insight2"] (2-3 short observations about the workload),
+  "confidence": number between 0 and 1
+}`;
+
+      const userPrompt = primaryGoal 
+        ? `User's stated goal: ${primaryGoal}\n\nWorkload description:\n${description}`
+        : `Workload description:\n${description}`;
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error('Empty response from OpenAI');
+      
+      return JSON.parse(content);
+    } catch (error) {
+      this.logger.error('OpenAI workload analysis failed:', error);
+      // Fallback: return default analysis so scoring still works
+      return {
+        detectedGoal: primaryGoal || 'general_dev',
+        detectedFrameworks: [],
+        estimatedVramNeedGb: 4,
+        estimatedComputeIntensity: 'medium',
+        datasetSizeCategory: 'unknown',
+        keyInsights: ['Unable to analyze description — using default recommendations'],
+        confidence: 0,
+      };
+    }
+  }
+
+  async generateExplanation(configSlug: string, configSpecs: Record<string, any>, userGoal: string, userContext: string): Promise<{ explanation: string }> {
+    try {
+      const openai = this.getOpenAIClient();
+
+      const systemPrompt = `You are a compute advisor for LaaS, an AI/ML lab platform. Generate a 2-3 sentence explanation of why this specific GPU configuration is the best fit for the user's workload. 
+Write for someone who may not be deeply technical — be specific about the hardware specs (VRAM, SM%, vCPU) and how they relate to the user's workload. Keep it concise and confident.
+Do NOT use markdown formatting. Just plain text sentences.`;
+
+      const userPrompt = `Configuration: ${configSlug}
+Specs: ${JSON.stringify(configSpecs)}
+User's goal: ${userGoal}
+User's context: ${userContext}`;
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.5,
+        max_tokens: 200,
+      });
+
+      const explanation = response.choices[0]?.message?.content?.trim();
+      if (!explanation) throw new Error('Empty response');
+      
+      return { explanation };
+    } catch (error) {
+      this.logger.error('OpenAI explanation generation failed:', error);
+      // Template fallback
+      const templates: Record<string, string> = {
+        spark: 'Spark provides an efficient entry point with 2 GB VRAM and 8% SM allocation — ideal for lightweight inference, Jupyter notebooks, and educational GPU projects without overspending.',
+        blaze: 'Blaze offers a solid balance of 4 GB VRAM and 17% SM compute — well-suited for model fine-tuning, GPU-accelerated rendering, and professional development workloads.',
+        inferno: 'Inferno delivers 8 GB VRAM with 33% SM allocation — powerful enough for large model training, complex 3D rendering, and GPU-intensive scientific simulations.',
+        supernova: 'Supernova provides near-exclusive GPU access with 16 GB VRAM and 67% SM — designed for large-scale deep learning, production inference, and research requiring maximum GPU resources.',
+      };
+      return { explanation: templates[configSlug] || 'This configuration is recommended based on your workload requirements.' };
     }
   }
 }

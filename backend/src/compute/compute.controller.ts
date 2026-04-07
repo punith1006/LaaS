@@ -8,10 +8,12 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
+import { FastifyRequest } from 'fastify';
 import { ComputeService } from './compute.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { LaunchSessionDto, RestartSessionDto } from './compute.dto';
+import { LaunchSessionDto, RestartSessionDto, AnalyzeWorkloadDto, GenerateExplanationDto } from './compute.dto';
 
 @Controller('api/compute')
 @UseGuards(JwtAuthGuard)
@@ -167,5 +169,84 @@ export class ComputeController {
   @Get('admin/sessions')
   async getAllSessions() {
     return this.computeService.getAllSessions();
+  }
+
+  // ============================================================================
+  // WORKLOAD ANALYSIS ENDPOINTS
+  // ============================================================================
+
+  /**
+   * Extract text from uploaded document (PDF, DOCX, TXT)
+   * Returns extracted text and word count
+   */
+  @Post('extract-document')
+  @UseGuards(JwtAuthGuard)
+  async extractDocument(@Req() req: FastifyRequest & { user: { id: string } }): Promise<{ text: string; wordCount: number }> {
+    const parts = req.parts();
+    let fileBuffer: Buffer | null = null;
+    let mimetype = '';
+    
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        // Validate file type
+        const allowedTypes = [
+          'application/pdf',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'text/plain',
+        ];
+        if (!allowedTypes.includes(part.mimetype)) {
+          throw new BadRequestException('Unsupported file type. Allowed: PDF, DOCX, TXT');
+        }
+        
+        // Read file into buffer (max 5MB)
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of part.file) {
+          size += chunk.length;
+          if (size > 5 * 1024 * 1024) {
+            throw new BadRequestException('File too large. Maximum size is 5MB');
+          }
+          chunks.push(chunk);
+        }
+        fileBuffer = Buffer.concat(chunks);
+        mimetype = part.mimetype;
+      }
+    }
+    
+    if (!fileBuffer) {
+      throw new BadRequestException('No file provided');
+    }
+    
+    return this.computeService.extractDocumentText(fileBuffer, mimetype);
+  }
+
+  /**
+   * Analyze workload description using LLM
+   * Returns structured analysis with detected goal, frameworks, VRAM needs, etc.
+   */
+  @Post('analyze-workload')
+  @UseGuards(JwtAuthGuard)
+  async analyzeWorkload(@Body() dto: AnalyzeWorkloadDto): Promise<any> {
+    if (!dto.description || dto.description.trim().length === 0) {
+      throw new BadRequestException('Description is required');
+    }
+    // Limit to ~500 words worth of text
+    const trimmed = dto.description.slice(0, 5000);
+    return this.computeService.analyzeWorkload(trimmed, dto.primaryGoal);
+  }
+
+  /**
+   * Generate explanation for why a specific config is recommended
+   * Returns a human-readable explanation
+   */
+  @Post('generate-explanation')
+  @UseGuards(JwtAuthGuard)
+  async generateExplanation(@Body() dto: GenerateExplanationDto): Promise<{ explanation: string }> {
+    return this.computeService.generateExplanation(
+      dto.configSlug,
+      dto.configSpecs,
+      dto.userGoal,
+      dto.userContext,
+    );
   }
 }

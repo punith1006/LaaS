@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsUUID, IsIn, Length, Matches } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, IsIn, Length, Matches, IsObject, IsOptional } from 'class-validator';
 
 // ============================================================================
 // REQUEST DTOs
@@ -209,4 +209,53 @@ export interface SessionLogsResponse {
 
 export class RestartSessionDto {
   // Empty class for typing - no additional fields needed
+}
+
+// ============================================================================
+// WORKLOAD ANALYSIS DTOs
+// ============================================================================
+
+// Workload analysis request
+export class AnalyzeWorkloadDto {
+  @IsString()
+  description: string;
+
+  @IsOptional()
+  @IsString()
+  primaryGoal?: string;
+}
+
+// Workload analysis response
+export interface WorkloadAnalysisResponse {
+  detectedGoal: string;
+  detectedFrameworks: string[];
+  estimatedVramNeedGb: number;
+  estimatedComputeIntensity: 'low' | 'medium' | 'high';
+  datasetSizeCategory: string;
+  keyInsights: string[];
+  confidence: number;
+}
+
+// Explanation request
+export class GenerateExplanationDto {
+  @IsString()
+  configSlug: string;
+
+  @IsObject()
+  configSpecs: Record<string, any>;
+
+  @IsString()
+  userGoal: string;
+
+  @IsString()
+  userContext: string;
+}
+
+export interface ExplanationResponse {
+  explanation: string;
+}
+
+export interface ExtractDocumentResponse {
+  text: string;
+  wordCount: number;
 }

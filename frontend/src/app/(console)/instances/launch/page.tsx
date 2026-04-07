@@ -12,6 +12,7 @@ import {
   type ComputeConfigResponse,
   type StorageStatus,
 } from "@/lib/api";
+import { ComputeRecommendation } from "@/components/compute/compute-recommendation";
 
 // Generate random instance name
 function generateInstanceName(): string {
@@ -264,6 +265,7 @@ export default function LaunchInstancePage() {
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [showRecommendationFlow, setShowRecommendationFlow] = useState(false);
   
   // Derived state
   const hasFileStore = storageStatus?.hasStorage && storageStatus?.reachable;
@@ -460,6 +462,8 @@ export default function LaunchInstancePage() {
       {/* Page Content */}
       <div style={{ padding: "24px", maxWidth: "1200px", margin: "0 auto" }}>
         {/* Back Navigation */}
+        {!showRecommendationFlow && (
+        <>
         <Link
           href="/instances"
           style={{
@@ -493,17 +497,46 @@ export default function LaunchInstancePage() {
 
         {/* Page Header */}
         <div style={{ marginBottom: "32px" }}>
-          <h1
-            style={{
-              fontSize: "2rem",
-              fontWeight: 700,
-              color: "var(--fgColor-default)",
-              margin: 0,
-              lineHeight: "2.5rem",
-            }}
-          >
-            Launch Instance
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+            <h1
+              style={{
+                fontSize: "2rem",
+                fontWeight: 700,
+                color: "var(--fgColor-default)",
+                margin: 0,
+                lineHeight: "2.5rem",
+              }}
+            >
+              Launch Instance
+            </h1>
+            {!showRecommendationFlow && (
+              <div
+                onClick={() => setShowRecommendationFlow(true)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-info, #3A73FF)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 18h6" /><path d="M10 22h4" />
+                  <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
+                </svg>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "var(--text-sm, 0.875rem)",
+                    color: "var(--fgColor-info, #3A73FF)",
+                    textDecoration: "underline",
+                    textUnderlineOffset: "3px",
+                  }}
+                >
+                  Not sure which config? Let us help you choose
+                </span>
+              </div>
+            )}
+          </div>
           <p
             style={{
               fontSize: "0.875rem",
@@ -516,18 +549,32 @@ export default function LaunchInstancePage() {
             Configure your GPU-accelerated compute environment. Select resources, OS, and storage — billed per hour of usage.
           </p>
         </div>
+        </>
+        )}
 
-        {/* SECTION 2: COMPUTE CONFIGURATION */}
-        <div
-          style={{
-            backgroundColor: "var(--bgColor-mild)",
-            border: "1px solid var(--borderColor-default)",
-            borderRadius: "4px",
-            padding: "24px",
-            marginBottom: "32px",
-          }}
-        >
-          <SectionHeader>Compute Configuration</SectionHeader>
+        {showRecommendationFlow ? (
+          <ComputeRecommendation
+            configs={configs}
+            walletBalance={walletBalance}
+            onSelectConfig={(configId: string) => {
+              setSelectedConfig(configId);
+              setShowRecommendationFlow(false);
+            }}
+            onBack={() => setShowRecommendationFlow(false)}
+          />
+        ) : (
+          <>
+            {/* SECTION 2: COMPUTE CONFIGURATION */}
+            <div
+              style={{
+                backgroundColor: "var(--bgColor-mild)",
+                border: "1px solid var(--borderColor-default)",
+                borderRadius: "4px",
+                padding: "24px",
+                marginBottom: "32px",
+              }}
+            >
+              <SectionHeader>Compute Configuration</SectionHeader>
           
           {/* Loading state */}
           {configsLoading && (
@@ -1236,27 +1283,30 @@ export default function LaunchInstancePage() {
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
 
       {/* STICKY FOOTER */}
-      <div
-        style={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: isDarkMode
-            ? "rgba(22, 22, 22, 0.8)"
-            : "rgba(231, 230, 217, 0.8)",
-          backdropFilter: "blur(12px)",
-          borderTop: "1px solid var(--borderColor-default)",
-          height: "64px",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 24px",
-          zIndex: 100,
-        }}
-      >
+      {!showRecommendationFlow && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: isDarkMode
+              ? "rgba(22, 22, 22, 0.8)"
+              : "rgba(231, 230, 217, 0.8)",
+            backdropFilter: "blur(12px)",
+            borderTop: "1px solid var(--borderColor-default)",
+            height: "64px",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 24px",
+            zIndex: 100,
+          }}
+        >
         <div
           style={{
             maxWidth: "1200px",
@@ -1344,7 +1394,8 @@ export default function LaunchInstancePage() {
             </button>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* REVIEW AGREEMENT MODAL */}
       {showReviewModal && (

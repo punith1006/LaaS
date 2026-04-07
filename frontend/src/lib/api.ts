@@ -1253,3 +1253,74 @@ export async function updateSpendLimit(data: {
   }
   return { success: true };
 }
+
+// Compute Recommendation APIs
+
+export async function extractDocument(file: File): Promise<{ text: string; wordCount: number }> {
+  const token = getAccessToken();
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${API_BASE}/api/compute/extract-document`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.message || 'Failed to extract document');
+  }
+  return res.json();
+}
+
+export async function analyzeWorkload(description: string, primaryGoal?: string): Promise<{
+  detectedGoal: string;
+  detectedFrameworks: string[];
+  estimatedVramNeedGb: number;
+  estimatedComputeIntensity: 'low' | 'medium' | 'high';
+  datasetSizeCategory: string;
+  keyInsights: string[];
+  confidence: number;
+}> {
+  const token = getAccessToken();
+  const res = await fetch(`${API_BASE}/api/compute/analyze-workload`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ description, primaryGoal }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.message || 'Failed to analyze workload');
+  }
+  return res.json();
+}
+
+export async function generateExplanation(
+  configSlug: string,
+  configSpecs: Record<string, any>,
+  userGoal: string,
+  userContext: string
+): Promise<{ explanation: string }> {
+  const token = getAccessToken();
+  const res = await fetch(`${API_BASE}/api/compute/generate-explanation`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ configSlug, configSpecs, userGoal, userContext }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.message || 'Failed to generate explanation');
+  }
+  return res.json();
+}
