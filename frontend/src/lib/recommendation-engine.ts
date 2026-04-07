@@ -28,8 +28,10 @@ export interface WorkloadAnalysis {
 export interface RecommendationInput {
   primaryGoal: string;
   datasetSize: string;
-  budget: string;
+  budget: string; // chip selection: 'economy' | 'balanced' | 'performance' | ''
+  budgetAmount: number; // slider value in INR (0 = not set)
   sessionDuration: string;
+  performanceExpectation: string; // 'light' | 'moderate' | 'heavy' | 'maximum' | ''
   llmAnalysis?: WorkloadAnalysis;
 }
 
@@ -79,6 +81,7 @@ export interface ScoredConfig {
  */
 interface ScoringBreakdown {
   goalMatch: number;
+  performanceExpectation: number;
   budgetFit: number;
   datasetFit: number;
   durationCost: number;
@@ -90,13 +93,14 @@ interface ScoringBreakdown {
 // CONSTANTS
 // ============================================================================
 
-/** Weights for each scoring factor */
+/** Weights for each scoring factor — prioritizes technical fit while keeping budget influential */
 const SCORING_WEIGHTS = {
-  goalMatch: 0.35,
-  budgetFit: 0.2,
-  datasetFit: 0.2,
-  durationCost: 0.1,
-  llmInsight: 0.15,
+  performanceExpectation: 0.25, // Highest — user's explicit compute intensity need
+  goalMatch: 0.20,             // What the user is trying to accomplish
+  budgetFit: 0.20,             // Important but not a hard stop — informs, not gates
+  datasetFit: 0.15,            // VRAM/memory requirements
+  durationCost: 0.10,          // Session length cost efficiency
+  llmInsight: 0.10,            // AI-analyzed workload context
 } as const;
 
 /** Goal → ideal config tier mapping (0-100 score per slug) */
@@ -119,7 +123,7 @@ const DATASET_TO_VRAM: Record<string, number> = {
 
 /** Session duration → hours */
 const DURATION_HOURS: Record<string, number> = {
-  quick: 1.5,
+  quick: 2,
   standard: 4,
   extended: 8,
 };
@@ -156,13 +160,70 @@ function calculateGoalMatchScore(config: ConfigForScoring, primaryGoal: string):
 }
 
 /**
+ * Performance expectation → ideal SM% mapping
+ */
+const PERF_TO_IDEAL_SM: Record<string, number> = {
+  light: 8, // Spark's 8% SM
+  moderate: 17, // Blaze's 17% SM
+  heavy: 33, // Inferno's 33% SM
+  maximum: 67, // Supernova's 67% SM
+};
+
+/**
+ * Calculate performance expectation score (0-100)
+ * Score: 100 for exact SM% match, penalize for over/under
+ */
+function calculatePerformanceExpectationScore(
+  config: ConfigForScoring,
+  performanceExpectation: string
+): number {
+  if (!performanceExpectation || !PERF_TO_IDEAL_SM[performanceExpectation]) {
+    return 50; // Neutral if not set
+  }
+
+  const idealSm = PERF_TO_IDEAL_SM[performanceExpectation];
+  const configSm = config.hamiSmPercent ?? 8;
+  const smDiff = Math.abs(configSm - idealSm);
+
+  // 100 for exact match, gradual penalty based on difference
+  return Math.max(0, 100 - smDiff * 2.5);
+}
+
+/**
  * Calculate budget fit score (0-100)
  * Economy: cheaper = higher score
  * Balanced: mid-range scores highest
  * Performance: more expensive = higher score
+ * Budget slider: score based on total session cost vs budget
  */
-function calculateBudgetFitScore(config: ConfigForScoring, budget: string): number {
+function calculateBudgetFitScore(
+  config: ConfigForScoring,
+  budget: string,
+  budgetAmount: number,
+  sessionDuration: string
+): number {
   const pricePerHour = config.basePricePerHourCents / 100;
+
+  // If slider is used (budgetAmount > 50), score based on total session cost
+  if (budgetAmount > 50) {
+    const durationHours = DURATION_HOURS[sessionDuration] || 4;
+    const totalSessionCost = pricePerHour * durationHours;
+    const budgetRatio = budgetAmount / totalSessionCost; // >1 = affordable, <1 = over budget
+
+    if (budgetRatio >= 1.5) {
+      return 100; // Very comfortable — budget is 1.5x+ the cost
+    } else if (budgetRatio >= 1.0) {
+      return 85; // Fits within budget
+    } else if (budgetRatio >= 0.8) {
+      return 40; // Slightly over budget (within 20%)
+    } else if (budgetRatio >= 0.5) {
+      return 15; // Significantly over budget
+    } else {
+      return 5; // Way over budget
+    }
+  }
+
+  // Use existing chip-based scoring
   const priceRange = MAX_PRICE_RUPEES - MIN_PRICE_RUPEES;
 
   if (budget === 'economy') {
@@ -273,13 +334,18 @@ function calculateFullScore(
   input: RecommendationInput
 ): ScoringBreakdown {
   const goalMatch = calculateGoalMatchScore(config, input.primaryGoal);
-  const budgetFit = calculateBudgetFitScore(config, input.budget);
+  const performanceExpectation = calculatePerformanceExpectationScore(
+    config,
+    input.performanceExpectation
+  );
+  const budgetFit = calculateBudgetFitScore(config, input.budget, input.budgetAmount, input.sessionDuration);
   const datasetFit = calculateDatasetFitScore(config, input.datasetSize);
   const durationCost = calculateDurationCostScore(config, input.sessionDuration);
   const llmInsight = calculateLlmInsightScore(config, input.llmAnalysis);
 
   const weightedTotal =
     goalMatch * SCORING_WEIGHTS.goalMatch +
+    performanceExpectation * SCORING_WEIGHTS.performanceExpectation +
     budgetFit * SCORING_WEIGHTS.budgetFit +
     datasetFit * SCORING_WEIGHTS.datasetFit +
     durationCost * SCORING_WEIGHTS.durationCost +
@@ -287,6 +353,7 @@ function calculateFullScore(
 
   return {
     goalMatch,
+    performanceExpectation,
     budgetFit,
     datasetFit,
     durationCost,
@@ -329,14 +396,40 @@ function generateReasons(
   const smPercent = config.hamiSmPercent ?? 0;
   reasons.push(`${vramGb} GB VRAM with ${smPercent}% GPU compute allocation`);
 
-  // Cost context based on budget preference
-  const pricePerHour = config.basePricePerHourCents / 100;
-  if (input.budget === 'economy') {
-    reasons.push(`Cost-effective at ₹${pricePerHour}/hr`);
-  } else if (input.budget === 'performance') {
-    reasons.push(`Premium resources at ₹${pricePerHour}/hr`);
+  // Performance expectation context
+  if (
+    input.performanceExpectation &&
+    (input.performanceExpectation === 'heavy' || input.performanceExpectation === 'maximum') &&
+    smPercent >= 33
+  ) {
+    reasons.push(`Provides ${smPercent}% GPU compute allocation for intensive workloads`);
+  }
+
+  // Budget slider context
+  if (input.budgetAmount > 50) {
+    const pricePerHour = config.basePricePerHourCents / 100;
+    const durationHours = DURATION_HOURS[input.sessionDuration] || 4;
+    const totalCost = Math.round(pricePerHour * durationHours);
+
+    if (totalCost <= input.budgetAmount) {
+      reasons.push(
+        `Fits within your ₹${input.budgetAmount} budget — ₹${totalCost} for ${durationHours}hrs`
+      );
+    } else {
+      reasons.push(
+        `Estimated cost ₹${totalCost} for ${durationHours}hrs exceeds your ₹${input.budgetAmount} budget`
+      );
+    }
   } else {
-    reasons.push(`Balanced pricing at ₹${pricePerHour}/hr`);
+    // Cost context based on budget preference
+    const pricePerHour = config.basePricePerHourCents / 100;
+    if (input.budget === 'economy') {
+      reasons.push(`Cost-effective at ₹${pricePerHour}/hr`);
+    } else if (input.budget === 'performance') {
+      reasons.push(`Premium resources at ₹${pricePerHour}/hr`);
+    } else {
+      reasons.push(`Balanced pricing at ₹${pricePerHour}/hr`);
+    }
   }
 
   // Return up to 3 reasons

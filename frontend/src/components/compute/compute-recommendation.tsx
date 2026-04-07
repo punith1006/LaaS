@@ -155,6 +155,29 @@ const DURATIONS = [
   { id: "extended", label: "Extended", desc: "6+ hours or ongoing" },
 ];
 
+const PERFORMANCE_EXPECTATIONS = [
+  {
+    id: "light",
+    label: "Light",
+    desc: "Basic tasks, small models, educational projects. Runs on a shared GPU slice with 8% compute allocation.",
+  },
+  {
+    id: "moderate",
+    label: "Moderate",
+    desc: "Professional workloads, medium models, standard training. Gets 17% of GPU compute cores.",
+  },
+  {
+    id: "heavy",
+    label: "Heavy",
+    desc: "Large models, complex rendering, intensive training. Dedicated 33% GPU compute with 8 GB VRAM.",
+  },
+  {
+    id: "maximum",
+    label: "Maximum",
+    desc: "Near-exclusive GPU access for production inference or large-scale deep learning. 67% compute allocation.",
+  },
+];
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -172,7 +195,9 @@ export function ComputeRecommendation({
   const [extracting, setExtracting] = useState(false);
   const [primaryGoal, setPrimaryGoal] = useState("");
   const [datasetSize, setDatasetSize] = useState("");
+  const [performanceExpectation, setPerformanceExpectation] = useState("");
   const [budget, setBudget] = useState("");
+  const [budgetAmount, setBudgetAmount] = useState<number>(50);
   const [sessionDuration, setSessionDuration] = useState("");
 
   // Results state
@@ -255,7 +280,9 @@ export function ComputeRecommendation({
           primaryGoal,
           datasetSize: datasetSize || "not_sure",
           budget: budget || "balanced",
+          budgetAmount: budgetAmount,
           sessionDuration: sessionDuration || "standard",
+          performanceExpectation: performanceExpectation,
           llmAnalysis,
         }
       );
@@ -277,7 +304,7 @@ export function ComputeRecommendation({
               basePricePerHourCents: s.config.basePricePerHourCents,
             },
             primaryGoal,
-            fullText || `Goal: ${primaryGoal}, Dataset: ${datasetSize}, Budget: ${budget}, Duration: ${sessionDuration}`
+            fullText || `Goal: ${primaryGoal}, Dataset: ${datasetSize}, Performance: ${performanceExpectation}, Budget: ${budget || `₹${budgetAmount}`}, Duration: ${sessionDuration}`
           ).catch(() => ({ explanation: "" }))
         );
 
@@ -603,7 +630,91 @@ export function ComputeRecommendation({
         </div>
       </div>
 
-      {/* Section D: Budget Preference */}
+      {/* Section D: Performance Expectation */}
+      <div
+        style={{
+          backgroundColor: "var(--bgColor-mild)",
+          border: "1px solid var(--borderColor-default)",
+          borderRadius: "4px",
+          padding: "24px",
+        }}
+      >
+        <div
+          style={{
+            fontSize: "var(--text-xs, 0.75rem)",
+            fontWeight: 600,
+            color: "var(--fgColor-default)",
+            textTransform: "uppercase",
+            letterSpacing: "1px",
+            marginBottom: "8px",
+          }}
+        >
+          Performance Expectation
+        </div>
+        <p
+          style={{
+            fontSize: "var(--text-sm, 0.875rem)",
+            color: "var(--fgColor-default)",
+            marginBottom: "16px",
+            marginTop: 0,
+          }}
+        >
+          How resource-intensive will your GPU workload be? This determines the compute power allocated to your session.
+        </p>
+
+        {/* Horizontal flex layout */}
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            flexWrap: "wrap",
+          }}
+        >
+          {PERFORMANCE_EXPECTATIONS.map((item) => {
+            const isSelected = performanceExpectation === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setPerformanceExpectation(item.id)}
+                style={{
+                  flex: "1 1 auto",
+                  minWidth: "180px",
+                  padding: isSelected ? "11px 15px" : "12px 16px",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  backgroundColor: "var(--bgColor-default)",
+                  border: isSelected
+                    ? "2px solid var(--fgColor-default)"
+                    : "1px solid var(--borderColor-default)",
+                  borderRadius: "4px",
+                  fontFamily: "var(--font-sans)",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "var(--text-sm, 0.875rem)",
+                    color: "var(--fgColor-default)",
+                  }}
+                >
+                  {item.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: "var(--text-xs, 0.75rem)",
+                    color: "var(--fgColor-muted)",
+                    marginTop: "4px",
+                  }}
+                >
+                  {item.desc}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Section E: Budget Preference */}
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
@@ -648,7 +759,10 @@ export function ComputeRecommendation({
             return (
               <button
                 key={item.id}
-                onClick={() => setBudget(item.id)}
+                onClick={() => {
+                  setBudget(item.id);
+                  setBudgetAmount(50); // Reset slider when chip selected
+                }}
                 style={{
                   flex: "1 1 auto",
                   minWidth: "140px",
@@ -685,9 +799,168 @@ export function ComputeRecommendation({
             );
           })}
         </div>
+
+        {/* Divider */}
+        <div
+          style={{
+            borderTop: "1px solid var(--borderColor-default)",
+            marginTop: "20px",
+            marginBottom: "16px",
+          }}
+        />
+
+        {/* Or set a specific budget */}
+        <div
+          style={{
+            fontSize: "var(--text-xs, 0.75rem)",
+            fontWeight: 600,
+            color: "var(--fgColor-default)",
+            textTransform: "uppercase",
+            letterSpacing: "1px",
+            marginBottom: "12px",
+          }}
+        >
+          Or Set a Specific Budget
+        </div>
+
+        {/* Budget display */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: "8px",
+            marginBottom: "12px",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "1.5rem",
+              fontWeight: 700,
+              color: "var(--fgColor-default)",
+            }}
+          >
+            ₹{budgetAmount}
+          </span>
+          {budgetAmount > 50 && (
+            <span
+              style={{
+                fontSize: "var(--text-xs, 0.75rem)",
+                color: "var(--fgColor-muted)",
+              }}
+            >
+              budget set
+            </span>
+          )}
+        </div>
+
+        {/* Slider */}
+        <input
+          type="range"
+          min={50}
+          max={2000}
+          step={10}
+          value={budgetAmount}
+          onChange={(e) => {
+            const value = parseInt(e.target.value, 10);
+            setBudgetAmount(value);
+            setBudget(""); // Clear chip selection when slider used
+          }}
+          style={{
+            width: "100%",
+            height: "4px",
+            background: "var(--borderColor-default)",
+            borderRadius: "2px",
+            outline: "none",
+            WebkitAppearance: "none",
+            appearance: "none",
+            cursor: "pointer",
+          }}
+        />
+
+        {/* Tick labels */}
+        <div
+          style={{
+            display: "flex",
+            position: "relative",
+            marginTop: "8px",
+            fontSize: "var(--text-xs, 0.75rem)",
+            color: "var(--fgColor-muted)",
+            height: "16px",
+          }}
+        >
+          {[
+            { label: "₹50", pct: 0 },
+            { label: "₹250", pct: ((250 - 50) / (2000 - 50)) * 100 },
+            { label: "₹500", pct: ((500 - 50) / (2000 - 50)) * 100 },
+            { label: "₹1000", pct: ((1000 - 50) / (2000 - 50)) * 100 },
+            { label: "₹2000", pct: 100 },
+          ].map((tick) => (
+            <span
+              key={tick.label}
+              style={{
+                position: "absolute",
+                left: `${tick.pct}%`,
+                transform: tick.pct === 100 ? "translateX(-100%)" : tick.pct === 0 ? "none" : "translateX(-50%)",
+              }}
+            >
+              {tick.label}
+            </span>
+          ))}
+        </div>
+
+        {/* Estimated hours helper text */}
+        {budgetAmount > 50 && (
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "10px 12px",
+              backgroundColor: "var(--bgColor-info, #cedeff)",
+              border: "1px solid var(--borderColor-info, #3a73ff)",
+              borderRadius: "4px",
+              fontSize: "var(--text-xs, 0.75rem)",
+              color: "var(--fgColor-default)",
+            }}
+          >
+            {sessionDuration ? (
+              <>
+                For {sessionDuration === "quick" ? 2 : sessionDuration === "extended" ? 8 : 4}hrs:{" "}
+                {(() => {
+                  const durationHours = sessionDuration === "quick" ? 2 : sessionDuration === "extended" ? 8 : 4;
+                  const sparkCost = 35 * durationHours;
+                  const blazeCost = 65 * durationHours;
+                  const infernoCost = 105 * durationHours;
+                  return (
+                    <>
+                      <span>Spark ₹{sparkCost}</span>
+                      <span style={{ color: sparkCost <= budgetAmount ? "#1a7f37" : "#cf222e", marginLeft: "2px" }}>
+                        {sparkCost <= budgetAmount ? " ✓" : " ✗"}
+                      </span>
+                      {" | "}
+                      <span>Blaze ₹{blazeCost}</span>
+                      <span style={{ color: blazeCost <= budgetAmount ? "#1a7f37" : "#cf222e", marginLeft: "2px" }}>
+                        {blazeCost <= budgetAmount ? " ✓" : " ✗"}
+                      </span>
+                      {" | "}
+                      <span>Inferno ₹{infernoCost}</span>
+                      <span style={{ color: infernoCost <= budgetAmount ? "#1a7f37" : "#cf222e", marginLeft: "2px" }}>
+                        {infernoCost <= budgetAmount ? " ✓" : " ✗"}
+                      </span>
+                    </>
+                  );
+                })()}
+              </>
+            ) : (
+              <>
+                At ₹{budgetAmount}: ~{Math.floor(budgetAmount / 35)}hrs on Spark, ~
+                {Math.floor(budgetAmount / 65)}hrs on Blaze, ~{Math.floor(budgetAmount / 105)}hrs on
+                Inferno
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Section E: Session Duration */}
+      {/* Section F: Session Duration */}
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
@@ -1298,6 +1571,23 @@ export function ComputeRecommendation({
           to {
             transform: rotate(360deg);
           }
+        }
+        /* Slider thumb styling */
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 16px;
+          height: 16px;
+          background: var(--fgColor-default);
+          border-radius: 50%;
+          cursor: pointer;
+        }
+        input[type="range"]::-moz-range-thumb {
+          width: 16px;
+          height: 16px;
+          background: var(--fgColor-default);
+          border-radius: 50%;
+          cursor: pointer;
+          border: none;
         }
       `}</style>
     </div>
