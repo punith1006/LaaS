@@ -185,6 +185,7 @@ export async function verifyOtp(
     firstName: string;
     lastName: string;
     agreedPolicies: string[];
+    referralCode?: string;
   },
 ): Promise<AuthTokens> {
   if (API_BASE && payload) {
@@ -198,6 +199,7 @@ export async function verifyOtp(
         firstName: payload.firstName,
         lastName: payload.lastName,
         agreedPolicies: payload.agreedPolicies,
+        referralCode: payload.referralCode,
       }),
     });
     if (!res.ok) {

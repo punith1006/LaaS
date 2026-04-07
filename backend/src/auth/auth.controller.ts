@@ -56,6 +56,7 @@ export class AuthController {
         firstName: dto.firstName,
         lastName: dto.lastName,
         agreedPolicies: dto.agreedPolicies ?? [],
+        referralCode: dto.referralCode,
       },
       req.ip,
     );
@@ -84,6 +85,7 @@ export class AuthController {
       dto.redirectUri,
       req.ip,
       dto.idpHint,
+      dto.referralCode,
     );
   }
 

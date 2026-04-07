@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { saveTokens } from "@/lib/token";
+import { getCookie, clearCookie } from "@/lib/cookies";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -36,6 +37,9 @@ export default function OAuthCallbackPage() {
 
     (async () => {
       try {
+        // Read referral code from cookie for OAuth signup flows
+        const referralCode = getCookie("laas_ref_code");
+        
         const res = await fetch(`${API_BASE}/api/auth/oauth/callback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -43,6 +47,7 @@ export default function OAuthCallbackPage() {
             code,
             redirectUri,
             idpHint: idpHint || undefined,
+            referralCode: referralCode || undefined,
           }),
         });
 
@@ -55,6 +60,12 @@ export default function OAuthCallbackPage() {
         }
 
         const tokens = await res.json();
+        
+        // Clear referral cookie after successful authentication
+        if (referralCode) {
+          clearCookie("laas_ref_code");
+        }
+        
         saveTokens(tokens);
         toast.success("Signed in successfully");
         router.replace("/home");

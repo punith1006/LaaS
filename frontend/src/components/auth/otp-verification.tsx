@@ -9,6 +9,7 @@ import { OtpInput } from "@/components/auth/otp-input";
 import { FooterLinks } from "@/components/auth/footer-links";
 import { useSignupStore } from "@/stores/signup-store";
 import { verifyOtp, resendOtp } from "@/lib/api";
+import { getCookie, clearCookie } from "@/lib/cookies";
 
 const RESEND_COOLDOWN_SEC = 60;
 const MAX_RESENDS = 3;
@@ -38,12 +39,23 @@ export function OtpVerification() {
       const policiesList = Object.entries(agreedPolicies)
         .filter(([, v]) => v)
         .map(([k]) => k);
+      
+      // Read referral code from cookie
+      const referralCode = getCookie("laas_ref_code");
+      
       await verifyOtp(email, code, {
         password,
         firstName,
         lastName,
         agreedPolicies: policiesList,
+        referralCode: referralCode || undefined,
       });
+      
+      // Clear referral cookie after successful signup
+      if (referralCode) {
+        clearCookie("laas_ref_code");
+      }
+      
       toast.success("Account created successfully!");
       // Don't reset store - onboarding needs the data. Reset will happen after onboarding completes.
       router.push("/signup/onboarding");

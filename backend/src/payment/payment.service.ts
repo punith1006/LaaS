@@ -3,8 +3,10 @@ import {
   BadRequestException,
   UnauthorizedException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReferralService } from '../referral/referral.service';
 import * as crypto from 'crypto';
 import {
   CreateOrderResponse,
@@ -21,8 +23,12 @@ const PDFDocument = require('pdfkit');
 @Injectable()
 export class PaymentService {
   private razorpay: InstanceType<typeof Razorpay>;
+  private readonly logger = new Logger(PaymentService.name);
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private referralService: ReferralService,
+  ) {
     this.razorpay = new Razorpay({
       key_id: process.env.RAZORPAY_KEY_ID,
       key_secret: process.env.RAZORPAY_KEY_SECRET,
@@ -212,6 +218,28 @@ export class PaymentService {
         wallet,
         invoice,
       };
+    });
+
+    // Check referral qualification on first successful payment (fire-and-forget)
+    // This must NEVER block or fail the payment response under any circumstances
+    const capturedPaymentTxnId = paymentTransaction.id;
+    const capturedAmountCents = amountCents;
+    const capturedUserId = userId;
+    setImmediate(() => {
+      this.prisma.paymentTransaction
+        .count({ where: { userId: capturedUserId, status: 'completed' } })
+        .then((count) => {
+          if (count === 1) {
+            return this.referralService.checkAndProcessPaymentQualification(
+              capturedUserId,
+              capturedAmountCents,
+              capturedPaymentTxnId,
+            );
+          }
+        })
+        .catch((error) => {
+          this.logger.error('Referral payment qualification check failed (async):', error);
+        });
     });
 
     return {

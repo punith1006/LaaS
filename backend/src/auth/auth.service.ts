@@ -3,6 +3,8 @@ import {
   UnauthorizedException,
   BadRequestException,
   ConflictException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -12,6 +14,7 @@ import { MailService } from '../mail/mail.service';
 import { KeycloakService } from './keycloak.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditService } from '../audit/audit.service';
+import { ReferralService } from '../referral/referral.service';
 
 const OTP_EXPIRY_MINUTES = 10;
 const RESEND_WINDOW_MINUTES = 15;
@@ -30,6 +33,8 @@ export class AuthService {
     private keycloak: KeycloakService,
     private storage: StorageService,
     private auditService: AuditService,
+    @Inject(forwardRef(() => ReferralService))
+    private referralService: ReferralService,
   ) {}
 
   async checkEmail(email: string): Promise<{
@@ -123,6 +128,7 @@ export class AuthService {
       firstName: string;
       lastName: string;
       agreedPolicies: string[];
+      referralCode?: string;
     },
     ip?: string,
   ) {
@@ -309,6 +315,26 @@ export class AuthService {
       });
     }
 
+    // Track referral signup if referral code present
+    if (payload.referralCode) {
+      try {
+        await this.referralService.trackSignup(
+          payload.referralCode,
+          user.id,
+          authType,
+          { ip },
+        );
+        // Save referral code on user record
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { referredByCode: payload.referralCode },
+        });
+      } catch (error) {
+        // Non-critical: don't fail signup if referral tracking fails
+        console.error('Referral tracking failed:', error);
+      }
+    }
+
     return this.issueTokens(user);
   }
 
@@ -429,6 +455,7 @@ export class AuthService {
     redirectUri: string,
     ip?: string,
     idpHint?: string,
+    referralCode?: string,
   ) {
     if (!this.keycloak.isConfigured) {
       throw new BadRequestException('OAuth is not configured');
@@ -558,6 +585,24 @@ export class AuthService {
             roleId: role.id,
           },
         });
+      }
+
+      // Track referral signup if referral code present (new users only)
+      if (referralCode) {
+        try {
+          await this.referralService.trackSignup(
+            referralCode,
+            user.id,
+            authType,
+            { ip },
+          );
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: { referredByCode: referralCode },
+          });
+        } catch (error) {
+          console.error('Referral tracking failed:', error);
+        }
       }
 
       await this.mail.sendWelcomeEmail(user.email, user.firstName);

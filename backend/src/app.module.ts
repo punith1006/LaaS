@@ -13,6 +13,7 @@ import { ComputeModule } from './compute/compute.module';
 import { UserModule } from './user/user.module';
 import { SupportModule } from './support/support.module';
 import { MailModule } from './mail/mail.module';
+import { ReferralModule } from './referral/referral.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { MailModule } from './mail/mail.module';
     UserModule,
     SupportModule,
     MailModule,
+    ReferralModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -118,6 +118,21 @@ enum SessionTerminationReason {
   quota_exceeded
 }
 
+enum ReferralConversionStatus {
+  SIGNUP_COMPLETED
+  PAYMENT_PENDING
+  QUALIFIED
+  REWARD_CREDITED
+  REWARD_VOIDED
+  EXPIRED
+}
+
+enum ReferralRewardStatus {
+  PENDING
+  CREDITED
+  VOIDED
+}
+
 // ============================================================================
 // DOMAIN 0: CORE AUTH & IDENTITY
 // ============================================================================
@@ -229,6 +244,12 @@ model User {
   ticketMessages         TicketMessage[] @relation("TicketMessageSender")
   userFeedback           UserFeedback[]  @relation("UserFeedbackUser")
   feedbackResponses      UserFeedback[]  @relation("FeedbackResponder")
+
+  // Referral System
+  referredByCode                String?              @map("referred_by_code") @db.VarChar(20)
+  referralLink                  Referral?
+  referralConversionsAsReferrer ReferralConversion[] @relation("ReferralConversionReferrer")
+  referralConversionAsReferred  ReferralConversion?  @relation("ReferralConversionReferred")
 
   @@map("users")
 }
@@ -2078,6 +2099,82 @@ model UserFeedback {
 
   @@index([userId, createdAt])
   @@map("user_feedback")
+}
+
+// ============================================================================
+// DOMAIN 16: REFERRAL SYSTEM
+// ============================================================================
+
+model Referral {
+  id                String    @id @default(uuid()) @db.Uuid
+  referrerUserId    String    @unique @map("referrer_user_id") @db.Uuid
+  referralCode      String    @unique @map("referral_code") @db.VarChar(20)
+  referralUrl       String    @map("referral_url") @db.VarChar(500)
+  isActive          Boolean   @default(true) @map("is_active")
+  totalClicks       Int       @default(0) @map("total_clicks")
+  totalSignups      Int       @default(0) @map("total_signups")
+  totalRewardsCents BigInt    @default(0) @map("total_rewards_cents")
+  expiresAt         DateTime? @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  referrer    User                 @relation(fields: [referrerUserId], references: [id])
+  conversions ReferralConversion[]
+  events      ReferralEvent[]
+
+  @@index([referralCode])
+  @@index([referrerUserId])
+  @@map("referrals")
+}
+
+model ReferralConversion {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  referralId              String                   @map("referral_id") @db.Uuid
+  referrerUserId          String                   @map("referrer_user_id") @db.Uuid
+  referredUserId          String                   @unique @map("referred_user_id") @db.Uuid
+  status                  ReferralConversionStatus @default(SIGNUP_COMPLETED) @map("status")
+  signupMethod            String                   @map("signup_method") @db.VarChar(50)
+  signupCompletedAt       DateTime                 @default(now()) @map("signup_completed_at")
+  firstPaymentAt          DateTime?                @map("first_payment_at")
+  firstPaymentAmountCents BigInt?                  @map("first_payment_amount_cents")
+  firstPaymentTxnId       String?                  @map("first_payment_txn_id") @db.Uuid
+  rewardAmountCents       Int                      @default(5000) @map("reward_amount_cents")
+  rewardStatus            ReferralRewardStatus     @default(PENDING) @map("reward_status")
+  rewardCreditedAt        DateTime?                @map("reward_credited_at")
+  rewardWalletTxnId       String?                  @map("reward_wallet_txn_id") @db.Uuid
+  metadata                Json?
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+
+  referral     Referral        @relation(fields: [referralId], references: [id])
+  referrer     User            @relation("ReferralConversionReferrer", fields: [referrerUserId], references: [id])
+  referredUser User            @relation("ReferralConversionReferred", fields: [referredUserId], references: [id])
+  events       ReferralEvent[]
+
+  @@index([referrerUserId])
+  @@index([referralId, status])
+  @@index([status])
+  @@map("referral_conversions")
+}
+
+model ReferralEvent {
+  id                   String   @id @default(uuid()) @db.Uuid
+  referralId           String   @map("referral_id") @db.Uuid
+  referralConversionId String?  @map("referral_conversion_id") @db.Uuid
+  eventType            String   @map("event_type") @db.VarChar(50)
+  previousStatus       String?  @map("previous_status") @db.VarChar(50)
+  newStatus            String?  @map("new_status") @db.VarChar(50)
+  metadata             Json?
+  actorType            String   @map("actor_type") @db.VarChar(20)
+  actorId              String?  @map("actor_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  referral   Referral            @relation(fields: [referralId], references: [id])
+  conversion ReferralConversion? @relation(fields: [referralConversionId], references: [id])
+
+  @@index([referralId, createdAt])
+  @@index([eventType])
+  @@map("referral_events")
 }
 
 // === END OF SCHEMA ===

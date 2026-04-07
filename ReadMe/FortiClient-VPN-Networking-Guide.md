@@ -7,13 +7,15 @@
 ## Table of Contents
 
 1. [Network Architecture Overview](#1-network-architecture-overview)
-2. [Storage Service vs Desktop Stream Network Paths](#2-key-learning-storage-service-vs-desktop-stream-network-paths)
-3. [DOCKER-USER iptables Chain and Container Isolation](#3-key-learning-docker-user-iptables-chain-and-container-isolation)
-4. [Selkies TURN Server Configuration](#4-key-learning-selkies-turn-server-configuration)
-5. [IP Migration Checklist](#5-ip-migration-checklist-tailscale--forticlient)
-6. [Diagnostic Commands Reference](#6-diagnostic-commands-reference)
-7. [Tailscale vs FortiClient VPN Comparison](#7-tailscale-vs-forticlient-vpn-comparison)
-8. [Docker Restart After iptables Flush](#8-docker-restart-after-iptables-flush)
+2. [Wi-Fi Regulatory Domain and TX Power Issues](#2-wi-fi-regulatory-domain-and-tx-power-issues)
+3. [Dual-Homed Host: Ethernet vs Wi-Fi Failover](#3-dual-homed-host-ethernet-vs-wi-fi-failover)
+4. [Storage Service vs Desktop Stream Network Paths](#4-key-learning-storage-service-vs-desktop-stream-network-paths)
+5. [DOCKER-USER iptables Chain and Container Isolation](#5-key-learning-docker-user-iptables-chain-and-container-isolation)
+6. [Selkies TURN Server Configuration](#6-key-learning-selkies-turn-server-configuration)
+7. [IP Migration Checklist](#7-ip-migration-checklist-tailscale--forticlient)
+8. [Diagnostic Commands Reference](#8-diagnostic-commands-reference)
+9. [Tailscale vs FortiClient VPN Comparison](#9-tailscale-vs-forticlient-vpn-comparison)
+10. [Docker Restart After iptables Flush](#10-docker-restart-after-iptables-flush)
 
 ---
 
@@ -56,7 +58,149 @@
 
 ---
 
-## 2. Key Learning: Storage Service vs Desktop Stream Network Paths
+## 2. Wi-Fi Regulatory Domain and TX Power Issues
+
+> **Critical Issue**: Incorrect regulatory domain settings can cause severe packet loss (40-60%) and render the host nearly unreachable. This was a root cause of major performance degradation.
+
+### The Problem
+
+The host Wi-Fi interface experienced severe packet loss caused by regulatory domain misconfiguration:
+- **TX Power capped at 3 dBm** (normal is 20+ dBm)
+- **TX bitrate stuck at 6 Mb/s** while RX was 286.7 Mb/s — massive asymmetry
+- **Packet loss**: 40% to gateway, 60% to 8.8.8.8
+
+### Diagnosis Commands
+
+```bash
+# Check TX power and bit rates
+iwconfig wlp8s0
+
+# Detailed link stats (RX/TX bitrate, signal)
+iw dev wlp8s0 link
+
+# Channel, width, frequency band
+iw dev wlp8s0 info
+```
+
+### Key Indicators of TX Power Problem
+
+| Symptom | Normal Value | Problem Value |
+|---------|--------------|---------------|
+| Tx-Power | ~20 dBm | **3 dBm** |
+| TX bitrate | Similar to RX | **6 Mb/s** (vs 286 Mb/s RX) |
+| Packet loss to gateway | <1% | **40%+** |
+| Signal level | -50 to -70 dBm | Good (-49 dBm) but still high loss |
+
+**Critical insight**: Good signal level (-49 dBm) with high packet loss indicates a TX power issue, not range/signal problem.
+
+### The Fix
+
+```bash
+# Set regulatory domain to India (allows higher TX power)
+sudo iw reg set IN
+
+# Verify the change
+iw reg get
+```
+
+### Results After Fix
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Gateway (192.168.10.1) | 40% loss | **0% loss**, avg 30ms |
+| Internet (8.8.8.8) | 60% loss | **0% loss**, avg 18ms |
+| TX bitrate | 6 Mb/s | **137.6 Mb/s** |
+| TX Power | 3 dBm | **20 dBm** |
+
+### Important Notes for Ubuntu Server
+
+- `nmcli` is **not available** on Ubuntu Server by default
+- Use `ip`, `iw`, and `iwconfig` for network management instead
+- For reconnecting Wi-Fi:
+  ```bash
+  sudo ip link set wlp8s0 down
+  sudo ip link set wlp8s0 up
+  sudo systemctl restart wpa_supplicant
+  ```
+
+### Persisting Regulatory Domain
+
+To make the regulatory domain setting persistent across reboots:
+
+```bash
+# Add to /etc/rc.local or create a systemd service
+echo 'iw reg set IN' | sudo tee -a /etc/rc.local
+sudo chmod +x /etc/rc.local
+```
+
+---
+
+## 3. Dual-Homed Host: Ethernet vs Wi-Fi Failover
+
+### The Scenario
+
+The host has two network interfaces on the same /23 subnet (192.168.10.0/23):
+
+| Interface | Type | IP Address | Status |
+|-----------|------|------------|--------|
+| **eno2** | Ethernet | 192.168.10.92 | Went dead (100% packet loss) |
+| **wlp8s0** | Wi-Fi | 192.168.10.87 | Working |
+
+When Ethernet died, all VPN traffic targeting 192.168.10.92 became unreachable because FortiClient VPN connects to the Ethernet IP.
+
+### The Fix: IP Migration to Wi-Fi
+
+Move 192.168.10.92 as a secondary IP onto the Wi-Fi interface so all existing configs (TURN, Docker, coturn, VPN) continue to work:
+
+```bash
+# 1. Disable the dead Ethernet interface
+sudo ip link set eno2 down
+
+# 2. Add the original IP as secondary on Wi-Fi
+sudo ip addr add 192.168.10.92/23 dev wlp8s0
+
+# 3. Ensure default route uses Wi-Fi
+sudo ip route add default via 192.168.10.1 dev wlp8s0
+```
+
+After this, `ip addr show wlp8s0` shows both IPs:
+```
+3: wlp8s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP
+    inet 192.168.10.87/23 brd 192.168.11.255 scope global dynamic wlp8s0
+       valid_lft 86394sec preferred_lft 86394sec
+    inet 192.168.10.92/23 scope global secondary wlp8s0
+       valid_lft forever preferred_lft forever
+```
+
+### SSH Access Considerations
+
+| IP Address | Interface | Use Case |
+|------------|-----------|----------|
+| 192.168.10.87 | Wi-Fi (primary) | **Fallback SSH** when 192.168.10.92 is unreachable |
+| 192.168.10.92 | Wi-Fi (secondary) | Primary service IP, all configs point here |
+
+**Important**: Always use 192.168.10.87 (Wi-Fi primary IP) as fallback for SSH access when 192.168.10.92 is unreachable.
+
+### Verification After Migration
+
+```bash
+# Verify both IPs are on Wi-Fi
+ip addr show wlp8s0
+
+# Verify routing
+ip route show
+
+# Test connectivity to both IPs
+ping -c 5 192.168.10.87
+ping -c 5 192.168.10.92
+
+# Verify services are reachable
+ss -tlnp | grep -E '8101|9998|9999'
+```
+
+---
+
+## 4. Key Learning: Storage Service vs Desktop Stream Network Paths
 
 ### The Observation
 
@@ -110,7 +254,7 @@ Browser                              Selkies Container (Host)
 
 ---
 
-## 3. Key Learning: DOCKER-USER iptables Chain and Container Isolation
+## 5. Key Learning: DOCKER-USER iptables Chain and Container Isolation
 
 ### Background: LaaS Security Model
 
@@ -230,7 +374,7 @@ sudo iptables-save | sudo tee /etc/iptables/rules.v4
 
 ---
 
-## 4. Key Learning: Selkies TURN Server Configuration
+## 6. Key Learning: Selkies TURN Server Configuration
 
 ### WebRTC and TURN Servers
 
@@ -350,7 +494,7 @@ docker rm selkies-session-1
 
 ---
 
-## 5. IP Migration Checklist (Tailscale → FortiClient)
+## 7. IP Migration Checklist (Tailscale → FortiClient)
 
 ### Files Requiring IP Updates
 
@@ -411,9 +555,54 @@ grep -r "100.100.66" . --include="*.ts" --include="*.js" --include="*.env*" --in
 grep -r "192.168.10.92" . --include="*.ts" --include="*.js" --include="*.env*" --include="*.py" --include="*.sh"
 ```
 
+### Interface Failover Migration (Ethernet → Wi-Fi)
+
+When the host's primary interface fails (e.g., Ethernet dies) and you need to migrate to a secondary interface (e.g., Wi-Fi):
+
+#### Migration Steps
+
+```bash
+# 1. Identify the working interface and its IP
+ip addr show
+# Example: wlp8s0 with 192.168.10.87
+
+# 2. Disable the failed interface
+sudo ip link set eno2 down
+
+# 3. Add the original service IP as secondary on the working interface
+sudo ip addr add 192.168.10.92/23 dev wlp8s0
+
+# 4. Ensure default route uses the working interface
+sudo ip route add default via 192.168.10.1 dev wlp8s0
+
+# 5. Verify both IPs are assigned
+ip addr show wlp8s0
+```
+
+#### Post-Migration Verification Checklist
+
+| Step | Command | Expected Result |
+|------|---------|-----------------|
+| 1. Both IPs on Wi-Fi | `ip addr show wlp8s0` | Shows 192.168.10.87 and 192.168.10.92 |
+| 2. Routing correct | `ip route show` | Default via 192.168.10.1 dev wlp8s0 |
+| 3. Gateway reachable | `ping -c 5 192.168.10.1` | 0% packet loss |
+| 4. Internet reachable | `ping -c 5 8.8.8.8` | 0% packet loss |
+| 5. Docker services up | `docker ps` | All containers running |
+| 6. Services on correct IP | `ss -tlnp \| grep -E '8101\|9998\|9999'` | Listening on 0.0.0.0 |
+| 7. coturn external-ip | `grep external-ip /etc/turnserver.conf` | Shows 192.168.10.92 |
+| 8. VPN connectivity | From dev machine: `Test-NetConnection 192.168.10.92 -Port 8101` | TcpTestSucceeded: True |
+| 9. SSH on primary IP | `ssh user@192.168.10.87` | Successful login |
+| 10. SSH on secondary IP | `ssh user@192.168.10.92` | Successful login |
+
+#### Important Notes
+
+- **SSH Fallback**: Always use the primary Wi-Fi IP (192.168.10.87) as fallback for SSH access when the secondary IP (192.168.10.92) is unreachable during migration
+- **Service Continuity**: All existing configs pointing to 192.168.10.92 continue to work after migration
+- **VPN Reconnection**: FortiClient VPN clients may need to reconnect after interface failover
+
 ---
 
-## 6. Diagnostic Commands Reference
+## 8. Diagnostic Commands Reference
 
 ### Network Connectivity
 
@@ -557,9 +746,66 @@ Connection Fails
 └──────────────────┘
 ```
 
+### Network Health Diagnostic Checklist
+
+Quick commands to diagnose host network health:
+
+```bash
+# Check which interfaces are up and their IPs
+ip addr show
+
+# Check routing table
+ip route show
+
+# Test gateway reachability (first hop)
+ping -c 10 192.168.10.1
+
+# Test internet reachability
+ping -c 10 8.8.8.8
+
+# Check Wi-Fi signal and TX power
+iwconfig wlp8s0
+
+# Check regulatory domain
+iw reg get
+
+# Check interface link status (for Ethernet)
+sudo ethtool eno2 2>/dev/null | grep "Link detected" || echo "ethtool not available or interface down"
+```
+
+#### Interpreting Results
+
+| Check | Good Result | Bad Result | Action |
+|-------|-------------|------------|--------|
+| `ip addr show` | Interface has IP | No IP assigned | Check DHCP or set static IP |
+| `ip route show` | Default route exists | No default route | Add route: `ip route add default via GATEWAY` |
+| `ping gateway` | 0% loss | >5% loss | Check Wi-Fi TX power (`iw reg set IN`) |
+| `ping 8.8.8.8` | 0% loss | High loss | Check gateway first, then DNS |
+| `iwconfig TX-Power` | ~20 dBm | 3 dBm or low | Set regulatory domain: `iw reg set IN` |
+| `iw reg get` | Shows country (e.g., IN) | Shows 00 (unset) | Set regulatory domain |
+
+#### Wi-Fi Specific Diagnostics
+
+```bash
+# Full Wi-Fi link information
+iw dev wlp8s0 link
+
+# Example good output:
+# Connected to aa:bb:cc:dd:ee:ff (on wlp8s0)
+#   SSID: MyNetwork
+#   freq: 5240 MHz
+#   signal: -49 dBm
+#   tx bitrate: 137.6 MBit/s VHT-MCS 4 80MHz short GI
+#   rx bitrate: 286.7 MBit/s VHT-MCS 9 80MHz short GI
+
+# Check for TX power issues:
+# - tx bitrate much lower than rx bitrate = TX power problem
+# - signal is good (-50 dBm) but high packet loss = TX power problem
+```
+
 ---
 
-## 7. Tailscale vs FortiClient VPN Comparison
+## 9. Tailscale vs FortiClient VPN Comparison
 
 | Aspect | Tailscale | FortiClient |
 |--------|-----------|-------------|
@@ -608,7 +854,7 @@ If a port is accessible from the host but not through VPN:
 
 ---
 
-## 8. Docker Restart After iptables Flush
+## 10. Docker Restart After iptables Flush
 
 ### The Problem
 
@@ -722,6 +968,9 @@ curl -s -o /dev/null -w "%{http_code}" http://192.168.10.92:8101/
 | Desktop connects but high latency/disconnects | Selkies stats: "Peer type: host" | Fix coturn `external-ip` in `/etc/turnserver.conf` |
 | Grafana works but desktop doesn't | Check Docker network | Session on 172.31.x = blocked |
 | After iptables flush | `iptables -t nat -L DOCKER` | Restart Docker |
+| High packet loss (40%+) to gateway | `iwconfig \| grep Tx-Power` | Set regulatory domain: `iw reg set IN` |
+| SSH to 192.168.10.92 times out | Try 192.168.10.87 | Use Wi-Fi primary IP for fallback SSH |
+| Ethernet interface dead | `ethtool eno2 \| grep Link` | Migrate IP to Wi-Fi: `ip addr add 192.168.10.92/23 dev wlp8s0` |
 
 ### Essential Commands
 
@@ -747,6 +996,7 @@ sudo iptables -L DOCKER-USER -n -v --line-numbers
 | Date | Author | Changes |
 |------|--------|---------|
 | 2026-04-06 | LaaS Team | Initial document created from Tailscale → FortiClient migration learnings |
+| 2026-04-07 | LaaS Team | Added Wi-Fi regulatory domain troubleshooting, dual-homed host failover procedures, and network health diagnostic checklist |
 
 ---
 

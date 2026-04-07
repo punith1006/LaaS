@@ -12,4 +12,8 @@ export class OAuthCallbackDto {
   @IsString()
   @IsOptional()
   idpHint?: string;
+
+  @IsString()
+  @IsOptional()
+  referralCode?: string;
 }

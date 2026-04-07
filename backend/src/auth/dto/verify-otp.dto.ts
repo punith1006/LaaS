@@ -2,6 +2,7 @@ import {
   IsEmail,
   IsString,
   IsArray,
+  IsOptional,
   Length,
   Matches,
   MinLength,
@@ -35,4 +36,8 @@ export class VerifyOtpDto {
   @IsArray()
   @IsString({ each: true })
   agreedPolicies: string[];
+
+  @IsString()
+  @IsOptional()
+  referralCode?: string;
 }

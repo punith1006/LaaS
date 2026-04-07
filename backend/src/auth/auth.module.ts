@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
@@ -7,6 +7,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { KeycloakService } from './keycloak.service';
 import { MailModule } from '../mail/mail.module';
 import { StorageModule } from '../storage/storage.module';
+import { ReferralModule } from '../referral/referral.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { StorageModule } from '../storage/storage.module';
     }),
     MailModule,
     StorageModule,
+    forwardRef(() => ReferralModule),
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, KeycloakService],

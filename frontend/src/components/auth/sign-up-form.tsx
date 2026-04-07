@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, GraduationCap } from "lucide-react";
+import { Eye, EyeOff, GraduationCap, Gift } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,14 +20,21 @@ import { registerStep1Schema, type RegisterStep1Input } from "@/lib/validations"
 import { useSignupStore } from "@/stores/signup-store";
 import { POLICY_SLUGS, type PolicySlug } from "@/config/policies";
 import { checkEmail, type CheckEmailResponse } from "@/lib/api";
+import { hasCookie } from "@/lib/cookies";
 
 export function SignUpForm() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [policyModalSlug, setPolicyModalSlug] = useState<PolicySlug | null>(null);
+  const [hasReferral, setHasReferral] = useState(false);
 
   const { setStep1, agreedPolicies, setPolicy, setInstitution } = useSignupStore();
+
+  // Check for referral cookie on mount
+  useEffect(() => {
+    setHasReferral(hasCookie("laas_ref_code"));
+  }, []);
 
   const {
     register,
@@ -88,6 +95,14 @@ export function SignUpForm() {
         <p className="mt-1 text-sm text-neutral-600">
           Enter email to access your account and enjoy our services.
         </p>
+        
+        {/* Referral banner - shown when user came from a referral link */}
+        {hasReferral && (
+          <div className="mt-3 flex items-center gap-2 rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
+            <Gift className="h-4 w-4 text-neutral-500" />
+            <span>You were referred by a friend! Sign up to help them earn rewards.</span>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
