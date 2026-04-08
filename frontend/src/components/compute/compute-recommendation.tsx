@@ -239,6 +239,13 @@ export function ComputeRecommendation({
   const handleAnalyze = async () => {
     setAnalysisState('analyzing');
 
+    // Reset prior selections so stale state doesn't persist
+    setPrimaryGoal('');
+    setDatasetSize('');
+    setWorkloadIntensity(1);
+    setAutoSelectedFields(new Set());
+    setResults(null);
+
     const fullText = [descriptionText, extractedText].filter(Boolean).join('\n\n').trim();
     if (!fullText || getWordCount(fullText) < 20) return;
 
