@@ -251,6 +251,9 @@ model User {
   referralConversionsAsReferrer ReferralConversion[] @relation("ReferralConversionReferrer")
   referralConversionAsReferred  ReferralConversion?  @relation("ReferralConversionReferred")
 
+  // Compute Recommendation
+  recommendationSessions RecommendationSession[]
+
   @@map("users")
 }
 
@@ -2175,6 +2178,55 @@ model ReferralEvent {
   @@index([referralId, createdAt])
   @@index([eventType])
   @@map("referral_events")
+}
+
+// === Domain 16: Compute Recommendation ===
+
+model RecommendationSession {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  // User Inputs
+  workloadDescription   String? @map("workload_description")
+  documentFileName      String? @map("document_file_name")
+  documentExtractedText String? @map("document_extracted_text")
+
+  // LLM Analysis Results
+  analysisResult        Json?    @map("analysis_result")
+  analysisQuality       String?  @map("analysis_quality")
+  analysisConfidence    Float?   @map("analysis_confidence")
+  detectedGoal          String?  @map("detected_goal")
+  detectedVramGb        Float?   @map("detected_vram_gb")
+  detectedIntensity     String?  @map("detected_intensity")
+  detectedFrameworks    String[] @default([]) @map("detected_frameworks")
+
+  // User Selections (final values after possible manual override)
+  selectedGoal          String? @map("selected_goal")
+  selectedDatasetSize   String? @map("selected_dataset_size")
+  selectedIntensity     Int?    @map("selected_intensity")
+  selectedBudgetType    String? @map("selected_budget_type")
+  selectedBudgetAmount  Int?    @map("selected_budget_amount")
+  selectedDuration      String? @map("selected_duration")
+
+  // Auto-selection tracking
+  goalAutoSelected      Boolean @default(false) @map("goal_auto_selected")
+  datasetAutoSelected   Boolean @default(false) @map("dataset_auto_selected")
+  intensityAutoSelected Boolean @default(false) @map("intensity_auto_selected")
+
+  // Recommendation Output
+  recommendations    Json?   @map("recommendations")
+  selectedConfigSlug String? @map("selected_config_slug")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  completedAt DateTime? @map("completed_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("recommendation_sessions")
 }
 
 // === END OF SCHEMA ===

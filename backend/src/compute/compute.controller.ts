@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Param,
   Body,
   UseGuards,
@@ -13,7 +14,7 @@ import {
 import { FastifyRequest } from 'fastify';
 import { ComputeService } from './compute.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { LaunchSessionDto, RestartSessionDto, AnalyzeWorkloadDto, GenerateExplanationDto } from './compute.dto';
+import { LaunchSessionDto, RestartSessionDto, AnalyzeWorkloadDto, GenerateExplanationDto, CreateRecommendationSessionDto, UpdateRecommendationSessionDto } from './compute.dto';
 
 @Controller('api/compute')
 @UseGuards(JwtAuthGuard)
@@ -248,5 +249,36 @@ export class ComputeController {
       dto.userGoal,
       dto.userContext,
     );
+  }
+
+  /**
+   * Create a new recommendation session
+   * Persists workload analysis data and initial selections
+   */
+  @Post('recommendation-session')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.CREATED)
+  async createRecommendationSession(
+    @Body() dto: CreateRecommendationSessionDto,
+    @Req() req: any,
+  ) {
+    const userId = req.user.id || req.user.sub;
+    return this.computeService.createRecommendationSession(userId, dto);
+  }
+
+  /**
+   * Update an existing recommendation session
+   * Used to save user selections and final config choice
+   */
+  @Patch('recommendation-session/:id')
+  @UseGuards(JwtAuthGuard)
+  async updateRecommendationSession(
+    @Param('id') id: string,
+    @Body() dto: UpdateRecommendationSessionDto,
+    @Req() req: any,
+  ) {
+    const userId = req.user.id || req.user.sub;
+    await this.computeService.updateRecommendationSession(userId, id, dto);
+    return { success: true };
   }
 }

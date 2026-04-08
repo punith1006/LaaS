@@ -1280,10 +1280,14 @@ export async function analyzeWorkload(description: string, primaryGoal?: string)
   detectedGoal: string;
   detectedFrameworks: string[];
   estimatedVramNeedGb: number;
-  estimatedComputeIntensity: 'low' | 'medium' | 'high';
+  estimatedComputeIntensity: 'low' | 'medium' | 'high' | 'very_high';
   datasetSizeCategory: string;
   keyInsights: string[];
   confidence: number;
+  inputQuality: 'sufficient' | 'insufficient';
+  missingCategories: string[];
+  suggestions: string;
+  fieldConfidence: { goal: number; vram: number; intensity: number };
 }> {
   const token = getAccessToken();
   const res = await fetch(`${API_BASE}/api/compute/analyze-workload`, {
@@ -1302,12 +1306,57 @@ export async function analyzeWorkload(description: string, primaryGoal?: string)
   return res.json();
 }
 
+export async function createRecommendationSession(data: {
+  workloadDescription?: string;
+  documentFileName?: string;
+  documentExtractedText?: string;
+  analysisResult?: any;
+  analysisQuality?: string;
+  analysisConfidence?: number;
+  detectedGoal?: string;
+  detectedVramGb?: number;
+  detectedIntensity?: string;
+  detectedFrameworks?: string[];
+}): Promise<{ id: string }> {
+  const token = getAccessToken();
+  const res = await fetch(`${API_BASE}/api/compute/recommendation-session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create recommendation session');
+  return res.json();
+}
+
+export async function updateRecommendationSession(id: string, data: {
+  selectedGoal?: string;
+  selectedDatasetSize?: string;
+  selectedIntensity?: number;
+  selectedBudgetType?: string;
+  selectedBudgetAmount?: number;
+  selectedDuration?: string;
+  goalAutoSelected?: boolean;
+  datasetAutoSelected?: boolean;
+  intensityAutoSelected?: boolean;
+  recommendations?: any;
+  selectedConfigSlug?: string;
+  completedAt?: string;
+}): Promise<void> {
+  const token = getAccessToken();
+  const res = await fetch(`${API_BASE}/api/compute/recommendation-session/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update recommendation session');
+}
+
 export async function generateExplanation(
   configSlug: string,
   configSpecs: Record<string, any>,
   userGoal: string,
   userContext: string
-): Promise<{ explanation: string }> {
+): Promise<{ explanation: string; bullets?: string[] }> {
   const token = getAccessToken();
   const res = await fetch(`${API_BASE}/api/compute/generate-explanation`, {
     method: 'POST',

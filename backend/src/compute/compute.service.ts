@@ -2731,23 +2731,49 @@ export class ComputeService {
     try {
       const openai = this.getOpenAIClient();
       
-      const systemPrompt = `You are a GPU compute resource advisor for an AI/ML lab platform called LaaS. 
-Analyze the user's workload description and extract structured requirements.
-The platform offers these GPU configurations on RTX 4090:
-- Spark: 2 vCPU, 4GB RAM, 2GB VRAM, 8% SM - ₹35/hr (small inference, Jupyter, educational)
-- Blaze: 4 vCPU, 8GB RAM, 4GB VRAM, 17% SM - ₹65/hr (fine-tuning, rendering, professional dev)
-- Inferno: 8 vCPU, 16GB RAM, 8GB VRAM, 33% SM - ₹105/hr (large model training, complex rendering)
-- Supernova: 12 vCPU, 32GB RAM, 16GB VRAM, 67% SM - ₹155/hr (large-scale deep learning, production inference)
+      const systemPrompt = `You are an infrastructure advisor for LaaS, a cloud compute platform. Your role is to understand the user's project, objective, or workload — regardless of whether it involves AI/ML, web development, databases, simulations, or any other computing task — and recommend the right compute configuration.
+
+IMPORTANT CONTEXT:
+- Users may not disclose full application details (IP protection, early stage, etc.)
+- Not every workload requires GPU — web apps, databases, APIs, and general development are equally valid
+- Focus on understanding the USER'S OBJECTIVE and INTENT, not just technical specifics
+- Act as an infrastructure guide: infer compute needs from the described use case
+- A web application with a database needs CPU/RAM; an ML training job needs GPU VRAM
+- "general_dev" is a perfectly valid and common goal — don't force everything into AI/ML categories
+
+The platform offers these configurations (RTX 4090 GPU node):
+- Spark: 2 vCPU, 4GB RAM, 2GB VRAM, 8% SM - ₹35/hr (Jupyter notebooks, small apps, learning, light dev)
+- Blaze: 4 vCPU, 8GB RAM, 4GB VRAM, 17% SM - ₹65/hr (web apps, APIs, moderate workloads, dev environments)
+- Inferno: 8 vCPU, 16GB RAM, 8GB VRAM, 33% SM - ₹105/hr (production apps, large databases, ML training, rendering)
+- Supernova: 12 vCPU, 32GB RAM, 16GB VRAM, 67% SM - ₹155/hr (enterprise workloads, large-scale ML, heavy production)
+
+inputQuality RULES:
+- Mark "sufficient" if you can understand WHAT the user wants to build/run and can reasonably estimate compute needs
+- A description like "building a web app with Node.js and MySQL" IS sufficient — you can infer general_dev, low VRAM, moderate CPU/RAM
+- A description like "running some code" is insufficient — too vague to determine anything
+- Do NOT require AI/ML/GPU specifics to mark sufficient — general development descriptions are valid
+- Be generous with sufficiency: if the user gives enough context to map to ANY of the 6 goal categories, it's sufficient
+
+estimatedVramNeedGb RULES:
+- For non-GPU workloads (web dev, databases, APIs): set to 0 or 1 (minimal GPU, config chosen by CPU/RAM)
+- For light ML/inference: 2-4 GB
+- For moderate training: 4-8 GB
+- For heavy training/rendering: 8-16 GB
+- Do NOT inflate VRAM estimates for workloads that don't need GPU
 
 Respond ONLY with valid JSON matching this exact schema:
 {
   "detectedGoal": "ml_training" | "inference" | "data_science" | "rendering" | "general_dev" | "research",
-  "detectedFrameworks": ["pytorch", "tensorflow", etc.],
-  "estimatedVramNeedGb": number (estimate based on workload),
-  "estimatedComputeIntensity": "low" | "medium" | "high",
+  "detectedFrameworks": ["nodejs", "nextjs", "pytorch", etc.],
+  "estimatedVramNeedGb": number (0 for non-GPU workloads),
+  "estimatedComputeIntensity": "low" | "medium" | "high" | "very_high",
   "datasetSizeCategory": "small" | "medium" | "large" | "unknown",
-  "keyInsights": ["insight1", "insight2"] (2-3 short observations about the workload),
-  "confidence": number between 0 and 1
+  "keyInsights": ["insight1", "insight2"] (2-3 short observations about the workload and infrastructure needs),
+  "confidence": number between 0 and 1,
+  "inputQuality": "sufficient" | "insufficient",
+  "missingCategories": array of zero or more values from ["primary_goal", "gpu_memory", "workload_intensity"],
+  "suggestions": concise string max 2 sentences explaining what to include for better analysis, empty string if input is sufficient,
+  "fieldConfidence": { "goal": number 0-1, "vram": number 0-1, "intensity": number 0-1 }
 }`;
 
       const userPrompt = primaryGoal 
@@ -2761,7 +2787,7 @@ Respond ONLY with valid JSON matching this exact schema:
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.3,
-        max_tokens: 500,
+        max_tokens: 700,
         response_format: { type: 'json_object' },
       });
 
@@ -2780,17 +2806,52 @@ Respond ONLY with valid JSON matching this exact schema:
         datasetSizeCategory: 'unknown',
         keyInsights: ['Unable to analyze description — using default recommendations'],
         confidence: 0,
+        inputQuality: 'insufficient',
+        missingCategories: ['primary_goal', 'gpu_memory', 'workload_intensity'],
+        suggestions: 'Unable to analyze the description. Please provide more details about your workload, framework, and data size.',
+        fieldConfidence: { goal: 0, vram: 0, intensity: 0 },
       };
     }
   }
 
-  async generateExplanation(configSlug: string, configSpecs: Record<string, any>, userGoal: string, userContext: string): Promise<{ explanation: string }> {
+  async createRecommendationSession(userId: string, data: any): Promise<{ id: string }> {
+    const session = await this.prisma.recommendationSession.create({
+      data: {
+        userId,
+        ...data,
+      },
+    });
+    return { id: session.id };
+  }
+
+  async updateRecommendationSession(userId: string, sessionId: string, data: any): Promise<void> {
+    const session = await this.prisma.recommendationSession.findFirst({
+      where: { id: sessionId, userId },
+    });
+    if (!session) {
+      throw new NotFoundException('Recommendation session not found');
+    }
+
+    await this.prisma.recommendationSession.update({
+      where: { id: sessionId },
+      data: {
+        ...data,
+        completedAt: data.completedAt ? new Date(data.completedAt) : undefined,
+      },
+    });
+  }
+
+  async generateExplanation(configSlug: string, configSpecs: Record<string, any>, userGoal: string, userContext: string): Promise<{ explanation: string; bullets?: string[] }> {
     try {
       const openai = this.getOpenAIClient();
 
-      const systemPrompt = `You are a compute advisor for LaaS, an AI/ML lab platform. Generate a 2-3 sentence explanation of why this specific GPU configuration is the best fit for the user's workload. 
-Write for someone who may not be deeply technical — be specific about the hardware specs (VRAM, SM%, vCPU) and how they relate to the user's workload. Keep it concise and confident.
-Do NOT use markdown formatting. Just plain text sentences.`;
+      const systemPrompt = `You are a compute advisor for LaaS, a cloud compute platform.
+Return ONLY valid JSON (no markdown, no code fences): { "bullets": ["...", "...", "..."] }
+- Bullet 1 (Project Fit): One sentence on how this config directly serves their specific project/workload
+- Bullet 2 (Right-Sizing): One sentence on why this is neither overkill nor underpowered for their needs
+- Bullet 3 (Value): One sentence on budget/cost context
+Each bullet must be max 20 words. Be specific to the user's described workload, not generic.
+Do NOT mention HAMi, SM%, MPS, CUDA, or any internal platform terms.`;
 
       const userPrompt = `Configuration: ${configSlug}
 Specs: ${JSON.stringify(configSpecs)}
@@ -2804,23 +2865,63 @@ User's context: ${userContext}`;
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.5,
-        max_tokens: 200,
+        max_tokens: 300,
       });
 
-      const explanation = response.choices[0]?.message?.content?.trim();
-      if (!explanation) throw new Error('Empty response');
-      
-      return { explanation };
+      const raw = response.choices[0]?.message?.content?.trim();
+      if (!raw) throw new Error('Empty response');
+
+      // Try to parse structured JSON bullets
+      try {
+        const parsed = JSON.parse(raw) as { bullets?: string[] };
+        if (parsed.bullets && Array.isArray(parsed.bullets)) {
+          return { explanation: parsed.bullets.join(' '), bullets: parsed.bullets };
+        }
+      } catch {
+        // Not JSON — return as plain text
+      }
+
+      return { explanation: raw };
     } catch (error) {
       this.logger.error('OpenAI explanation generation failed:', error);
-      // Template fallback
-      const templates: Record<string, string> = {
-        spark: 'Spark provides an efficient entry point with 2 GB VRAM and 8% SM allocation — ideal for lightweight inference, Jupyter notebooks, and educational GPU projects without overspending.',
-        blaze: 'Blaze offers a solid balance of 4 GB VRAM and 17% SM compute — well-suited for model fine-tuning, GPU-accelerated rendering, and professional development workloads.',
-        inferno: 'Inferno delivers 8 GB VRAM with 33% SM allocation — powerful enough for large model training, complex 3D rendering, and GPU-intensive scientific simulations.',
-        supernova: 'Supernova provides near-exclusive GPU access with 16 GB VRAM and 67% SM — designed for large-scale deep learning, production inference, and research requiring maximum GPU resources.',
+      // Template fallbacks — plain language, no internal jargon
+      const templates: Record<string, { explanation: string; bullets: string[] }> = {
+        spark: {
+          explanation: 'Spark provides 2 vCPU and 4GB RAM — ideal for lightweight development, Jupyter notebooks, and small web applications.',
+          bullets: [
+            'Spark\'s 4 GB RAM and shared GPU memory are well-matched for notebook experiments and small-scale workloads.',
+            'This config avoids over-provisioning for early-stage projects where usage is light and predictable.',
+            'At the lowest price tier, Spark keeps costs minimal while you validate your ideas.',
+          ],
+        },
+        blaze: {
+          explanation: 'Blaze offers 4 vCPU and 8GB RAM — well-suited for web applications, API services, and moderate development workloads.',
+          bullets: [
+            'Blaze\'s 4 vCPU and 8 GB RAM provide solid throughput for web apps, APIs, and mid-size datasets.',
+            'This tier steps up compute without paying for resources you won\'t fully use at this stage.',
+            'Blaze balances performance and price well for teams running regular workloads on a budget.',
+          ],
+        },
+        inferno: {
+          explanation: 'Inferno delivers 8 vCPU and 16GB RAM with 8GB dedicated GPU memory — powerful for ML training, rendering, and production applications.',
+          bullets: [
+            'Inferno\'s 8 GB GPU memory and 16 GB RAM handle model training and rendering-heavy pipelines comfortably.',
+            'This config is appropriately sized for production workloads that need consistent, reliable performance.',
+            'Mid-tier pricing gives you strong GPU capability without committing to enterprise-level costs.',
+          ],
+        },
+        supernova: {
+          explanation: 'Supernova provides 12 vCPU and 32GB RAM with 16GB dedicated GPU memory — designed for large-scale ML, enterprise workloads, and maximum GPU performance.',
+          bullets: [
+            'Supernova\'s 16 GB GPU memory and 32 GB RAM are built for large model training and enterprise-scale inference.',
+            'This is the right tier for workloads that demand maximum throughput with no resource constraints.',
+            'The premium price reflects near-exclusive GPU access, justified for critical production pipelines.',
+          ],
+        },
       };
-      return { explanation: templates[configSlug] || 'This configuration is recommended based on your workload requirements.' };
+      const fallback = templates[configSlug];
+      if (fallback) return fallback;
+      return { explanation: 'This configuration is recommended based on your workload requirements.' };
     }
   }
 }

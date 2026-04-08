@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsUUID, IsIn, Length, Matches, IsObject, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, IsIn, Length, Matches, IsObject, IsOptional, IsNumber, IsArray, IsBoolean, IsDateString } from 'class-validator';
 
 // ============================================================================
 // REQUEST DTOs
@@ -230,10 +230,45 @@ export interface WorkloadAnalysisResponse {
   detectedGoal: string;
   detectedFrameworks: string[];
   estimatedVramNeedGb: number;
-  estimatedComputeIntensity: 'low' | 'medium' | 'high';
+  estimatedComputeIntensity: 'low' | 'medium' | 'high' | 'very_high';
   datasetSizeCategory: string;
   keyInsights: string[];
   confidence: number;
+  // New fields
+  inputQuality: 'sufficient' | 'insufficient';
+  missingCategories: string[];
+  suggestions: string;
+  fieldConfidence: { goal: number; vram: number; intensity: number };
+}
+
+// For creating a recommendation session
+export class CreateRecommendationSessionDto {
+  @IsOptional() @IsString() workloadDescription?: string;
+  @IsOptional() @IsString() documentFileName?: string;
+  @IsOptional() @IsString() documentExtractedText?: string;
+  @IsOptional() @IsObject() analysisResult?: any;
+  @IsOptional() @IsString() analysisQuality?: string;
+  @IsOptional() @IsNumber() analysisConfidence?: number;
+  @IsOptional() @IsString() detectedGoal?: string;
+  @IsOptional() @IsNumber() detectedVramGb?: number;
+  @IsOptional() @IsString() detectedIntensity?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) detectedFrameworks?: string[];
+}
+
+// For updating a recommendation session
+export class UpdateRecommendationSessionDto {
+  @IsOptional() @IsString() selectedGoal?: string;
+  @IsOptional() @IsString() selectedDatasetSize?: string;
+  @IsOptional() @IsNumber() selectedIntensity?: number;
+  @IsOptional() @IsString() selectedBudgetType?: string;
+  @IsOptional() @IsNumber() selectedBudgetAmount?: number;
+  @IsOptional() @IsString() selectedDuration?: string;
+  @IsOptional() @IsBoolean() goalAutoSelected?: boolean;
+  @IsOptional() @IsBoolean() datasetAutoSelected?: boolean;
+  @IsOptional() @IsBoolean() intensityAutoSelected?: boolean;
+  @IsOptional() @IsObject() recommendations?: any;
+  @IsOptional() @IsString() selectedConfigSlug?: string;
+  @IsOptional() @IsDateString() completedAt?: string;
 }
 
 // Explanation request

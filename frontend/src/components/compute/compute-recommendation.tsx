@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ScoredConfig, scoreConfigs, ConfigForScoring } from "@/lib/recommendation-engine";
+import { createRecommendationSession, updateRecommendationSession } from "@/lib/api";
 
 // ============================================================================
 // PROPS INTERFACE
@@ -182,6 +183,13 @@ export function ComputeRecommendation({
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzePhase, setAnalyzePhase] = useState("");
 
+  // Analyze flow state
+  const [analysisState, setAnalysisState] = useState<'input' | 'analyzing' | 'success' | 'failure'>('input');
+  const [analysisData, setAnalysisData] = useState<any>(null);
+  const [autoSelectedFields, setAutoSelectedFields] = useState<Set<string>>(new Set());
+  const [recommendationSessionId, setRecommendationSessionId] = useState<string | null>(null);
+  const [llmAnalysis, setLlmAnalysis] = useState<any>(null);
+
   // Word count helper
   const getWordCount = (text: string): number => {
     return text.split(/\s+/).filter((w) => w).length;
@@ -227,6 +235,83 @@ export function ComputeRecommendation({
     }
   };
 
+  // Handle analyze workload (new dedicated analyze step)
+  const handleAnalyze = async () => {
+    setAnalysisState('analyzing');
+
+    const fullText = [descriptionText, extractedText].filter(Boolean).join('\n\n').trim();
+    if (!fullText || getWordCount(fullText) < 20) return;
+
+    try {
+      const { analyzeWorkload } = await import("@/lib/api");
+      const result = await analyzeWorkload(fullText);
+      setAnalysisData(result);
+      setLlmAnalysis(result);
+
+      if (result.inputQuality === 'sufficient') {
+        setAnalysisState('success');
+
+        const newAutoSelected = new Set<string>();
+
+        // Auto-select Primary Goal
+        if (result.fieldConfidence?.goal >= 0.7 && result.detectedGoal) {
+          setPrimaryGoal(result.detectedGoal);
+          newAutoSelected.add('primaryGoal');
+        }
+
+        // Auto-select Dataset Size based on VRAM
+        if (result.fieldConfidence?.vram >= 0.7 && result.estimatedVramNeedGb > 0) {
+          const vram = result.estimatedVramNeedGb;
+          if (vram <= 2) setDatasetSize('small');
+          else if (vram <= 5) setDatasetSize('medium');
+          else setDatasetSize('large');
+          newAutoSelected.add('datasetSize');
+        }
+
+        // Auto-select Workload Intensity
+        if (result.fieldConfidence?.intensity >= 0.7 && result.estimatedComputeIntensity) {
+          const intensityMap: Record<string, number> = { low: 0, medium: 1, high: 2, very_high: 3 };
+          const mapped = intensityMap[result.estimatedComputeIntensity];
+          if (mapped !== undefined) {
+            setWorkloadIntensity(mapped);
+            newAutoSelected.add('workloadIntensity');
+          }
+        }
+
+        setAutoSelectedFields(newAutoSelected);
+      } else {
+        setAnalysisState('failure');
+      }
+
+      // Persist session to DB (fire and forget)
+      try {
+        const session = await createRecommendationSession({
+          workloadDescription: descriptionText || undefined,
+          documentFileName: uploadedFile?.name || undefined,
+          documentExtractedText: extractedText || undefined,
+          analysisResult: result,
+          analysisQuality: result.inputQuality,
+          analysisConfidence: result.confidence,
+          detectedGoal: result.detectedGoal,
+          detectedVramGb: result.estimatedVramNeedGb,
+          detectedIntensity: result.estimatedComputeIntensity,
+          detectedFrameworks: result.detectedFrameworks,
+        });
+        setRecommendationSessionId(session.id);
+      } catch (e) {
+        console.warn('Failed to persist recommendation session:', e);
+      }
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      setAnalysisState('failure');
+      setAnalysisData({
+        inputQuality: 'insufficient',
+        missingCategories: ['primary_goal', 'gpu_memory', 'workload_intensity'],
+        suggestions: 'The analysis service encountered an error. Please try again or provide more detail about your workload.',
+      });
+    }
+  };
+
   // Handle find best fit
   const handleFindBestFit = async () => {
     setAnalyzing(true);
@@ -236,20 +321,9 @@ export function ComputeRecommendation({
       // Import the scoring engine
       const { scoreConfigs: scoreFn } = await import("@/lib/recommendation-engine");
 
-      let llmAnalysis = undefined;
       const fullText = [descriptionText, extractedText].filter(Boolean).join("\n\n");
 
-      // Step 1: If text provided, call LLM analysis
-      if (fullText.trim().length > 20) {
-        try {
-          const { analyzeWorkload } = await import("@/lib/api");
-          llmAnalysis = await analyzeWorkload(fullText, primaryGoal);
-        } catch (e) {
-          console.warn("LLM analysis failed, proceeding with classic scoring only", e);
-        }
-      }
-
-      // Step 2: Run classic scoring
+      // Step 1: Run classic scoring using already-stored llmAnalysis (from Analyze step)
       setAnalyzePhase("Scoring configurations...");
       const scored = scoreFn(
         configs as ConfigForScoring[],
@@ -260,13 +334,14 @@ export function ComputeRecommendation({
           budgetAmount: budgetAmount,
           sessionDuration: sessionDuration || "standard",
           performancePriority: workloadIntensity,
-          llmAnalysis,
+          llmAnalysis: llmAnalysis || undefined,
         }
       );
 
-      // Step 3: Generate LLM explanations for top 3
+      // Step 2: Generate LLM explanations for top 3
       setAnalyzePhase("Generating recommendations...");
       const top3 = scored.slice(0, 3);
+      const sortedResults = scored;
 
       try {
         const { generateExplanation } = await import("@/lib/api");
@@ -277,23 +352,43 @@ export function ComputeRecommendation({
               vcpu: s.config.vcpu,
               memoryMb: s.config.memoryMb,
               gpuVramMb: s.config.gpuVramMb,
-              hamiSmPercent: s.config.hamiSmPercent,
               basePricePerHourCents: s.config.basePricePerHourCents,
             },
             primaryGoal,
             fullText || `Goal: ${primaryGoal}, Dataset: ${datasetSize}, Workload Intensity: ${["Light", "Moderate", "Heavy", "Maximum"][workloadIntensity]}, Budget: ${budget || `₹${budgetAmount}`}, Duration: ${sessionDuration}`
-          ).catch(() => ({ explanation: "" }))
+          ).catch(() => ({ explanation: "", bullets: undefined as string[] | undefined }))
         );
 
         const explanations = await Promise.all(explanationPromises);
         explanations.forEach((exp, i) => {
           if (exp.explanation) top3[i].explanation = exp.explanation;
+          if (exp.bullets) top3[i].bullets = exp.bullets;
         });
       } catch (e) {
         console.warn("LLM explanation generation failed", e);
       }
 
-      setResults(scored);
+      // Step 3: Persist recommendation session update
+      if (recommendationSessionId) {
+        try {
+          await updateRecommendationSession(recommendationSessionId, {
+            selectedGoal: primaryGoal,
+            selectedDatasetSize: datasetSize || undefined,
+            selectedIntensity: workloadIntensity,
+            selectedBudgetType: budget || undefined,
+            selectedBudgetAmount: budgetAmount > 50 ? budgetAmount : undefined,
+            selectedDuration: sessionDuration || undefined,
+            goalAutoSelected: autoSelectedFields.has('primaryGoal'),
+            datasetAutoSelected: autoSelectedFields.has('datasetSize'),
+            intensityAutoSelected: autoSelectedFields.has('workloadIntensity'),
+            recommendations: sortedResults.map(r => ({ slug: r.config.slug, score: r.score, tag: r.tag })),
+          });
+        } catch (e) {
+          console.warn('Failed to update recommendation session:', e);
+        }
+      }
+
+      setResults(sortedResults);
     } catch (error) {
       console.error("Recommendation failed:", error);
     } finally {
@@ -329,127 +424,314 @@ export function ComputeRecommendation({
         >
           Describe Your Workload
         </div>
-        <p
-          style={{
-            fontSize: "var(--text-sm, 0.875rem)",
-            color: "var(--fgColor-default)",
-            marginBottom: "16px",
-            marginTop: 0,
-          }}
-        >
-          Tell us what you&apos;re working on — the more detail you provide, the better our recommendation.
-        </p>
 
-        {/* Text area */}
-        <textarea
-          value={descriptionText}
-          onChange={(e) => setDescriptionText(e.target.value)}
-          placeholder="e.g., I need to fine-tune a ResNet model on a 2GB image dataset for my college project. I'll be using PyTorch and training for about 3-4 hours..."
-          maxLength={3000}
-          style={{
-            width: "100%",
-            minHeight: "120px",
-            resize: "vertical",
-            backgroundColor: "var(--bgColor-default)",
-            border: "1px solid var(--borderColor-default)",
-            borderRadius: "4px",
-            padding: "12px",
-            fontFamily: "var(--font-sans)",
-            fontSize: "var(--text-sm, 0.875rem)",
-            color: "var(--fgColor-default)",
-            boxSizing: "border-box",
-          }}
-        />
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginTop: "4px",
-          }}
-        >
-          <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-default)" }}>
-            Optional — helps our AI understand your needs better
-          </span>
-          <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-default)" }}>
-            {getWordCount(descriptionText)} / 500 words
-          </span>
-        </div>
-
-        {/* File upload area */}
-        <div
-          style={{
-            marginTop: "16px",
-            borderTop: "1px solid var(--borderColor-default)",
-            paddingTop: "16px",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "var(--text-xs, 0.75rem)",
-              color: "var(--fgColor-default)",
-              textTransform: "uppercase",
-              letterSpacing: "1px",
-              marginBottom: "8px",
-            }}
-          >
-            Or Upload a Document
-          </div>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              border: "1px dashed var(--borderColor-default)",
-              borderRadius: "4px",
-              padding: "20px",
-              cursor: "pointer",
-              color: "var(--fgColor-default)",
-              fontSize: "var(--text-sm, 0.875rem)",
-              backgroundColor: "var(--bgColor-default)",
-            }}
-          >
-            <UploadIcon size={16} />
-            {uploadedFile ? uploadedFile.name : "Drop or click to upload (.pdf, .docx, .txt — max 5MB)"}
-            <input type="file" accept=".pdf,.docx,.txt" hidden onChange={handleFileUpload} />
-          </label>
-          {extracting && (
-            <div
+        {/* State-based content below the title */}
+        {analysisState === 'input' && (
+          <>
+            <p
               style={{
-                marginTop: "8px",
-                fontSize: "var(--text-xs, 0.75rem)",
-                color: "var(--fgColor-muted)",
+                fontSize: "var(--text-sm, 0.875rem)",
+                color: "var(--fgColor-default)",
+                marginBottom: "16px",
+                marginTop: 0,
               }}
             >
-              Extracting text...
-            </div>
-          )}
-          {extractedText && (
-            <div
+              Tell us what you&apos;re working on — the more detail you provide, the better our recommendation.
+            </p>
+
+            {/* Text area */}
+            <textarea
+              value={descriptionText}
+              onChange={(e) => setDescriptionText(e.target.value)}
+              placeholder="e.g., I need to fine-tune a ResNet model on a 2GB image dataset for my college project. I'll be using PyTorch and training for about 3-4 hours..."
+              maxLength={3000}
               style={{
-                marginTop: "8px",
-                padding: "8px 12px",
+                width: "100%",
+                minHeight: "120px",
+                resize: "vertical",
                 backgroundColor: "var(--bgColor-default)",
+                border: "1px solid var(--borderColor-default)",
                 borderRadius: "4px",
-                fontSize: "var(--text-xs, 0.75rem)",
-                color: "var(--fgColor-muted)",
+                padding: "12px",
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-sm, 0.875rem)",
+                color: "var(--fgColor-default)",
+                boxSizing: "border-box",
+              }}
+            />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginTop: "4px",
               }}
             >
-              Extracted {getWordCount(extractedText)} words from document
+              <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-default)" }}>
+                Optional — helps our AI understand your needs better
+              </span>
+              <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-default)" }}>
+                {getWordCount(descriptionText)} / 500 words
+              </span>
             </div>
-          )}
-        </div>
+
+            {/* File upload area */}
+            <div
+              style={{
+                marginTop: "16px",
+                borderTop: "1px solid var(--borderColor-default)",
+                paddingTop: "16px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "var(--text-xs, 0.75rem)",
+                  color: "var(--fgColor-default)",
+                  textTransform: "uppercase",
+                  letterSpacing: "1px",
+                  marginBottom: "8px",
+                }}
+              >
+                Or Upload a Document
+              </div>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  border: "1px dashed var(--borderColor-default)",
+                  borderRadius: "4px",
+                  padding: "20px",
+                  cursor: "pointer",
+                  color: "var(--fgColor-default)",
+                  fontSize: "var(--text-sm, 0.875rem)",
+                  backgroundColor: "var(--bgColor-default)",
+                }}
+              >
+                <UploadIcon size={16} />
+                {uploadedFile ? uploadedFile.name : "Drop or click to upload (.pdf, .docx, .txt — max 5MB)"}
+                <input type="file" accept=".pdf,.docx,.txt" hidden onChange={handleFileUpload} />
+              </label>
+              {extracting && (
+                <div
+                  style={{
+                    marginTop: "8px",
+                    fontSize: "var(--text-xs, 0.75rem)",
+                    color: "var(--fgColor-muted)",
+                  }}
+                >
+                  Extracting text...
+                </div>
+              )}
+              {extractedText && (
+                <div
+                  style={{
+                    marginTop: "8px",
+                    padding: "8px 12px",
+                    backgroundColor: "var(--bgColor-default)",
+                    borderRadius: "4px",
+                    fontSize: "var(--text-xs, 0.75rem)",
+                    color: "var(--fgColor-muted)",
+                  }}
+                >
+                  Extracted {getWordCount(extractedText)} words from document
+                </div>
+              )}
+            </div>
+
+            {/* Analyze button */}
+            <button
+              onClick={handleAnalyze}
+              disabled={getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20}
+              style={{
+                marginTop: "16px",
+                padding: "10px 28px",
+                backgroundColor: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--bgColor-neutral-muted, #333)" : "var(--bgColor-accent-emphasis, #3a73ff)",
+                color: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--fgColor-muted)" : "#fff",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "var(--text-sm)",
+                fontWeight: 600,
+                cursor: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "not-allowed" : "pointer",
+                fontFamily: "var(--font-sans)",
+                transition: "all 0.2s ease",
+              }}
+            >
+              Analyze Workload
+            </button>
+          </>
+        )}
+
+        {analysisState === 'analyzing' && (
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "32px 0" }}>
+            <div style={{
+              width: "20px", height: "20px",
+              border: "2px solid var(--borderColor-info, #3a73ff)",
+              borderTopColor: "transparent",
+              borderRadius: "50%",
+              animation: "spin 1s linear infinite",
+            }} />
+            <span style={{ color: "var(--fgColor-default)", fontSize: "var(--text-sm)", fontFamily: "var(--font-sans)" }}>
+              Analyzing your workload...
+            </span>
+          </div>
+        )}
+
+        {analysisState === 'success' && analysisData && (
+          <div style={{
+            backgroundColor: "var(--bgColor-info, #cedeff)",
+            border: "1px solid var(--borderColor-info, #3a73ff)",
+            borderRadius: "4px",
+            padding: "16px",
+            position: "relative",
+            marginTop: "8px",
+          }}>
+            {/* Header row */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--borderColor-info, #3a73ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+                <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
+                  Analysis Complete
+                </span>
+              </div>
+              <button
+                onClick={() => setAnalysisState('input')}
+                style={{
+                  background: "none", border: "1px solid var(--borderColor-info, #3a73ff)",
+                  borderRadius: "4px", padding: "4px 12px",
+                  color: "var(--fgColor-default)", fontSize: "0.75rem",
+                  cursor: "pointer", fontFamily: "var(--font-sans)",
+                }}
+              >
+                Edit Input
+              </button>
+            </div>
+
+            {/* Analysis details grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+              <div>
+                <div style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "var(--fgColor-muted)", letterSpacing: "0.05em", marginBottom: "4px", fontFamily: "var(--font-sans)" }}>Detected Goal</div>
+                <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
+                  {({ ml_training: "ML Model Training", inference: "AI Inference & Testing", data_science: "Data Science & Notebooks", rendering: "3D Rendering & Simulation", general_dev: "General Development", research: "Research & Experimentation" } as Record<string, string>)[analysisData?.detectedGoal] || analysisData?.detectedGoal || "—"}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "var(--fgColor-muted)", letterSpacing: "0.05em", marginBottom: "4px", fontFamily: "var(--font-sans)" }}>GPU Memory Need</div>
+                <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
+                  {analysisData?.estimatedVramNeedGb ? `~${analysisData.estimatedVramNeedGb} GB VRAM` : "—"}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "var(--fgColor-muted)", letterSpacing: "0.05em", marginBottom: "4px", fontFamily: "var(--font-sans)" }}>Workload Intensity</div>
+                <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
+                  {({ low: "Light", medium: "Moderate", high: "Heavy", very_high: "Maximum" } as Record<string, string>)[analysisData?.estimatedComputeIntensity] || "—"}
+                </div>
+              </div>
+            </div>
+
+            {/* Frameworks */}
+            {analysisData?.detectedFrameworks?.length > 0 && (
+              <div style={{ marginBottom: "8px" }}>
+                <span style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "var(--fgColor-muted)", letterSpacing: "0.05em", fontFamily: "var(--font-sans)" }}>Frameworks: </span>
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
+                  {analysisData.detectedFrameworks.join(", ")}
+                </span>
+              </div>
+            )}
+
+            {/* Key insights */}
+            {analysisData?.keyInsights?.length > 0 && (
+              <ul style={{ margin: "8px 0 0", paddingLeft: "20px", listStyleType: "disc" }}>
+                {analysisData.keyInsights.map((insight: string, i: number) => (
+                  <li key={i} style={{ fontSize: "var(--text-sm)", color: "var(--fgColor-default)", marginBottom: "4px", fontFamily: "var(--font-sans)" }}>
+                    {insight}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {analysisState === 'failure' && (
+          <div style={{
+            backgroundColor: "rgba(245, 158, 11, 0.08)",
+            border: "1px solid rgba(245, 158, 11, 0.3)",
+            borderRadius: "4px",
+            padding: "16px",
+            position: "relative",
+            marginTop: "8px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
+                  More Detail Needed
+                </span>
+              </div>
+              <button
+                onClick={() => setAnalysisState('input')}
+                style={{
+                  background: "none", border: "1px solid rgba(245, 158, 11, 0.3)",
+                  borderRadius: "4px", padding: "4px 12px",
+                  color: "var(--fgColor-default)", fontSize: "0.75rem",
+                  cursor: "pointer", fontFamily: "var(--font-sans)",
+                }}
+              >
+                Edit Input
+              </button>
+            </div>
+
+            {analysisData?.missingCategories?.length > 0 && (
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--fgColor-default)", margin: "0 0 8px", fontFamily: "var(--font-sans)" }}>
+                We couldn&apos;t confidently determine your{' '}
+                {(analysisData.missingCategories as string[]).map((cat) => ({
+                  primary_goal: 'primary goal',
+                  gpu_memory: 'GPU memory requirements',
+                  workload_intensity: 'workload intensity',
+                } as Record<string, string>)[cat] || cat).join(', ')}.
+              </p>
+            )}
+
+            {analysisData?.suggestions && (
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--fgColor-muted)", margin: "0", fontFamily: "var(--font-sans)", fontStyle: "italic" }}>
+                {analysisData.suggestions}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Section B: Primary Goal */}
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
-          border: "1px solid var(--borderColor-default)",
+          border: autoSelectedFields.has('primaryGoal') ? "1px solid var(--borderColor-info, #3a73ff)" : "1px solid var(--borderColor-default)",
           borderRadius: "4px",
           padding: "24px",
+          position: "relative",
         }}
       >
+        {autoSelectedFields.has('primaryGoal') && (
+          <span style={{
+            position: "absolute",
+            top: "12px",
+            right: "16px",
+            fontSize: "0.7rem",
+            fontStyle: "italic",
+            color: "var(--fgColor-muted)",
+            fontFamily: "var(--font-sans)",
+          }}>
+            Auto-selected based on analysis — you can change this
+          </span>
+        )}
         <div
           style={{
             fontSize: "var(--text-xs, 0.75rem)",
@@ -486,7 +768,10 @@ export function ComputeRecommendation({
             return (
               <button
                 key={goal.id}
-                onClick={() => setPrimaryGoal(goal.id)}
+                onClick={() => {
+                  setPrimaryGoal(goal.id);
+                  setAutoSelectedFields(prev => { const next = new Set(prev); next.delete('primaryGoal'); return next; });
+                }}
                 style={{
                   padding: isSelected ? "11px 15px" : "12px 16px",
                   textAlign: "left",
@@ -527,11 +812,25 @@ export function ComputeRecommendation({
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
-          border: "1px solid var(--borderColor-default)",
+          border: autoSelectedFields.has('datasetSize') ? "1px solid var(--borderColor-info, #3a73ff)" : "1px solid var(--borderColor-default)",
           borderRadius: "4px",
           padding: "24px",
+          position: "relative",
         }}
       >
+        {autoSelectedFields.has('datasetSize') && (
+          <span style={{
+            position: "absolute",
+            top: "12px",
+            right: "16px",
+            fontSize: "0.7rem",
+            fontStyle: "italic",
+            color: "var(--fgColor-muted)",
+            fontFamily: "var(--font-sans)",
+          }}>
+            Auto-selected based on analysis — you can change this
+          </span>
+        )}
         <div
           style={{
             fontSize: "var(--text-xs, 0.75rem)",
@@ -568,7 +867,10 @@ export function ComputeRecommendation({
             return (
               <button
                 key={item.id}
-                onClick={() => setDatasetSize(item.id)}
+                onClick={() => {
+                  setDatasetSize(item.id);
+                  setAutoSelectedFields(prev => { const next = new Set(prev); next.delete('datasetSize'); return next; });
+                }}
                 style={{
                   flex: "1 1 auto",
                   minWidth: "140px",
@@ -611,11 +913,25 @@ export function ComputeRecommendation({
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
-          border: "1px solid var(--borderColor-default)",
+          border: autoSelectedFields.has('workloadIntensity') ? "1px solid var(--borderColor-info, #3a73ff)" : "1px solid var(--borderColor-default)",
           borderRadius: "4px",
           padding: "24px",
+          position: "relative",
         }}
       >
+        {autoSelectedFields.has('workloadIntensity') && (
+          <span style={{
+            position: "absolute",
+            top: "12px",
+            right: "16px",
+            fontSize: "0.7rem",
+            fontStyle: "italic",
+            color: "var(--fgColor-muted)",
+            fontFamily: "var(--font-sans)",
+          }}>
+            Auto-selected based on analysis — you can change this
+          </span>
+        )}
         <div
           style={{
             fontSize: "var(--text-xs, 0.75rem)",
@@ -673,7 +989,10 @@ export function ComputeRecommendation({
           max={3}
           step={1}
           value={workloadIntensity}
-          onChange={(e) => setWorkloadIntensity(parseInt(e.target.value, 10))}
+          onChange={(e) => {
+            setWorkloadIntensity(parseInt(e.target.value, 10));
+            setAutoSelectedFields(prev => { const next = new Set(prev); next.delete('workloadIntensity'); return next; });
+          }}
           style={{
             width: "100%",
             height: "4px",
@@ -1109,47 +1428,6 @@ export function ComputeRecommendation({
           </p>
         </div>
 
-        {/* LLM Analysis insights (blue info box) */}
-        {results[0]?.explanation && (
-          <div
-            style={{
-              display: "flex",
-              gap: "12px",
-              padding: "16px",
-              backgroundColor: "rgba(58, 115, 255, 0.08)",
-              borderLeft: "3px solid var(--fgColor-info)",
-              borderRadius: "4px",
-              marginBottom: "24px",
-            }}
-          >
-            <span style={{ color: "var(--fgColor-info)", flexShrink: 0 }}>
-              <LightbulbIcon size={18} />
-            </span>
-            <div>
-              <div
-                style={{
-                  fontWeight: 600,
-                  fontSize: "var(--text-sm, 0.875rem)",
-                  color: "var(--fgColor-default)",
-                  marginBottom: "4px",
-                }}
-              >
-                Our Analysis
-              </div>
-              <div
-                style={{
-                  fontSize: "var(--text-sm, 0.875rem)",
-                  color: "var(--fgColor-muted)",
-                  lineHeight: "1.5",
-                }}
-              >
-                Based on your description, we identified your workload requirements and matched them
-                with optimal configurations.
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Result cards — 2 column grid */}
         <div
           style={{
@@ -1162,6 +1440,62 @@ export function ComputeRecommendation({
           {results.slice(0, 4).map((scored) => {
             const isBestMatch = scored.tag === "BEST_MATCH";
             const isUnavailable = !scored.available;
+
+            // ── Performance indicator helpers ──────────────────────────────
+            const vcpu = scored.config.vcpu;
+            const ramGb = scored.config.memoryMb / 1024;
+            const vramGb = scored.config.gpuVramMb / 1024;
+            const slug = scored.config.slug;
+
+            // Dot count per metric (1-4)
+            const cpuDots = vcpu >= 12 ? 4 : vcpu >= 8 ? 3 : vcpu >= 4 ? 2 : 1;
+            const ramDots = ramGb >= 32 ? 4 : ramGb >= 16 ? 3 : ramGb >= 8 ? 2 : 1;
+            const vramDots = vramGb >= 16 ? 4 : vramGb >= 8 ? 3 : vramGb >= 4 ? 2 : 1;
+            const costDots = slug === "spark" ? 4 : slug === "blaze" ? 3 : slug === "inferno" ? 2 : 1;
+
+            const dotLabel = (n: number) =>
+              n === 4 ? "Excellent" : n === 3 ? "Good" : n === 2 ? "Moderate" : "Basic";
+
+            const dotColor = (n: number) =>
+              n >= 3 ? "#3fb950" : n === 2 ? "#d29922" : "#db6d28";
+
+            // ── WHY bullets ───────────────────────────────────────────────
+            let bullets: string[] = [];
+            if (scored.bullets && scored.bullets.length > 0) {
+              bullets = scored.bullets;
+            } else if (scored.explanation) {
+              // Try JSON parse first (in case explanation is raw JSON string)
+              try {
+                const parsed = JSON.parse(scored.explanation) as { bullets?: string[] };
+                if (parsed.bullets) bullets = parsed.bullets;
+              } catch {
+                // Split on newlines or sentences
+                bullets = scored.explanation
+                  .split(/\n|(?<=\.)\s+/)
+                  .map((s) => s.trim())
+                  .filter((s) => s.length > 10)
+                  .slice(0, 3);
+              }
+            }
+            // Final fallback to reasons
+            if (bullets.length === 0) bullets = scored.reasons.slice(0, 3);
+
+            const renderDots = (filled: number) => (
+              <span style={{ display: "inline-flex", gap: "3px", alignItems: "center" }}>
+                {[1, 2, 3, 4].map((i) => (
+                  <span
+                    key={i}
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      backgroundColor: i <= filled ? dotColor(filled) : "var(--borderColor-default)",
+                      flexShrink: 0,
+                    }}
+                  />
+                ))}
+              </span>
+            );
 
             return (
               <div
@@ -1211,30 +1545,30 @@ export function ComputeRecommendation({
                     {scored.tag.replace(/_/g, " ")}
                   </span>
 
-                  {/* GPU badge */}
-                  <span
-                    style={{
-                      fontSize: "var(--text-xs, 0.75rem)",
-                      color: "var(--fgColor-muted)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                  >
-                    <GpuChipIcon size={12} /> GPU
-                  </span>
-
-                  {isUnavailable && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    {isUnavailable && (
+                      <span
+                        style={{
+                          fontSize: "var(--text-xs, 0.75rem)",
+                          color: "var(--fgColor-critical, #E70000)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        UNAVAILABLE
+                      </span>
+                    )}
                     <span
                       style={{
                         fontSize: "var(--text-xs, 0.75rem)",
-                        color: "var(--fgColor-critical, #E70000)",
-                        fontWeight: 600,
+                        color: "var(--fgColor-muted)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
                       }}
                     >
-                      UNAVAILABLE
+                      <GpuChipIcon size={12} /> GPU
                     </span>
-                  )}
+                  </div>
                 </div>
 
                 {/* Config name & specs */}
@@ -1250,34 +1584,21 @@ export function ComputeRecommendation({
                   </div>
                   <div
                     style={{
-                      display: "flex",
-                      gap: "16px",
-                      marginTop: "8px",
-                      flexWrap: "wrap",
+                      fontSize: "var(--text-xs, 0.75rem)",
+                      color: "var(--fgColor-muted)",
+                      marginTop: "6px",
                     }}
                   >
-                    <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-muted)" }}>
-                      {scored.config.vcpu} vCPU
-                    </span>
-                    <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-muted)" }}>
-                      {scored.config.memoryMb / 1024} GB RAM
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "var(--text-xs, 0.75rem)",
-                        color: "var(--fgColor-default)",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {scored.config.gpuVramMb / 1024} GB VRAM
-                    </span>
+                    {scored.config.vcpu} vCPU &bull; {ramGb} GB RAM
+                    {vramGb > 0 ? ` \u2022 ${vramGb} GB VRAM` : ""}
                   </div>
                   {scored.config.gpuModel && (
                     <div
                       style={{
                         fontSize: "var(--text-xs, 0.75rem)",
                         color: "var(--fgColor-muted)",
-                        marginTop: "4px",
+                        marginTop: "2px",
+                        opacity: 0.7,
                       }}
                     >
                       {scored.config.gpuModel}
@@ -1310,6 +1631,65 @@ export function ComputeRecommendation({
                 {/* Divider */}
                 <div style={{ borderTop: "1px solid var(--borderColor-default)" }} />
 
+                {/* Performance overview */}
+                <div>
+                  <div
+                    style={{
+                      fontSize: "var(--text-xs, 0.75rem)",
+                      color: "var(--fgColor-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "1px",
+                      marginBottom: "10px",
+                    }}
+                  >
+                    Performance Overview
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+                    {[
+                      { label: "Processing Power", dots: cpuDots },
+                      { label: "Memory", dots: ramDots },
+                      { label: "GPU Capability", dots: vramDots },
+                      { label: "Cost Efficiency", dots: costDots },
+                    ].map(({ label, dots }) => (
+                      <div
+                        key={label}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "var(--text-xs, 0.75rem)",
+                            color: "var(--fgColor-muted)",
+                            minWidth: "110px",
+                          }}
+                        >
+                          {label}
+                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          {renderDots(dots)}
+                          <span
+                            style={{
+                              fontSize: "var(--text-xs, 0.75rem)",
+                              color: dotColor(dots),
+                              fontWeight: 500,
+                              minWidth: "56px",
+                              textAlign: "right",
+                            }}
+                          >
+                            {dotLabel(dots)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{ borderTop: "1px solid var(--borderColor-default)" }} />
+
                 {/* Why this config */}
                 <div>
                   <div
@@ -1323,56 +1703,53 @@ export function ComputeRecommendation({
                   >
                     Why This Config
                   </div>
-                  {scored.explanation ? (
-                    <p
-                      style={{
-                        fontSize: "var(--text-sm, 0.875rem)",
-                        color: "var(--fgColor-muted)",
-                        lineHeight: "1.6",
-                        margin: 0,
-                      }}
-                    >
-                      {scored.explanation}
-                    </p>
-                  ) : (
-                    <ul style={{ margin: 0, paddingLeft: "16px" }}>
-                      {scored.reasons.map((reason, i) => (
-                        <li
-                          key={i}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {bullets.map((bullet, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: "#3fb950",
+                            fontSize: "var(--text-sm, 0.875rem)",
+                            lineHeight: "1.5",
+                            flexShrink: 0,
+                            marginTop: "1px",
+                          }}
+                        >
+                          ✓
+                        </span>
+                        <span
                           style={{
                             fontSize: "var(--text-sm, 0.875rem)",
                             color: "var(--fgColor-muted)",
-                            lineHeight: "1.6",
+                            lineHeight: "1.5",
                           }}
                         >
-                          {reason}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                          {bullet}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-
-                {/* Upsell line for TOP_PERFORMANCE */}
-                {scored.tag === "TOP_PERFORMANCE" &&
-                  scored.reasons.some((r) => r.includes("more per hour")) && (
-                    <div
-                      style={{
-                        padding: "8px 12px",
-                        borderRadius: "4px",
-                        backgroundColor: "rgba(217, 139, 12, 0.08)",
-                        borderLeft: "3px solid var(--fgColor-warning)",
-                        fontSize: "var(--text-xs, 0.75rem)",
-                        color: "var(--fgColor-warning)",
-                      }}
-                    >
-                      {scored.reasons.find((r) => r.includes("more per hour"))}
-                    </div>
-                  )}
 
                 {/* Select button */}
                 {!isUnavailable ? (
                   <button
-                    onClick={() => onSelectConfig(scored.config.id)}
+                    onClick={() => {
+                      onSelectConfig(scored.config.id);
+                      if (recommendationSessionId) {
+                        updateRecommendationSession(recommendationSessionId, {
+                          selectedConfigSlug: scored.config.slug,
+                          completedAt: new Date().toISOString(),
+                        }).catch(e => console.warn('Failed to persist config selection:', e));
+                      }
+                    }}
                     style={{
                       width: "100%",
                       padding: "10px",

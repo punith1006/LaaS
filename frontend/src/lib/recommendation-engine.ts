@@ -16,10 +16,15 @@ export interface WorkloadAnalysis {
   detectedGoal: string;
   detectedFrameworks: string[];
   estimatedVramNeedGb: number;
-  estimatedComputeIntensity: 'low' | 'medium' | 'high';
+  estimatedComputeIntensity: 'low' | 'medium' | 'high' | 'very_high';
   datasetSizeCategory: string;
   keyInsights: string[];
   confidence: number;
+  // New fields
+  inputQuality: 'sufficient' | 'insufficient';
+  missingCategories: string[];
+  suggestions: string;
+  fieldConfidence: { goal: number; vram: number; intensity: number };
 }
 
 /**
@@ -72,6 +77,7 @@ export interface ScoredConfig {
   tag: RecommendationTag;
   reasons: string[];
   explanation?: string; // LLM-generated, populated later
+  bullets?: string[]; // LLM-generated structured bullets, populated later
   available: boolean;
   estimatedCost: string; // e.g., "~₹130 for 2 hrs"
 }
@@ -161,15 +167,31 @@ function calculateGoalMatchScore(config: ConfigForScoring, primaryGoal: string):
 
 /**
  * Calculate workload intensity score (0-100)
- * Maps stepped slider (0-3) to ideal config SM% tier
- * 0=Light→Spark, 1=Moderate→Blaze, 2=Heavy→Inferno, 3=Maximum→Supernova
+ * Maps stepped slider (0-3) to ideal config tier
+ * For GPU workloads: matches SM%
+ * For non-GPU workloads (general_dev): matches CPU/RAM tier instead
  */
 const INTENSITY_TO_IDEAL_SM: number[] = [8, 17, 33, 67];
 
 function calculatePerformancePriorityScore(
   config: ConfigForScoring,
-  intensity: number
+  intensity: number,
+  primaryGoal?: string,
+  llmAnalysis?: WorkloadAnalysis
 ): number {
+  // For non-GPU workloads, score by CPU/RAM tier instead of SM%
+  const llmVram = llmAnalysis?.estimatedVramNeedGb ?? -1;
+  if (
+    (primaryGoal === 'general_dev' || primaryGoal === 'research') &&
+    llmVram >= 0 && llmVram <= 1
+  ) {
+    // Map intensity to ideal vCPU: Light→2, Moderate→2-4, Heavy→8, Maximum→12
+    const idealVcpu = [2, 2, 8, 12][intensity] ?? 4;
+    const configVcpu = config.vcpu ?? 2;
+    const diff = Math.abs(configVcpu - idealVcpu);
+    return Math.max(0, 100 - diff * 12);
+  }
+
   const smPercent = config.hamiSmPercent ?? 8;
   const idealSm = INTENSITY_TO_IDEAL_SM[intensity] ?? 17;
   const smDiff = Math.abs(smPercent - idealSm);
@@ -230,8 +252,25 @@ function calculateBudgetFitScore(
 /**
  * Calculate dataset/model fit score (0-100)
  * Based on VRAM adequacy for the dataset size
+ * For non-GPU workloads (general_dev with low VRAM need), VRAM is irrelevant
  */
-function calculateDatasetFitScore(config: ConfigForScoring, datasetSize: string): number {
+function calculateDatasetFitScore(
+  config: ConfigForScoring,
+  datasetSize: string,
+  primaryGoal: string,
+  llmAnalysis?: WorkloadAnalysis
+): number {
+  // For non-GPU workloads, VRAM is irrelevant — score by cost efficiency instead
+  const llmVram = llmAnalysis?.estimatedVramNeedGb ?? -1;
+  if (
+    (primaryGoal === 'general_dev' || primaryGoal === 'research') &&
+    llmVram >= 0 && llmVram <= 1
+  ) {
+    // All configs are equally fine for VRAM; prefer cheaper (less waste)
+    const configVramGb = config.gpuVramMb / 1024;
+    return Math.max(0, 100 - configVramGb * 5); // Slight preference for lower VRAM = lower cost
+  }
+
   const neededVramGb = DATASET_TO_VRAM[datasetSize] ?? 4;
   const configVramGb = config.gpuVramMb / 1024;
 
@@ -324,10 +363,12 @@ function calculateFullScore(
   const goalMatch = calculateGoalMatchScore(config, input.primaryGoal);
   const performancePriority = calculatePerformancePriorityScore(
     config,
-    input.performancePriority
+    input.performancePriority,
+    input.primaryGoal,
+    input.llmAnalysis
   );
   const budgetFit = calculateBudgetFitScore(config, input.budget, input.budgetAmount, input.sessionDuration);
-  const datasetFit = calculateDatasetFitScore(config, input.datasetSize);
+  const datasetFit = calculateDatasetFitScore(config, input.datasetSize, input.primaryGoal, input.llmAnalysis);
   const durationCost = calculateDurationCostScore(config, input.sessionDuration);
   const llmInsight = calculateLlmInsightScore(config, input.llmAnalysis);
 
