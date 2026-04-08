@@ -31,7 +31,7 @@ export interface RecommendationInput {
   budget: string; // chip selection: 'economy' | 'balanced' | 'performance' | ''
   budgetAmount: number; // slider value in INR (0 = not set)
   sessionDuration: string;
-  performanceExpectation: string; // 'light' | 'moderate' | 'heavy' | 'maximum' | ''
+  performancePriority: number;  // 0=Light, 1=Moderate, 2=Heavy, 3=Maximum
   llmAnalysis?: WorkloadAnalysis;
 }
 
@@ -81,7 +81,7 @@ export interface ScoredConfig {
  */
 interface ScoringBreakdown {
   goalMatch: number;
-  performanceExpectation: number;
+  performancePriority: number;
   budgetFit: number;
   datasetFit: number;
   durationCost: number;
@@ -160,32 +160,20 @@ function calculateGoalMatchScore(config: ConfigForScoring, primaryGoal: string):
 }
 
 /**
- * Performance expectation → ideal SM% mapping
+ * Calculate workload intensity score (0-100)
+ * Maps stepped slider (0-3) to ideal config SM% tier
+ * 0=Light→Spark, 1=Moderate→Blaze, 2=Heavy→Inferno, 3=Maximum→Supernova
  */
-const PERF_TO_IDEAL_SM: Record<string, number> = {
-  light: 8, // Spark's 8% SM
-  moderate: 17, // Blaze's 17% SM
-  heavy: 33, // Inferno's 33% SM
-  maximum: 67, // Supernova's 67% SM
-};
+const INTENSITY_TO_IDEAL_SM: number[] = [8, 17, 33, 67];
 
-/**
- * Calculate performance expectation score (0-100)
- * Score: 100 for exact SM% match, penalize for over/under
- */
-function calculatePerformanceExpectationScore(
+function calculatePerformancePriorityScore(
   config: ConfigForScoring,
-  performanceExpectation: string
+  intensity: number
 ): number {
-  if (!performanceExpectation || !PERF_TO_IDEAL_SM[performanceExpectation]) {
-    return 50; // Neutral if not set
-  }
-
-  const idealSm = PERF_TO_IDEAL_SM[performanceExpectation];
-  const configSm = config.hamiSmPercent ?? 8;
-  const smDiff = Math.abs(configSm - idealSm);
-
-  // 100 for exact match, gradual penalty based on difference
+  const smPercent = config.hamiSmPercent ?? 8;
+  const idealSm = INTENSITY_TO_IDEAL_SM[intensity] ?? 17;
+  const smDiff = Math.abs(smPercent - idealSm);
+  // Score: 100 for exact match, gradual penalty for mismatch
   return Math.max(0, 100 - smDiff * 2.5);
 }
 
@@ -334,9 +322,9 @@ function calculateFullScore(
   input: RecommendationInput
 ): ScoringBreakdown {
   const goalMatch = calculateGoalMatchScore(config, input.primaryGoal);
-  const performanceExpectation = calculatePerformanceExpectationScore(
+  const performancePriority = calculatePerformancePriorityScore(
     config,
-    input.performanceExpectation
+    input.performancePriority
   );
   const budgetFit = calculateBudgetFitScore(config, input.budget, input.budgetAmount, input.sessionDuration);
   const datasetFit = calculateDatasetFitScore(config, input.datasetSize);
@@ -345,7 +333,7 @@ function calculateFullScore(
 
   const weightedTotal =
     goalMatch * SCORING_WEIGHTS.goalMatch +
-    performanceExpectation * SCORING_WEIGHTS.performanceExpectation +
+    performancePriority * SCORING_WEIGHTS.performanceExpectation +
     budgetFit * SCORING_WEIGHTS.budgetFit +
     datasetFit * SCORING_WEIGHTS.datasetFit +
     durationCost * SCORING_WEIGHTS.durationCost +
@@ -353,7 +341,7 @@ function calculateFullScore(
 
   return {
     goalMatch,
-    performanceExpectation,
+    performancePriority,
     budgetFit,
     datasetFit,
     durationCost,
@@ -391,18 +379,14 @@ function generateReasons(
     reasons.push(`Well-suited for ${goalLabel}`);
   }
 
-  // VRAM and compute allocation
+  // VRAM capacity
   const vramGb = config.gpuVramMb / 1024;
-  const smPercent = config.hamiSmPercent ?? 0;
-  reasons.push(`${vramGb} GB VRAM with ${smPercent}% GPU compute allocation`);
+  reasons.push(`${vramGb} GB GPU memory for your models and data`);
 
-  // Performance expectation context
-  if (
-    input.performanceExpectation &&
-    (input.performanceExpectation === 'heavy' || input.performanceExpectation === 'maximum') &&
-    smPercent >= 33
-  ) {
-    reasons.push(`Provides ${smPercent}% GPU compute allocation for intensive workloads`);
+  // Workload intensity context
+  const intensity = input.performancePriority;
+  if (intensity >= 2) {
+    reasons.push('High-performance compute tier for intensive workloads');
   }
 
   // Budget slider context

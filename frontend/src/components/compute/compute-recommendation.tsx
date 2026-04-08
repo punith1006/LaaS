@@ -155,29 +155,6 @@ const DURATIONS = [
   { id: "extended", label: "Extended", desc: "6+ hours or ongoing" },
 ];
 
-const PERFORMANCE_EXPECTATIONS = [
-  {
-    id: "light",
-    label: "Light",
-    desc: "Basic tasks, small models, educational projects. Runs on a shared GPU slice with 8% compute allocation.",
-  },
-  {
-    id: "moderate",
-    label: "Moderate",
-    desc: "Professional workloads, medium models, standard training. Gets 17% of GPU compute cores.",
-  },
-  {
-    id: "heavy",
-    label: "Heavy",
-    desc: "Large models, complex rendering, intensive training. Dedicated 33% GPU compute with 8 GB VRAM.",
-  },
-  {
-    id: "maximum",
-    label: "Maximum",
-    desc: "Near-exclusive GPU access for production inference or large-scale deep learning. 67% compute allocation.",
-  },
-];
-
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -195,7 +172,7 @@ export function ComputeRecommendation({
   const [extracting, setExtracting] = useState(false);
   const [primaryGoal, setPrimaryGoal] = useState("");
   const [datasetSize, setDatasetSize] = useState("");
-  const [performanceExpectation, setPerformanceExpectation] = useState("");
+  const [workloadIntensity, setWorkloadIntensity] = useState(1); // 0=Light, 1=Moderate, 2=Heavy, 3=Maximum
   const [budget, setBudget] = useState("");
   const [budgetAmount, setBudgetAmount] = useState<number>(50);
   const [sessionDuration, setSessionDuration] = useState("");
@@ -282,7 +259,7 @@ export function ComputeRecommendation({
           budget: budget || "balanced",
           budgetAmount: budgetAmount,
           sessionDuration: sessionDuration || "standard",
-          performanceExpectation: performanceExpectation,
+          performancePriority: workloadIntensity,
           llmAnalysis,
         }
       );
@@ -304,7 +281,7 @@ export function ComputeRecommendation({
               basePricePerHourCents: s.config.basePricePerHourCents,
             },
             primaryGoal,
-            fullText || `Goal: ${primaryGoal}, Dataset: ${datasetSize}, Performance: ${performanceExpectation}, Budget: ${budget || `₹${budgetAmount}`}, Duration: ${sessionDuration}`
+            fullText || `Goal: ${primaryGoal}, Dataset: ${datasetSize}, Workload Intensity: ${["Light", "Moderate", "Heavy", "Maximum"][workloadIntensity]}, Budget: ${budget || `₹${budgetAmount}`}, Duration: ${sessionDuration}`
           ).catch(() => ({ explanation: "" }))
         );
 
@@ -630,7 +607,7 @@ export function ComputeRecommendation({
         </div>
       </div>
 
-      {/* Section D: Performance Expectation */}
+      {/* Section D: Performance Priority */}
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
@@ -649,68 +626,80 @@ export function ComputeRecommendation({
             marginBottom: "8px",
           }}
         >
-          Performance Expectation
+          Workload Intensity
         </div>
         <p
           style={{
             fontSize: "var(--text-sm, 0.875rem)",
             color: "var(--fgColor-default)",
-            marginBottom: "16px",
+            marginBottom: "20px",
             marginTop: 0,
           }}
         >
-          How resource-intensive will your GPU workload be? This determines the compute power allocated to your session.
+          How demanding will your workload be?
         </p>
 
-        {/* Horizontal flex layout */}
+        {/* Current level display */}
+        <div
+          style={{
+            fontSize: "1.1rem",
+            fontWeight: 700,
+            color: "var(--fgColor-default)",
+            marginBottom: "12px",
+          }}
+        >
+          {["Light", "Moderate", "Heavy", "Maximum"][workloadIntensity]}
+          <span
+            style={{
+              fontSize: "var(--text-sm, 0.875rem)",
+              fontWeight: 400,
+              color: "var(--fgColor-muted)",
+              marginLeft: "12px",
+            }}
+          >
+            {[
+              "Jupyter notebooks, small experiments, coursework",
+              "Model training, data analysis, standard development",
+              "Large model training, complex simulations, production workloads",
+              "Enterprise-grade processing, large-scale deep learning",
+            ][workloadIntensity]}
+          </span>
+        </div>
+
+        {/* Stepped slider */}
+        <input
+          type="range"
+          min={0}
+          max={3}
+          step={1}
+          value={workloadIntensity}
+          onChange={(e) => setWorkloadIntensity(parseInt(e.target.value, 10))}
+          style={{
+            width: "100%",
+            height: "4px",
+            background: "var(--borderColor-default)",
+            borderRadius: "2px",
+            outline: "none",
+            WebkitAppearance: "none",
+            appearance: "none",
+            cursor: "pointer",
+          }}
+        />
+
+        {/* Step labels */}
         <div
           style={{
             display: "flex",
-            gap: "12px",
-            flexWrap: "wrap",
+            justifyContent: "space-between",
+            marginTop: "8px",
+            fontSize: "var(--text-xs, 0.75rem)",
+            color: "var(--fgColor-muted)",
           }}
         >
-          {PERFORMANCE_EXPECTATIONS.map((item) => {
-            const isSelected = performanceExpectation === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setPerformanceExpectation(item.id)}
-                style={{
-                  flex: "1 1 auto",
-                  minWidth: "180px",
-                  padding: isSelected ? "11px 15px" : "12px 16px",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  backgroundColor: "var(--bgColor-default)",
-                  border: isSelected
-                    ? "2px solid var(--fgColor-default)"
-                    : "1px solid var(--borderColor-default)",
-                  borderRadius: "4px",
-                  fontFamily: "var(--font-sans)",
-                }}
-              >
-                <div
-                  style={{
-                    fontWeight: 600,
-                    fontSize: "var(--text-sm, 0.875rem)",
-                    color: "var(--fgColor-default)",
-                  }}
-                >
-                  {item.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: "var(--text-xs, 0.75rem)",
-                    color: "var(--fgColor-muted)",
-                    marginTop: "4px",
-                  }}
-                >
-                  {item.desc}
-                </div>
-              </button>
-            );
-          })}
+          <span>Light</span>
+          <span>Moderate</span>
+          <span>Heavy</span>
+          <span>Maximum</span>
         </div>
       </div>
 
@@ -1281,9 +1270,6 @@ export function ComputeRecommendation({
                       }}
                     >
                       {scored.config.gpuVramMb / 1024} GB VRAM
-                    </span>
-                    <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-muted)" }}>
-                      {scored.config.hamiSmPercent}% SM
                     </span>
                   </div>
                   {scored.config.gpuModel && (
