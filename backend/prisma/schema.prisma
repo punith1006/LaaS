@@ -524,6 +524,7 @@ model Department {
   headUser        User?            @relation("DepartmentHead", fields: [headUserId], references: [id], onDelete: Restrict)
   userDepartments UserDepartment[]
   userGroups      UserGroup[]
+  userProfiles    UserProfile[]
 
   // Domain 9: Academic / LMS
   courses Course[]
@@ -578,6 +579,9 @@ model UserProfile {
   idProofVerifiedBy       String?   @map("id_proof_verified_by") @db.Uuid
   collegeName             String?   @map("college_name")
   graduationYear          Int?      @map("graduation_year")
+  courseName              String?   @map("course_name")
+  academicYear            Int?      @map("academic_year")
+  departmentId            String?   @map("department_id") @db.Uuid
   githubUrl               String?   @map("github_url")
   linkedinUrl             String?   @map("linkedin_url")
   websiteUrl              String?   @map("website_url")
@@ -600,8 +604,9 @@ model UserProfile {
   isOnboardingComplete Boolean  @default(false) @map("onboarding_complete")
 
   // Relations
-  user     User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  verifier User? @relation("ProfileVerifier", fields: [idProofVerifiedBy], references: [id], onDelete: Restrict)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verifier   User?       @relation("ProfileVerifier", fields: [idProofVerifiedBy], references: [id], onDelete: Restrict)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   @@map("user_profiles")
 }

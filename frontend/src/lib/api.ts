@@ -1,4 +1,4 @@
-import type { AuthTokens, User } from "@/types/auth";
+import type { AuthTokens, User, ProfileData, EditableProfileData } from "@/types/auth";
 import { saveTokens, getAccessToken, getRefreshToken, clearTokens, isTokenExpired } from "@/lib/token";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -123,6 +123,17 @@ export interface CheckEmailResponse {
     shortName: string | null;
     slug: string;
   };
+}
+
+export async function getUniversityDepartments(slug: string): Promise<{ id: string; name: string; code: string }[]> {
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/auth/universities/${encodeURIComponent(slug)}/departments`);
+    if (!res.ok) {
+      return [];
+    }
+    return res.json();
+  }
+  return [];
 }
 
 export async function checkEmail(email: string): Promise<CheckEmailResponse> {
@@ -611,6 +622,8 @@ export interface StorageStatus {
   reachable: boolean;
   serviceHealthy: boolean;
   datasetExists?: boolean;
+  volumeName?: string;
+  quotaGb?: number;
 }
 
 export async function getStorageStatus(): Promise<StorageStatus> {
@@ -1080,6 +1093,11 @@ export interface OnboardingProfileData {
   useCasePurposes?: string[];
   useCaseOther?: string;
   country?: string;
+  // Academic fields for students
+  departmentId?: string;
+  courseName?: string;
+  academicYear?: number;
+  graduationYear?: number;
 }
 
 export interface SaveOnboardingResponse {
@@ -1372,4 +1390,32 @@ export async function generateExplanation(
     throw new Error(error.message || 'Failed to generate explanation');
   }
   return res.json();
+}
+
+export async function getUserProfile(): Promise<ProfileData | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  if (API_BASE) {
+    const res = await apiFetch(`${API_BASE}/api/user/profile`);
+    if (!res.ok) return null;
+    return res.json();
+  }
+  return null;
+}
+
+export async function updateUserProfile(data: Partial<EditableProfileData>): Promise<ProfileData | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  if (API_BASE) {
+    const res = await apiFetch(`${API_BASE}/api/user/profile`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+  return null;
 }

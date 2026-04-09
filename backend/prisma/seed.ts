@@ -163,6 +163,38 @@ async function main() {
     orgId: ksrceOrg.id,
   });
 
+  // Seed KSRCE Departments
+  const ksrceDepartments = [
+    { name: 'Computer Science and Engineering', code: 'CSE', slug: 'cse' },
+    { name: 'Information Technology', code: 'IT', slug: 'it' },
+    { name: 'Electronics and Communication Engineering', code: 'ECE', slug: 'ece' },
+    { name: 'Electrical and Electronics Engineering', code: 'EEE', slug: 'eee' },
+    { name: 'Mechanical Engineering', code: 'MECH', slug: 'mech' },
+    { name: 'Civil Engineering', code: 'CIVIL', slug: 'civil' },
+    { name: 'Artificial Intelligence and Data Science', code: 'AIDS', slug: 'aids' },
+    { name: 'Artificial Intelligence and Machine Learning', code: 'AIML', slug: 'aiml' },
+    { name: 'Cyber Security', code: 'CS', slug: 'cyber-security' },
+    { name: 'Biomedical Engineering', code: 'BME', slug: 'bme' },
+    { name: 'Master of Business Administration', code: 'MBA', slug: 'mba' },
+    { name: 'Master of Computer Applications', code: 'MCA', slug: 'mca' },
+  ];
+
+  for (const dept of ksrceDepartments) {
+    await prisma.department.upsert({
+      where: { universityId_slug: { universityId: ksrceUniversity.id, slug: dept.slug } },
+      update: {},
+      create: {
+        name: dept.name,
+        code: dept.code,
+        slug: dept.slug,
+        universityId: ksrceUniversity.id,
+        isActive: true,
+      },
+    });
+  }
+
+  console.log(`Seeded ${ksrceDepartments.length} KSRCE departments`);
+
   // Seed GPU compute configs
   for (const config of COMPUTE_CONFIGS) {
     await prisma.computeConfig.upsert({

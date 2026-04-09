@@ -99,7 +99,9 @@ export function SupportModal({ isOpen, onClose }: SupportModalProps) {
         <DialogPrimitive.Overlay
           className="fixed inset-0 z-50"
           style={{
-            backgroundColor: "rgba(11, 11, 11, 0.15)",
+            backgroundColor: "rgba(11, 11, 11, 0.5)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
           }}
         />
         

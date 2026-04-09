@@ -37,6 +37,48 @@ export class AuthService {
     private referralService: ReferralService,
   ) {}
 
+  // PUBLIC endpoint - get departments for a university by slug
+  async getInstitutionSlugForUser(userId: string): Promise<string | undefined> {
+    const userWithOrg = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        organization: {
+          include: { university: { select: { slug: true } } },
+        },
+      },
+    });
+    return userWithOrg?.organization?.university?.slug ?? undefined;
+  }
+
+  async getUniversityDepartments(slug: string): Promise<
+    Array<{ id: string; name: string; code: string | null }>
+  > {
+    const university = await this.prisma.university.findFirst({
+      where: { slug, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!university) {
+      return [];
+    }
+
+    const departments = await this.prisma.department.findMany({
+      where: {
+        universityId: university.id,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return departments;
+  }
+
   async checkEmail(email: string): Promise<{
     available: true;
     institution?: { name: string; shortName: string | null; slug: string };
@@ -608,7 +650,8 @@ export class AuthService {
       await this.mail.sendWelcomeEmail(user.email, user.firstName);
 
       if (authType === 'university_sso' && user.storageUid) {
-        const result = await this.storage.provisionUserQuota(user.storageUid, user.id);
+        const INSTITUTION_QUOTA_GB = 10;
+        const result = await this.storage.provisionUserQuota(user.storageUid, user.id, INSTITUTION_QUOTA_GB);
         await this.prisma.user.update({
           where: { id: user.id },
           data: result.ok
@@ -626,6 +669,32 @@ export class AuthService {
           user.storageProvisioningStatus = 'provisioned';
           user.storageProvisionedAt = new Date();
           user.storageProvisioningError = null;
+
+          // Create UserStorageVolume record
+          const quotaBytes = BigInt(INSTITUTION_QUOTA_GB) * BigInt(1024) ** BigInt(3);
+          const zfsDatasetPath = `datapool/users/${user.storageUid}`;
+          const nfsExportPath = `/mnt/nfs/users/${user.storageUid}`;
+
+          await this.prisma.$queryRaw`
+            INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at, price_per_gb_cents_month)
+            VALUES (
+              gen_random_uuid()::uuid,
+              ${user.id}::uuid,
+              'default',
+              ${user.storageUid},
+              ${zfsDatasetPath},
+              ${nfsExportPath},
+              'ubuntu22',
+              ${quotaBytes},
+              0::bigint,
+              'institution_signup',
+              'active',
+              NOW(),
+              NOW(),
+              NOW(),
+              0
+            )
+          `;
         } else {
           user.storageProvisioningStatus = 'failed';
           user.storageProvisioningError = result.error ?? 'Unknown error';

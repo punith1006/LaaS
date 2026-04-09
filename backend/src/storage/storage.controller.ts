@@ -141,8 +141,8 @@ export class StorageController {
     const userId = req.user.id;
 
     // Check if user has a storage volume in DB
-    const volumes = await this.prisma.$queryRaw<{ storage_uid: string }[]>`
-      SELECT storage_uid FROM user_storage_volumes
+    const volumes = await this.prisma.$queryRaw<{ storage_uid: string; name: string; quota_bytes: bigint }[]>`
+      SELECT storage_uid, name, quota_bytes FROM user_storage_volumes
       WHERE user_id = ${userId}::uuid AND status = 'active'
       ORDER BY created_at DESC LIMIT 1
     `;
@@ -152,13 +152,15 @@ export class StorageController {
     }
 
     const storageUid = volumes[0].storage_uid;
+    const volumeName = volumes[0].name;
+    const quotaGb = Math.round(Number(volumes[0].quota_bytes) / (1024 ** 3));
 
     // Check service-level health first
     const health = await this.storageService.checkStorageHealth();
     const serviceHealthy = health?.healthy ?? false;
 
     if (!serviceHealthy) {
-      return { hasStorage: true, reachable: false, serviceHealthy: false };
+      return { hasStorage: true, reachable: false, serviceHealthy: false, volumeName, quotaGb };
     }
 
     // Check if the specific dataset exists by probing usage
@@ -170,6 +172,8 @@ export class StorageController {
       reachable: datasetExists && serviceHealthy,
       serviceHealthy,
       datasetExists,
+      volumeName,
+      quotaGb,
     };
   }
 

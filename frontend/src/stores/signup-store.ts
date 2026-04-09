@@ -13,6 +13,11 @@ export interface OnboardingData {
   toolsFrameworks: string[];
   goalsOther?: string;
   country?: string;
+  // Academic fields for students
+  departmentId?: string;
+  courseName?: string;
+  academicYear?: number;
+  graduationYear?: number;
 }
 
 export interface InstitutionInfo {

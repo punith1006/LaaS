@@ -1891,8 +1891,8 @@ export function ComputeRecommendation({
           display: "flex",
           gap: "12px",
           padding: "16px",
-          backgroundColor: "rgba(58, 115, 255, 0.08)",
-          borderLeft: "3px solid var(--fgColor-info)",
+          backgroundColor: "var(--bgColor-info, #cedeff)",
+          border: "1px solid var(--borderColor-info, #3a73ff)",
           borderRadius: "4px",
           marginBottom: "24px",
         }}

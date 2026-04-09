@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/select";
 import { FooterLinks } from "@/components/auth/footer-links";
 import { useSignupStore } from "@/stores/signup-store";
-import { saveOnboardingProfile, getMe } from "@/lib/api";
+import { saveOnboardingProfile, getMe, getUniversityDepartments } from "@/lib/api";
 import { Check, ChevronRight, ChevronLeft, Cpu, FlaskConical, BookOpen, Code, Layers, Lightbulb, PenTool, Film, Gamepad2, Building, Beaker, GraduationCap } from "lucide-react";
+import type { User } from "@/types/auth";
 
 // ============================================
 // AREAS (Domains) - User's work areas/categories
@@ -123,12 +124,45 @@ const YEARS_OPTIONS = [
   { value: "10", label: "10+ years" },
 ];
 
+// Program/Degree options for students
+const PROGRAM_OPTIONS = [
+  { value: "B.Tech", label: "B.Tech" },
+  { value: "B.E.", label: "B.E." },
+  { value: "M.Tech", label: "M.Tech" },
+  { value: "M.E.", label: "M.E." },
+  { value: "MBA", label: "MBA" },
+  { value: "MCA", label: "MCA" },
+  { value: "BCA", label: "BCA" },
+  { value: "B.Sc", label: "B.Sc" },
+  { value: "M.Sc", label: "M.Sc" },
+  { value: "Ph.D", label: "Ph.D" },
+  { value: "Diploma", label: "Diploma" },
+  { value: "Other", label: "Other" },
+];
+
+// Academic year options for students
+const ACADEMIC_YEAR_OPTIONS = [
+  { value: 1, label: "1st Year" },
+  { value: 2, label: "2nd Year" },
+  { value: 3, label: "3rd Year" },
+  { value: 4, label: "4th Year" },
+  { value: 5, label: "5th Year+" },
+];
+
 export function OnboardingForm() {
   const router = useRouter();
-  const { onboardingData, setOnboardingData, hasEmail, reset } = useSignupStore();
+  const { onboardingData, setOnboardingData, hasEmail, reset, institution } = useSignupStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // User object for detecting student status
+  const [user, setUser] = useState<User | null>(null);
+  const [isStudent, setIsStudent] = useState(false);
+
+  // Department options for students
+  const [departments, setDepartments] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(false);
 
   // Step 1: About You
   const [profession, setProfession] = useState(onboardingData.profession || "");
@@ -136,11 +170,17 @@ export function OnboardingForm() {
     onboardingData.expertiseLevel || ""
   );
 
-  // Step 2: Experience
+  // Step 2: Experience (non-students) / Academics (students)
   const [yearsOfExperience, setYearsOfExperience] = useState(
     onboardingData.yearsOfExperience?.toString() || ""
   );
   const [country, setCountry] = useState(onboardingData.country || "");
+
+  // Step 2: Academic fields for students
+  const [departmentId, setDepartmentId] = useState(onboardingData.departmentId || "");
+  const [courseName, setCourseName] = useState(onboardingData.courseName || "");
+  const [academicYear, setAcademicYear] = useState<number | undefined>(onboardingData.academicYear);
+  const [graduationYear, setGraduationYear] = useState<number | undefined>(onboardingData.graduationYear);
 
   // Step 3: Goals
   const [primaryUseCase, setPrimaryUseCase] = useState<string>("");
@@ -199,15 +239,21 @@ export function OnboardingForm() {
       if (profession || country) return;
 
       try {
-        const user = await getMe();
-        if (user?.authType === 'institution_local' || user?.authType === 'university_sso') {
-          // Pre-select profession as "student" for institution users
-          if (!profession) {
-            setProfession('student');
-          }
-          // Pre-select country as "IN" for institution users
-          if (!country) {
-            setCountry('IN');
+        const userData = await getMe();
+        if (userData) {
+          setUser(userData);
+          const isStudentUser = userData.authType === 'institution_local' || userData.authType === 'university_sso';
+          setIsStudent(isStudentUser);
+
+          if (isStudentUser) {
+            // Pre-select profession as "student" for institution users
+            if (!profession) {
+              setProfession('student');
+            }
+            // Pre-select country as "IN" for institution users
+            if (!country) {
+              setCountry('IN');
+            }
           }
         }
       } catch {
@@ -217,6 +263,26 @@ export function OnboardingForm() {
 
     prefillForInstitutionUser();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch departments when student is detected and institution is available
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      const slug = institution?.slug || user?.institutionSlug;
+      if (isStudent && slug && departments.length === 0) {
+        setDepartmentsLoading(true);
+        try {
+          const depts = await getUniversityDepartments(slug);
+          setDepartments(depts);
+        } catch {
+          // Silently ignore - departments API might not be available
+        } finally {
+          setDepartmentsLoading(false);
+        }
+      }
+    };
+
+    fetchDepartments();
+  }, [isStudent, institution?.slug, user?.institutionSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll to top on step change
   useEffect(() => {
@@ -242,7 +308,13 @@ export function OnboardingForm() {
       case 1:
         return profession && expertiseLevel;
       case 2:
-        return yearsOfExperience && country;
+        if (isStudent) {
+          // Students: department + courseName + academicYear required
+          return departmentId && courseName && academicYear;
+        } else {
+          // Non-students: yearsOfExperience + country required
+          return yearsOfExperience && country;
+        }
       case 3:
         if (!primaryUseCase || selectedAreas.length === 0) return false;
         // If "other" is selected, require goalsOther text
@@ -261,6 +333,11 @@ export function OnboardingForm() {
       expertiseLevel,
       yearsOfExperience: yearsOfExperience ? parseInt(yearsOfExperience, 10) : undefined,
       country,
+      // Academic fields for students
+      departmentId,
+      courseName,
+      academicYear,
+      graduationYear,
     });
     if (currentStep < 3) {
       setCurrentStep(currentStep + 1);
@@ -277,6 +354,11 @@ export function OnboardingForm() {
       toolsFrameworks: selectedTools,
       goalsOther,
       country,
+      // Academic fields for students
+      departmentId,
+      courseName,
+      academicYear,
+      graduationYear,
     });
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
@@ -293,6 +375,11 @@ export function OnboardingForm() {
       toolsFrameworks: selectedTools,
       goalsOther,
       country,
+      // Academic fields for students
+      departmentId,
+      courseName,
+      academicYear,
+      graduationYear,
     });
 
     setIsSubmitting(true);
@@ -305,6 +392,11 @@ export function OnboardingForm() {
         useCasePurposes: [primaryUseCase, ...selectedTools],
         useCaseOther: goalsOther || undefined,
         country,
+        // Academic fields for students
+        departmentId,
+        courseName,
+        academicYear,
+        graduationYear,
       });
       toast.success("Profile completed successfully!");
       reset();
@@ -381,45 +473,120 @@ export function OnboardingForm() {
     </div>
   );
 
-  const renderStep2 = () => (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <Label htmlFor="years" className="text-sm font-medium text-gray-700">
-          Years of experience? <span className="text-red-500">*</span>
-        </Label>
-        <Select value={yearsOfExperience} onValueChange={setYearsOfExperience}>
-          <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
-            <SelectValue placeholder="Select experience" className="text-black" />
-          </SelectTrigger>
-          <SelectContent>
-            {YEARS_OPTIONS.map((y) => (
-              <SelectItem key={y.value} value={y.value}>
-                {y.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+  const renderStep2 = () => {
+    if (isStudent) {
+      // Student-specific Stage 2: Academic information
+      return (
+        <div className="space-y-5">
+          {/* Department */}
+          <div className="space-y-2">
+            <Label htmlFor="department" className="text-sm font-medium text-gray-700">
+              Department <span className="text-red-500">*</span>
+            </Label>
+            <Select value={departmentId} onValueChange={setDepartmentId} disabled={departmentsLoading}>
+              <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
+                <SelectValue placeholder={departmentsLoading ? "Loading departments..." : "Select department"} className="text-black" />
+              </SelectTrigger>
+              <SelectContent>
+                {departments.map((dept) => (
+                  <SelectItem key={dept.id} value={dept.id}>
+                    {dept.name} {dept.code ? `(${dept.code})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {departments.length === 0 && !departmentsLoading && (
+              <p className="text-xs text-gray-400">No departments available</p>
+            )}
+          </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="country" className="text-sm font-medium text-gray-700">
-          Country/Region <span className="text-red-500">*</span>
-        </Label>
-        <Select value={country} onValueChange={setCountry}>
-          <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
-            <SelectValue placeholder="Select country" className="text-black" />
-          </SelectTrigger>
-          <SelectContent>
-            {COUNTRIES.map((c) => (
-              <SelectItem key={c.value} value={c.value}>
-                {c.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          {/* Program/Degree */}
+          <div className="space-y-2">
+            <Label htmlFor="courseName" className="text-sm font-medium text-gray-700">
+              Program / Degree <span className="text-red-500">*</span>
+            </Label>
+            <Select value={courseName} onValueChange={setCourseName}>
+              <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
+                <SelectValue placeholder="Select program" className="text-black" />
+              </SelectTrigger>
+              <SelectContent>
+                {PROGRAM_OPTIONS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Current Year - Horizontal Pill Selector */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-gray-700">
+              Current Year <span className="text-red-500">*</span>
+            </Label>
+            <div className="flex gap-2">
+              {ACADEMIC_YEAR_OPTIONS.map((year) => (
+                <button
+                  key={year.value}
+                  type="button"
+                  onClick={() => setAcademicYear(year.value)}
+                  className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-all duration-150 ${
+                    academicYear === year.value
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:text-blue-600"
+                  }`}
+                >
+                  {year.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      );
+    }
+
+    // Non-student Stage 2: Years of experience + Country (original)
+    return (
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="years" className="text-sm font-medium text-gray-700">
+            Years of experience? <span className="text-red-500">*</span>
+          </Label>
+          <Select value={yearsOfExperience} onValueChange={setYearsOfExperience}>
+            <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
+              <SelectValue placeholder="Select experience" className="text-black" />
+            </SelectTrigger>
+            <SelectContent>
+              {YEARS_OPTIONS.map((y) => (
+                <SelectItem key={y.value} value={y.value}>
+                  {y.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="country" className="text-sm font-medium text-gray-700">
+            Country/Region <span className="text-red-500">*</span>
+          </Label>
+          <Select value={country} onValueChange={setCountry}>
+            <SelectTrigger className="w-full h-11 bg-white border-neutral-400 text-black">
+              <SelectValue placeholder="Select country" className="text-black" />
+            </SelectTrigger>
+            <SelectContent>
+              {COUNTRIES.map((c) => (
+                <SelectItem key={c.value} value={c.value}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderStep3 = () => (
     <div className="space-y-5">
@@ -552,7 +719,10 @@ export function OnboardingForm() {
 
   const stepTitles = [
     { title: "Tell us about yourself", subtitle: "Help us personalize your experience" },
-    { title: "Your experience", subtitle: "This helps us recommend the right resources" },
+    { 
+      title: isStudent ? "Your academics" : "Your experience", 
+      subtitle: isStudent ? "Tell us about your program" : "This helps us recommend the right resources" 
+    },
     { title: "Your goals", subtitle: "Select areas and use cases that match your needs" },
   ];
 

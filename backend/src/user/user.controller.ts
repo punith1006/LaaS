@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Put,
   Body,
   Req,
   UseGuards,
@@ -41,6 +42,33 @@ class OnboardingProfileDto {
   @IsOptional()
   @IsString()
   country?: string;
+
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  courseName?: string;
+
+  @IsOptional()
+  @IsNumber()
+  academicYear?: number;
+
+  @IsOptional()
+  @IsNumber()
+  graduationYear?: number;
+}
+
+class UpdateProfileDto {
+  @IsOptional() @IsString() displayName?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() timezone?: string;
+  @IsOptional() @IsString() bio?: string;
+  @IsOptional() @IsString() githubUrl?: string;
+  @IsOptional() @IsString() linkedinUrl?: string;
+  @IsOptional() @IsString() websiteUrl?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) skills?: string[];
 }
 
 @Controller('api/user')
@@ -60,5 +88,20 @@ export class UserController {
   @Get('onboarding-status')
   async getOnboardingStatus(@Req() req: { user: { id: string } }) {
     return this.userService.getOnboardingStatus(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profile')
+  async getProfile(@Req() req: { user: { id: string } }) {
+    return this.userService.getFullProfile(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('profile')
+  async updateProfile(
+    @Req() req: { user: { id: string } },
+    @Body() data: UpdateProfileDto,
+  ) {
+    return this.userService.updateProfile(req.user.id, data);
   }
 }

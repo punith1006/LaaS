@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Req,
   HttpCode,
@@ -21,6 +22,12 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 @Controller('api/auth')
 export class AuthController {
   constructor(private auth: AuthService) {}
+
+  // PUBLIC endpoint - returns departments for a university by slug
+  @Get('universities/:slug/departments')
+  async getUniversityDepartments(@Param('slug') slug: string) {
+    return this.auth.getUniversityDepartments(slug);
+  }
 
   @Post('check-email')
   @HttpCode(HttpStatus.OK)
@@ -126,6 +133,12 @@ export class AuthController {
     } = req.user;
     const storageQuotaGb =
       authType === 'university_sso' ? 5 : undefined;
+
+    let institutionSlug: string | undefined;
+    if (authType === 'institution_local' || authType === 'university_sso') {
+      institutionSlug = await this.auth.getInstitutionSlugForUser(id);
+    }
+
     return {
       id,
       email,
@@ -137,6 +150,7 @@ export class AuthController {
       storageProvisioningError: storageProvisioningError ?? undefined,
       storageProvisionedAt: storageProvisionedAt ?? undefined,
       storageQuotaGb,
+      institutionSlug,
     };
   }
 

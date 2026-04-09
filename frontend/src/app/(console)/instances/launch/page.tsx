@@ -1115,7 +1115,7 @@ export default function LaunchInstancePage() {
                   }}
                 >
                   <CheckIcon size={14} />
-                  MyStore (9 GB) — Active and reachable
+                  {storageStatus?.volumeName ?? 'File Store'} ({storageStatus?.quotaGb ?? '?'} GB) — Active and reachable
                 </div>
               </div>
             </div>

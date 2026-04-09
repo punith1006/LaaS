@@ -58,7 +58,7 @@ const navSections: NavSection[] = [
     id: "account",
     label: "ACCOUNT",
     items: [
-      { id: "profile", label: "Profile" },
+      { id: "profile", label: "Profile", href: "/profile" },
       { id: "ssh-keys", label: "SSH Keys (available soon)" },
       { id: "billing", label: "Billing", href: "/billing" },
       { id: "referral", label: "Refer & Earn", href: "/referral" },
@@ -132,6 +132,7 @@ function NavContent() {
     if (pathname === "/storage" || pathname.startsWith("/storage")) return "storage";
     if (pathname === "/instances" || pathname.startsWith("/instances")) return "instances";
     if (pathname === "/referral" || pathname.startsWith("/referral")) return "referral";
+    if (pathname === "/profile" || pathname.startsWith("/profile")) return "profile";
     // Add more route matching as needed
     return "home";
   };

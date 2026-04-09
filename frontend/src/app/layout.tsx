@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -34,19 +35,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Blocking script - runs BEFORE React hydrates to prevent flash */}
-        <script
+        <Script
+          id="dark-mode-init"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  const darkMode = localStorage.getItem('darkMode');
-                  if (darkMode === 'true') {
-                    document.documentElement.classList.add('dark');
-                  }
-                } catch (e) {}
-              })();
-            `,
+            __html: `(function(){try{var d=localStorage.getItem('darkMode');if(d==='true'){document.documentElement.classList.add('dark')}}catch(e){}})();`,
           }}
         />
       </head>

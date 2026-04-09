@@ -398,7 +398,7 @@ export function PaymentHistoryTab() {
             gridTemplateColumns: "100px 120px 100px 1fr 100px 50px",
             gap: "12px",
             padding: "12px 20px",
-            borderBottom: "1px solid var(--borderColor-muted)",
+            borderBottom: "1px solid var(--borderColor-default)",
             backgroundColor: "var(--bgColor-muted)",
           }}
         >
@@ -485,7 +485,7 @@ export function PaymentHistoryTab() {
               gridTemplateColumns: "100px 120px 100px 1fr 100px 50px",
               gap: "12px",
               padding: "12px 20px",
-              borderBottom: "1px solid var(--borderColor-muted)",
+              borderBottom: "1px solid var(--borderColor-default)",
               alignItems: "center",
               transition: "background-color 0.1s ease",
             }}
