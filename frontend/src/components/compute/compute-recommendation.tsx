@@ -189,7 +189,11 @@ export function ComputeRecommendation({
   const [autoSelectedFields, setAutoSelectedFields] = useState<Set<string>>(new Set());
   const [recommendationSessionId, setRecommendationSessionId] = useState<string | null>(null);
   const [llmAnalysis, setLlmAnalysis] = useState<any>(null);
-
+  
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [skippedAnalysis, setSkippedAnalysis] = useState(false);
+  
   // Word count helper
   const getWordCount = (text: string): number => {
     return text.split(/\s+/).filter((w) => w).length;
@@ -409,165 +413,327 @@ export function ComputeRecommendation({
   // ============================================================================
 
   const renderInputForm = () => (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-      {/* Section A: Describe Your Workload */}
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Minimal Circle-Based Step Indicator */}
       <div
         style={{
-          backgroundColor: "var(--bgColor-mild)",
-          border: "1px solid var(--borderColor-default)",
-          borderRadius: "4px",
-          padding: "24px",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "center",
+          maxWidth: "600px",
+          margin: "0 auto",
+          fontFamily: "var(--font-outfit, var(--font-sans))",
         }}
       >
+        {[
+          { num: 1, label: "Describe Workload", sublabel: "(Optional)" },
+          { num: 2, label: "Configure Setup", sublabel: null },
+          { num: 3, label: "Budget & Duration", sublabel: null },
+        ].map((step, idx) => {
+          const isActive = wizardStep === step.num;
+          const isCompleted = wizardStep > step.num;
+          return (
+            <div key={step.num} style={{ display: "flex", alignItems: "flex-start", flex: idx === 1 ? 1 : "none" }}>
+              {/* Step column: circle + label */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+                {/* Circle */}
+                <div
+                  style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "0.8rem",
+                    fontFamily: "var(--font-outfit, var(--font-sans))",
+                    background: isCompleted
+                      ? "transparent"
+                      : isActive
+                        ? "var(--fgColor-default)"
+                        : "transparent",
+                    border: isCompleted
+                      ? "1.5px solid var(--fgColor-muted)"
+                      : isActive
+                        ? "1.5px solid var(--fgColor-default)"
+                        : "1.5px solid var(--borderColor-default)",
+                    color: isCompleted
+                      ? "var(--fgColor-muted)"
+                      : isActive
+                        ? "var(--bgColor-mild)"
+                        : "var(--fgColor-muted)",
+                    fontWeight: isActive ? 600 : 400,
+                  }}
+                >
+                  {isCompleted ? "✓" : step.num}
+                </div>
+                {/* Label */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                  <span
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: isActive ? 600 : 400,
+                      color: isActive ? "var(--fgColor-default)" : "var(--fgColor-muted)",
+                      fontFamily: "var(--font-outfit, var(--font-sans))",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {step.label}
+                  </span>
+                  {step.sublabel && (
+                    <span
+                      style={{
+                        fontSize: "0.7rem",
+                        color: "var(--fgColor-muted)",
+                        fontFamily: "var(--font-outfit, var(--font-sans))",
+                      }}
+                    >
+                      {step.sublabel}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Connecting line */}
+              {idx < 2 && (
+                <div
+                  style={{
+                    flex: 1,
+                    height: "1px",
+                    background: isCompleted ? "var(--fgColor-muted)" : "var(--borderColor-default)",
+                    margin: "16px 8px 0",
+                    minWidth: "40px",
+                  }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Blue info banner — Step 1 only */}
+      {wizardStep === 1 && (
         <div
           style={{
-            fontSize: "var(--text-xs, 0.75rem)",
-            fontWeight: 600,
-            color: "var(--fgColor-default)",
-            textTransform: "uppercase",
-            letterSpacing: "1px",
-            marginBottom: "8px",
+            display: "flex",
+            gap: "12px",
+            padding: "14px 16px",
+            backgroundColor: "var(--bgColor-info, #cedeff)",
+            border: "1px solid var(--borderColor-info, #3a73ff)",
+            borderRadius: "4px",
           }}
         >
-          Describe Your Workload
-        </div>
-
-        {/* State-based content below the title */}
-        {analysisState === 'input' && (
-          <>
-            <p
-              style={{
-                fontSize: "var(--text-sm, 0.875rem)",
-                color: "var(--fgColor-default)",
-                marginBottom: "16px",
-                marginTop: 0,
-              }}
-            >
-              Tell us what you&apos;re working on — the more detail you provide, the better our recommendation.
-            </p>
-
-            {/* Text area */}
-            <textarea
-              value={descriptionText}
-              onChange={(e) => setDescriptionText(e.target.value)}
-              placeholder="e.g., I need to fine-tune a ResNet model on a 2GB image dataset for my college project. I'll be using PyTorch and training for about 3-4 hours..."
-              maxLength={3000}
-              style={{
-                width: "100%",
-                minHeight: "120px",
-                resize: "vertical",
-                backgroundColor: "var(--bgColor-default)",
-                border: "1px solid var(--borderColor-default)",
-                borderRadius: "4px",
-                padding: "12px",
-                fontFamily: "var(--font-sans)",
-                fontSize: "var(--text-sm, 0.875rem)",
-                color: "var(--fgColor-default)",
-                boxSizing: "border-box",
-              }}
-            />
+          <span style={{ color: "var(--fgColor-info)", flexShrink: 0, marginTop: "2px" }}>
+            <InfoIcon size={16} />
+          </span>
+          <div>
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "4px",
+                fontSize: "var(--text-sm, 0.875rem)",
+                fontWeight: 600,
+                color: "var(--fgColor-default)",
+                marginBottom: "2px",
               }}
             >
-              <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-default)" }}>
-                Optional — helps our AI understand your needs better
-              </span>
-              <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-default)" }}>
-                {getWordCount(descriptionText)} / 500 words
-              </span>
+              AI-Powered Recommendations
             </div>
-
-            {/* File upload area */}
             <div
               style={{
-                marginTop: "16px",
-                borderTop: "1px solid var(--borderColor-default)",
-                paddingTop: "16px",
+                fontSize: "var(--text-sm, 0.875rem)",
+                color: "var(--fgColor-muted)",
+                lineHeight: "1.5",
               }}
             >
+              Our recommendation engine combines your preferences with AI analysis to find the optimal
+              balance of performance, cost, and availability for your specific workload.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Section A: Describe Your Workload - Step 1 */}
+      {wizardStep === 1 && (
+        <div
+          style={{
+            backgroundColor: "var(--bgColor-mild)",
+            border: "1px solid var(--borderColor-default)",
+            borderRadius: "4px",
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "var(--text-xs, 0.75rem)",
+              fontWeight: 600,
+              color: "var(--fgColor-default)",
+              textTransform: "uppercase",
+              letterSpacing: "1px",
+              marginBottom: "8px",
+            }}
+          >
+            Describe Your Workload
+          </div>
+
+          {/* State-based content below the title */}
+          {analysisState === 'input' && (
+            <>
+              <p
+                style={{
+                  fontSize: "var(--text-sm, 0.875rem)",
+                  color: "var(--fgColor-default)",
+                  marginBottom: "16px",
+                  marginTop: 0,
+                }}
+              >
+                Tell us what you&apos;re working on — the more detail you provide, the better our recommendation.
+              </p>
+
+              {/* Text area */}
+              <textarea
+                value={descriptionText}
+                onChange={(e) => setDescriptionText(e.target.value)}
+                placeholder="e.g., I need to fine-tune a ResNet model on a 2GB image dataset for my college project. I'll be using PyTorch and training for about 3-4 hours..."
+                maxLength={3000}
+                style={{
+                  width: "100%",
+                  minHeight: "120px",
+                  resize: "vertical",
+                  backgroundColor: "var(--bgColor-default)",
+                  border: "1px solid var(--borderColor-default)",
+                  borderRadius: "4px",
+                  padding: "12px",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "var(--text-sm, 0.875rem)",
+                  color: "var(--fgColor-default)",
+                  boxSizing: "border-box",
+                }}
+              />
               <div
                 style={{
-                  fontSize: "var(--text-xs, 0.75rem)",
-                  color: "var(--fgColor-default)",
-                  textTransform: "uppercase",
-                  letterSpacing: "1px",
-                  marginBottom: "8px",
-                }}
-              >
-                Or Upload a Document
-              </div>
-              <label
-                style={{
                   display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                  border: "1px dashed var(--borderColor-default)",
-                  borderRadius: "4px",
-                  padding: "20px",
-                  cursor: "pointer",
-                  color: "var(--fgColor-default)",
-                  fontSize: "var(--text-sm, 0.875rem)",
-                  backgroundColor: "var(--bgColor-default)",
+                  justifyContent: "space-between",
+                  marginTop: "4px",
                 }}
               >
-                <UploadIcon size={16} />
-                {uploadedFile ? uploadedFile.name : "Drop or click to upload (.pdf, .docx, .txt — max 5MB)"}
-                <input type="file" accept=".pdf,.docx,.txt" hidden onChange={handleFileUpload} />
-              </label>
-              {extracting && (
-                <div
-                  style={{
-                    marginTop: "8px",
-                    fontSize: "var(--text-xs, 0.75rem)",
-                    color: "var(--fgColor-muted)",
-                  }}
-                >
-                  Extracting text...
-                </div>
-              )}
-              {extractedText && (
-                <div
-                  style={{
-                    marginTop: "8px",
-                    padding: "8px 12px",
-                    backgroundColor: "var(--bgColor-default)",
-                    borderRadius: "4px",
-                    fontSize: "var(--text-xs, 0.75rem)",
-                    color: "var(--fgColor-muted)",
-                  }}
-                >
-                  Extracted {getWordCount(extractedText)} words from document
-                </div>
-              )}
-            </div>
+                <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-default)" }}>
+                  Optional — helps our AI understand your needs better
+                </span>
+                <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-default)" }}>
+                  {getWordCount(descriptionText)} / 500 words
+                </span>
+              </div>
 
-            {/* Analyze button */}
-            <button
-              onClick={handleAnalyze}
-              disabled={getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20}
-              style={{
-                marginTop: "16px",
-                padding: "10px 28px",
-                backgroundColor: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--bgColor-neutral-muted, #333)" : "var(--bgColor-accent-emphasis, #3a73ff)",
-                color: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--fgColor-muted)" : "#fff",
-                border: "none",
-                borderRadius: "6px",
-                fontSize: "var(--text-sm)",
-                fontWeight: 600,
-                cursor: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "not-allowed" : "pointer",
-                fontFamily: "var(--font-sans)",
-                transition: "all 0.2s ease",
-              }}
-            >
-              Analyze Workload
-            </button>
-          </>
-        )}
+              {/* File upload area */}
+              <div
+                style={{
+                  marginTop: "16px",
+                  borderTop: "1px solid var(--borderColor-default)",
+                  paddingTop: "16px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "var(--text-xs, 0.75rem)",
+                    color: "var(--fgColor-default)",
+                    textTransform: "uppercase",
+                    letterSpacing: "1px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Or Upload a Document
+                </div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    border: "1px dashed var(--borderColor-default)",
+                    borderRadius: "4px",
+                    padding: "20px",
+                    cursor: "pointer",
+                    color: "var(--fgColor-default)",
+                    fontSize: "var(--text-sm, 0.875rem)",
+                    backgroundColor: "var(--bgColor-default)",
+                  }}
+                >
+                  <UploadIcon size={16} />
+                  {uploadedFile ? uploadedFile.name : "Drop or click to upload (.pdf, .docx, .txt — max 5MB)"}
+                  <input type="file" accept=".pdf,.docx,.txt" hidden onChange={handleFileUpload} />
+                </label>
+                {extracting && (
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      fontSize: "var(--text-xs, 0.75rem)",
+                      color: "var(--fgColor-muted)",
+                    }}
+                  >
+                    Extracting text...
+                  </div>
+                )}
+                {extractedText && (
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      padding: "8px 12px",
+                      backgroundColor: "var(--bgColor-default)",
+                      borderRadius: "4px",
+                      fontSize: "var(--text-xs, 0.75rem)",
+                      color: "var(--fgColor-muted)",
+                    }}
+                  >
+                    Extracted {getWordCount(extractedText)} words from document
+                  </div>
+                )}
+              </div>
+
+              {/* Analyze and Skip buttons row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", marginTop: "16px" }}>
+                <button
+                  onClick={handleAnalyze}
+                  disabled={getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20}
+                  style={{
+                    padding: "10px 28px",
+                    backgroundColor: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--bgColor-neutral-muted, #333)" : "var(--bgColor-accent-emphasis, #3a73ff)",
+                    color: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--fgColor-muted)" : "#fff",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontSize: "var(--text-sm)",
+                    fontWeight: 600,
+                    cursor: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "not-allowed" : "pointer",
+                    fontFamily: "var(--font-sans)",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  Analyze Workload
+                </button>
+                <button
+                  onClick={() => { setSkippedAnalysis(true); setWizardStep(2); }}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--fgColor-default)",
+                    color: "var(--fgColor-default)",
+                    padding: "10px 20px",
+                    borderRadius: "4px",
+                    fontSize: "0.813rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    fontFamily: "var(--font-outfit), sans-serif",
+                    transition: "all 0.2s ease",
+                    opacity: 0.85,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "1";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "0.85";
+                  }}
+                >
+                  Skip, I&apos;ll choose manually →
+                </button>
+              </div>
+            </>
+          )}
 
         {analysisState === 'analyzing' && (
           <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "32px 0" }}>
@@ -594,28 +760,15 @@ export function ComputeRecommendation({
             marginTop: "8px",
           }}>
             {/* Header row */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--borderColor-info, #3a73ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="16" x2="12" y2="12" />
-                  <line x1="12" y1="8" x2="12.01" y2="8" />
-                </svg>
-                <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
-                  Analysis Complete
-                </span>
-              </div>
-              <button
-                onClick={() => setAnalysisState('input')}
-                style={{
-                  background: "none", border: "1px solid var(--borderColor-info, #3a73ff)",
-                  borderRadius: "4px", padding: "4px 12px",
-                  color: "var(--fgColor-default)", fontSize: "0.75rem",
-                  cursor: "pointer", fontFamily: "var(--font-sans)",
-                }}
-              >
-                Edit Input
-              </button>
+            <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--borderColor-info, #3a73ff)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
+                Analysis Complete
+              </span>
             </div>
 
             {/* Analysis details grid */}
@@ -660,6 +813,42 @@ export function ComputeRecommendation({
                 ))}
               </ul>
             )}
+
+            {/* Continue button with Edit Input link */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", paddingTop: "12px", borderTop: "1px solid var(--borderColor-info, #3a73ff)" }}>
+              <span
+                onClick={() => setAnalysisState('input')}
+                style={{
+                  fontSize: "var(--text-xs, 0.75rem)",
+                  color: "var(--fgColor-muted)",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-sans)",
+                  textDecoration: "underline",
+                  textUnderlineOffset: "2px",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fgColor-default)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fgColor-muted)")}
+              >
+                Edit Input
+              </span>
+              <button
+                onClick={() => setWizardStep(2)}
+                style={{
+                  padding: "10px 28px",
+                  backgroundColor: "var(--fgColor-default)",
+                  color: "var(--bgColor-default)",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontSize: "var(--text-sm)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "var(--font-sans)",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                Continue
+              </button>
+            </div>
           </div>
         )}
 
@@ -672,28 +861,15 @@ export function ComputeRecommendation({
             position: "relative",
             marginTop: "8px",
           }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                  <line x1="12" y1="9" x2="12" y2="13" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-                <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
-                  More Detail Needed
-                </span>
-              </div>
-              <button
-                onClick={() => setAnalysisState('input')}
-                style={{
-                  background: "none", border: "1px solid rgba(245, 158, 11, 0.3)",
-                  borderRadius: "4px", padding: "4px 12px",
-                  color: "var(--fgColor-default)", fontSize: "0.75rem",
-                  cursor: "pointer", fontFamily: "var(--font-sans)",
-                }}
-              >
-                Edit Input
-              </button>
+            <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
+                More Detail Needed
+              </span>
             </div>
 
             {analysisData?.missingCategories?.length > 0 && (
@@ -712,11 +888,105 @@ export function ComputeRecommendation({
                 {analysisData.suggestions}
               </p>
             )}
+
+            {/* Try Again and Skip buttons row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", marginTop: "16px", paddingTop: "12px", borderTop: "1px solid rgba(245, 158, 11, 0.3)" }}>
+              <button
+                onClick={() => setAnalysisState('input')}
+                style={{
+                  padding: "10px 28px",
+                  backgroundColor: "transparent",
+                  color: "var(--fgColor-default)",
+                  border: "1px solid var(--borderColor-default)",
+                  borderRadius: "6px",
+                  fontSize: "var(--text-sm)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "var(--font-sans)",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                Try Again
+              </button>
+              <button
+                onClick={() => { setSkippedAnalysis(true); setWizardStep(2); }}
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--fgColor-default)",
+                  color: "var(--fgColor-default)",
+                  padding: "10px 20px",
+                  borderRadius: "4px",
+                  fontSize: "0.813rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  fontFamily: "var(--font-outfit), sans-serif",
+                  transition: "all 0.2s ease",
+                  opacity: 0.85,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = "1";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = "0.85";
+                }}
+              >
+                Skip and choose manually →
+              </button>
+            </div>
           </div>
         )}
       </div>
+      )}
 
-      {/* Section B: Primary Goal */}
+      {/* Step 2: Configure Setup */}
+      {wizardStep === 2 && (
+        <>
+          {/* Integrated Step 2 Header */}
+          <div style={{ marginBottom: "8px" }}>
+            {/* Top row: Back + Step label */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span
+                onClick={() => setWizardStep(1)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "var(--text-sm, 0.875rem)",
+                  color: "var(--fgColor-muted)",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-outfit, var(--font-sans))",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fgColor-default)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fgColor-muted)")}
+              >
+                ← Back
+              </span>
+              <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-muted)", fontFamily: "var(--font-outfit, var(--font-sans))" }}>
+                Step 2 of 3
+              </span>
+            </div>
+            {/* Heading */}
+            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--fgColor-default)", fontFamily: "var(--font-outfit, var(--font-sans))", lineHeight: 1.2, marginBottom: "6px" }}>
+              Configure Your Setup
+            </div>
+            {/* Subtitle */}
+            <div style={{ fontSize: "0.875rem", color: "var(--fgColor-muted)", fontFamily: "var(--font-outfit, var(--font-sans))" }}>
+              {!skippedAnalysis && analysisState === 'success' && analysisData ? (
+                <span>
+                  Based on your analysis:
+                  {" "}<strong style={{ color: "var(--fgColor-default)" }}>
+                    {({ ml_training: "ML Model Training", inference: "AI Inference & Testing", data_science: "Data Science & Notebooks", rendering: "3D Rendering & Simulation", general_dev: "General Development", research: "Research & Experimentation" } as Record<string, string>)[analysisData?.detectedGoal] || "Your goal"}
+                  </strong>
+                  {analysisData?.estimatedVramNeedGb && <> · ~{analysisData.estimatedVramNeedGb} GB VRAM</>}
+                  {analysisData?.estimatedComputeIntensity && <> · {({ low: "Light", medium: "Moderate", high: "Heavy", very_high: "Maximum" } as Record<string, string>)[analysisData.estimatedComputeIntensity]} intensity</>}
+                </span>
+              ) : (
+                <span>Choose your workload type, dataset size, and processing intensity.</span>
+              )}
+            </div>
+          </div>
+
+          {/* Section B: Primary Goal */}
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
@@ -1029,7 +1299,73 @@ export function ComputeRecommendation({
         </div>
       </div>
 
-      {/* Section E: Budget Preference */}
+          {/* Continue button */}
+          <div style={{ marginTop: "24px" }}>
+            <button
+              onClick={() => setWizardStep(3)}
+              disabled={!primaryGoal}
+              style={{
+                width: "100%",
+                padding: "14px 24px",
+                backgroundColor: !primaryGoal ? "var(--bgColor-muted)" : "var(--fgColor-default)",
+                color: !primaryGoal ? "var(--fgColor-muted)" : "var(--bgColor-default)",
+                border: "none",
+                borderRadius: "4px",
+                cursor: primaryGoal ? "pointer" : "not-allowed",
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-sm, 0.875rem)",
+                fontWeight: 600,
+              }}
+            >
+              Continue
+            </button>
+            {!primaryGoal && (
+              <div style={{ marginTop: "8px", textAlign: "center", fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-muted)", fontFamily: "var(--font-sans)" }}>
+                Please select a primary goal to continue
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Step 3: Budget & Duration */}
+      {wizardStep === 3 && (
+        <>
+          {/* Integrated Step 3 Header */}
+          <div style={{ marginBottom: "8px" }}>
+            {/* Top row: Back + Step label */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span
+                onClick={() => setWizardStep(2)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "var(--text-sm, 0.875rem)",
+                  color: "var(--fgColor-muted)",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-outfit, var(--font-sans))",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fgColor-default)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fgColor-muted)")}
+              >
+                ← Back
+              </span>
+              <span style={{ fontSize: "var(--text-xs, 0.75rem)", color: "var(--fgColor-muted)", fontFamily: "var(--font-outfit, var(--font-sans))" }}>
+                Step 3 of 3
+              </span>
+            </div>
+            {/* Heading */}
+            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--fgColor-default)", fontFamily: "var(--font-outfit, var(--font-sans))", lineHeight: 1.2, marginBottom: "6px" }}>
+              Set Your Budget &amp; Duration
+            </div>
+            {/* Subtitle */}
+            <div style={{ fontSize: "0.875rem", color: "var(--fgColor-muted)", fontFamily: "var(--font-outfit, var(--font-sans))" }}>
+              Define your spending preference and how long you plan to use the instance.
+            </div>
+          </div>
+
+          {/* Section E: Budget Preference */}
       <div
         style={{
           backgroundColor: "var(--bgColor-mild)",
@@ -1398,6 +1734,8 @@ export function ComputeRecommendation({
             {analyzePhase}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
@@ -1799,7 +2137,7 @@ export function ComputeRecommendation({
           }}
         >
           <button
-            onClick={() => setResults(null)}
+            onClick={() => { setResults(null); setWizardStep(skippedAnalysis ? 2 : 1); }}
             style={{
               background: "none",
               border: "none",
@@ -1878,51 +2216,12 @@ export function ComputeRecommendation({
           fontWeight: 400,
           color: "var(--fgColor-muted)",
           marginTop: "8px",
-          marginBottom: "24px",
+          marginBottom: "16px",
           lineHeight: "1.375rem",
         }}
       >
         Answer a few questions about your workload and we&apos;ll recommend the best setup for you.
       </p>
-
-      {/* Blue info banner */}
-      <div
-        style={{
-          display: "flex",
-          gap: "12px",
-          padding: "16px",
-          backgroundColor: "var(--bgColor-info, #cedeff)",
-          border: "1px solid var(--borderColor-info, #3a73ff)",
-          borderRadius: "4px",
-          marginBottom: "24px",
-        }}
-      >
-        <span style={{ color: "var(--fgColor-info)", flexShrink: 0, marginTop: "2px" }}>
-          <InfoIcon size={18} />
-        </span>
-        <div>
-          <div
-            style={{
-              fontSize: "var(--text-sm, 0.875rem)",
-              fontWeight: 600,
-              color: "var(--fgColor-default)",
-              marginBottom: "4px",
-            }}
-          >
-            AI-Powered Recommendations
-          </div>
-          <div
-            style={{
-              fontSize: "var(--text-sm, 0.875rem)",
-              color: "var(--fgColor-muted)",
-              lineHeight: "1.5",
-            }}
-          >
-            Our recommendation engine combines your preferences with AI analysis to find the optimal
-            balance of performance, cost, and availability for your specific workload.
-          </div>
-        </div>
-      </div>
 
       {/* Conditional rendering: Input Form OR Results */}
       {results ? renderResults() : renderInputForm()}
