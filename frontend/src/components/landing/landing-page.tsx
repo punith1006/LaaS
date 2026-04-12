@@ -749,8 +749,8 @@ function BentoStepCard({ num, icon, title, desc, items, color, glow2, border }: 
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         position: "relative",
-        background: "rgba(12, 13, 16, 0.95)",
-        border: `1px solid ${hov ? border : "rgba(255,255,255,0.03)"}`,
+        background: hov ? "#191c24" : "#111318",
+        border: `1px solid ${hov ? border : "rgba(255,255,255,0.08)"}`,
         borderRadius: 16,
         padding: "24px 36px",
         overflow: "hidden",
@@ -763,14 +763,14 @@ function BentoStepCard({ num, icon, title, desc, items, color, glow2, border }: 
       {/* Huge Watermark Number */}
       <div style={{
         position: "absolute",
-        top: -30,
-        right: 18,
+        top: -24,
+        right: -12,
         fontFamily: "var(--font-sans)",
-        fontSize: "12rem",
+        fontSize: "10rem",
         fontWeight: 900,
-        lineHeight: 1,
+        lineHeight: 0.8,
         color: hov ? color : "white",
-        opacity: hov ? 0.08 : 0.02,
+        opacity: hov ? 0.08 : 0.03,
         transition: "all 0.4s ease",
         pointerEvents: "none",
         userSelect: "none",
@@ -845,19 +845,13 @@ function BentoStepCard({ num, icon, title, desc, items, color, glow2, border }: 
 
 // ─── Theme Hook ──────────────────────────────────────────────────────────────
 function useTheme() {
-  const [isDark, setIsDark] = useState(false);
+  const [isDark] = useState(true);
 
   useEffect(() => {
-    const saved = localStorage.getItem("darkMode");
-    if (saved === "true") { setIsDark(true); document.documentElement.classList.add("dark"); }
+    document.documentElement.classList.add("dark");
   }, []);
 
-  const toggle = () => {
-    const next = !isDark;
-    setIsDark(next);
-    document.documentElement.classList.toggle("dark");
-    localStorage.setItem("darkMode", String(next));
-  };
+  const toggle = () => { /* Disabled */ };
 
   return [isDark, toggle] as const;
 }
@@ -912,14 +906,6 @@ function Nav({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
         ))}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={onToggle}
-          style={{ background: "transparent", border: `1px solid var(--borderColor-default)`, borderRadius: 6, width: 34, height: 34, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fgColor-muted)", transition: "all 0.15s" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "var(--bgColor-muted)"; e.currentTarget.style.color = "var(--fgColor-default)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--fgColor-muted)"; }}>
-          {isDark
-            ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
-            : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
-        </button>
         <Link href="/signin"
           style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", textDecoration: "none", padding: "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, transition: "all 0.15s" }}
           onMouseEnter={e => (e.currentTarget.style.background = "var(--bgColor-muted)")}
@@ -1249,115 +1235,70 @@ function FAQ({ q, a }: { q: string; a: string }) {
   );
 }
 
-// ─── Pricing card ─────────────────────────────────────────────────────────────
+// ─── Pricing table ─────────────────────────────────────────────────────────────
 function PricingGrid({ rows }: { rows: any[] }) {
-  const gridRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const grid = gridRef.current;
-    if (!grid) return;
-    const cards = Array.from(grid.querySelectorAll<HTMLElement>(".pricing-crd"));
-    const onMove = (e: MouseEvent) => {
-      cards.forEach(card => {
-        const rect = card.getBoundingClientRect();
-        card.style.setProperty("--mx", `${e.clientX - rect.left}px`);
-        card.style.setProperty("--my", `${e.clientY - rect.top}px`);
-      });
-    };
-    grid.addEventListener("mousemove", onMove);
-    return () => grid.removeEventListener("mousemove", onMove);
-  }, []);
-
   return (
     <>
       <style>{`
-        .pricing-crd {
-          position: relative;
-          background: var(--bgColor-mild);
-          border: 1px solid var(--borderColor-default);
-          border-radius: 16px;
-          padding: 34px 32px;
-          overflow: hidden;
-          transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.4s;
-          display: flex;
-          flex-direction: column;
+        .pricing-table { width: 100%; border-collapse: collapse; }
+        .pricing-table th {
+          font-family: var(--font-sans); font-size: 0.72rem; font-weight: 600;
+          letter-spacing: 0.07em; text-transform: uppercase;
+          color: var(--fgColor-muted); text-align: left;
+          padding: 12px 20px; border-bottom: 1px solid var(--borderColor-default);
         }
-        .pricing-crd::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(400px circle at var(--mx,50%) var(--my,50%), rgba(79,110,247,0.12), transparent 60%);
-          opacity: 0;
-          transition: opacity 0.4s;
-          pointer-events: none;
-          z-index: 0;
+        .pricing-table th:last-child { text-align: right; }
+        .pricing-table td {
+          font-family: var(--font-sans); font-size: 0.92rem;
+          padding: 18px 20px; border-bottom: 1px solid var(--borderColor-default);
+          color: var(--fgColor-default); white-space: nowrap;
+          transition: background 0.15s;
         }
-        .pricing-crd:hover::before { opacity: 1; }
-        .pricing-crd:hover {
-          transform: translateY(-6px);
-          border-color: rgba(79,110,247,0.3);
-          box-shadow: 0 20px 40px rgba(0,0,0,0.06), 0 0 30px rgba(79,110,247,0.08);
-        }
-        .pricing-crd > * {
-          position: relative;
-          z-index: 1;
-        }
-        .pricing-crd.featured {
-          background: linear-gradient(180deg, rgba(79,110,247,0.06) 0%, var(--bgColor-mild) 50%);
-          border: 1px solid rgba(79,110,247,0.25);
-        }
-        .pricing-crd.featured:hover {
-          border-color: rgba(79,110,247,0.5);
-        }
-        .pricing-all-plans {
-          background: linear-gradient(180deg, var(--bgColor-mild) 0%, var(--bgColor-default) 100%);
-          border: 1px solid var(--borderColor-default);
-          box-shadow: 0 10px 40px rgba(0,0,0,0.04);
-        }
-        .dark .pricing-crd:hover {
-          box-shadow: 0 20px 40px rgba(0,0,0,0.4), 0 0 30px rgba(79,110,247,0.12);
-        }
-        .dark .pricing-all-plans {
-          background: linear-gradient(180deg, #121214 0%, #0a0a0c 100%);
-          border: 1px solid rgba(255,255,255,0.06);
-          box-shadow: 0 10px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
-        }
+        .pricing-table td:last-child { text-align: right; }
+        .pricing-table tr:last-child td { border-bottom: none; }
+        .pricing-row { transition: background 0.15s; }
+        .pricing-row:hover td { background: var(--bgColor-muted); }
+        .pricing-row.featured td { background: rgba(79,110,247,0.15); }
+        .pricing-row.featured:hover td { background: rgba(79,110,247,0.25); }
       `}</style>
-      <div ref={gridRef} className="reveal-on-scroll shadow-bloom" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20 }}>
-        {rows.map((row, i) => (
-          <div key={i} className={`pricing-crd ${row.highlight ? "featured" : ""}`} style={{ transitionDelay: `${i * 0.1}s` }}>
-            {row.badge && <span style={{ position: "absolute", top: 22, right: 22, fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", background: ACCENT, color: "#fff", borderRadius: 4, padding: "4px 10px", boxShadow: "0 2px 10px rgba(79,110,247,0.3)" }}>{row.badge}</span>}
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: "1.45rem", fontWeight: 800, color: "var(--fgColor-default)", marginBottom: 8, letterSpacing: "-0.01em" }}>{row.title}</div>
-            <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "var(--fgColor-muted)", marginBottom: 24, lineHeight: 1.55, minHeight: 46 }}>{row.bestFor}</div>
 
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 32 }}>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: "2.6rem", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.04em" }}>{row.price}</span>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 500, color: "var(--fgColor-muted)" }}>/hr</span>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: "auto" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "0.85rem", color: "var(--fgColor-muted)", fontWeight: 500 }}>Shared vCPUs</span>
-                <span style={{ fontFamily: "var(--font-mono),monospace", fontSize: "0.85rem", fontWeight: 600, color: "var(--fgColor-default)" }}>{row.vcpu}</span>
-              </div>
-              <div style={{ width: "100%", height: 1, background: "var(--borderColor-default)" }} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "0.85rem", color: "var(--fgColor-muted)", fontWeight: 500 }}>System RAM</span>
-                <span style={{ fontFamily: "var(--font-mono),monospace", fontSize: "0.85rem", fontWeight: 600, color: "var(--fgColor-default)" }}>{row.memory}</span>
-              </div>
-              <div style={{ width: "100%", height: 1, background: "var(--borderColor-default)" }} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "0.85rem", color: "var(--fgColor-muted)", fontWeight: 500 }}>GPU VRAM</span>
-                <span style={{ fontFamily: "var(--font-mono),monospace", fontSize: "0.85rem", fontWeight: 600, color: "#a855f7" }}>{row.vram}</span>
-              </div>
-              <div style={{ width: "100%", height: 1, background: "var(--borderColor-default)" }} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "0.85rem", color: "var(--fgColor-muted)", fontWeight: 500 }}>HAMI Slice</span>
-                <span style={{ fontFamily: "var(--font-mono),monospace", fontSize: "0.85rem", fontWeight: 600, color: "var(--fgColor-default)" }}>{row.hami}</span>
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="reveal-on-scroll" style={{ width: "100%", maxWidth: 1040, margin: "0 auto", padding: "0 20px" }}>
+        <div style={{ background: "var(--bgColor-default)", border: "1px solid var(--borderColor-default)", borderRadius: 14, overflow: "hidden" }}>
+          <table className="pricing-table">
+            <thead>
+              <tr>
+                <th>Tier</th>
+                <th>vCPUs</th>
+                <th>RAM</th>
+                <th>GPU VRAM</th>
+                <th>HAMI %</th>
+                <th>₹/hour</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr key={i} className={`pricing-row ${row.highlight ? "featured" : ""}`}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <img src="/images/nvidia_logo_icon_169902.png" alt="NVIDIA" style={{ height: 26, objectFit: "contain", opacity: 0.95 }} />
+                      <span style={{ fontWeight: 800, fontSize: "0.97rem" }}>{row.title}</span>
+                      {row.badge && <span style={{ fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", background: ACCENT, color: "#fff", borderRadius: 4, padding: "2px 7px" }}>{row.badge}</span>}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--fgColor-muted)", marginTop: 5, fontWeight: 400, whiteSpace: "normal" }}>{row.bestFor}</div>
+                  </td>
+                  <td style={{ fontFamily: "var(--font-mono),monospace", fontWeight: 600 }}>{row.vcpu}</td>
+                  <td style={{ fontFamily: "var(--font-mono),monospace", fontWeight: 600 }}>{row.memory}</td>
+                  <td style={{ fontFamily: "var(--font-mono),monospace", fontWeight: 800, color: "#a855f7" }}>{row.vram}</td>
+                  <td style={{ fontFamily: "var(--font-mono),monospace", fontWeight: 600 }}>{row.hami}</td>
+                  <td>
+                    <span style={{ fontFamily: "var(--font-mono),monospace", fontSize: "1.05rem", fontWeight: 800, color: row.highlight ? "#4f6ef7" : "var(--fgColor-default)", transition: "color 0.15s" }}>{row.price}</span>
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.72rem", color: "var(--fgColor-muted)", marginLeft: 3 }}>/hr</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   );
@@ -1387,10 +1328,10 @@ function InteractiveGrid() {
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      
+
       const wave = document.createElement("div");
       wave.className = "auto-wave";
-      
+
       // Random spawn position, slight bias towards center
       const rx = (Math.random() * 0.8 + 0.1) * rect.width;
       const ry = (Math.random() * 0.8 + 0.1) * rect.height;
@@ -1405,8 +1346,8 @@ function InteractiveGrid() {
       wave.style.background = palettes[Math.floor(Math.random() * palettes.length)];
 
       container.appendChild(wave);
-      setTimeout(() => wave?.remove(), 8000); 
-      
+      setTimeout(() => wave?.remove(), 8000);
+
       // Loop with slight irregular timing (3-4 seconds)
       timeoutId = setTimeout(fireAutoWave, 3000 + Math.random() * 1500);
     };
@@ -1422,11 +1363,11 @@ function InteractiveGrid() {
       if (!container) return;
 
       const rect = container.getBoundingClientRect();
-      
+
       if (
-        e.clientX < rect.left || 
-        e.clientX > rect.right || 
-        e.clientY < rect.top || 
+        e.clientX < rect.left ||
+        e.clientX > rect.right ||
+        e.clientY < rect.top ||
         e.clientY > rect.bottom
       ) return;
 
@@ -1721,8 +1662,8 @@ export function LandingPage() {
         <div className="land-section reveal-on-scroll" style={{ position: "relative", zIndex: 1, paddingTop: 40, paddingBottom: 40 }}>
           <div style={{ textAlign: "center", marginBottom: 40 }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 12 }}>How It Works</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 4vw, 2.6rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 14 }}>Launch AI Workspaces<br />in Minutes</h2>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", color: "var(--fgColor-muted)", whiteSpace: "nowrap", margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 4vw, 2.6rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Launch AI Workspaces<br />in Minutes</h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
           </div>
 
           <style>{`
@@ -1759,23 +1700,8 @@ export function LandingPage() {
       </section>
 
       {/* ── YOUR GPU, YOUR TERMINAL ── */}
-      <section className="reveal-on-scroll" style={{ position: "relative", overflow: "hidden", background: "#000", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
-        {/* Background Video Layer */}
-        <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.5 }}
-          >
-            <source src="/Image_Assets/dds3_1_rqhg7x.mp4" type="video/mp4" />
-          </video>
-          {/* Subtle vignette/overlay to maintain terminal/text contrast */}
-          <div style={{ position: "absolute", inset: 0, background: "rgba(6, 7, 10, 0.6)" }} />
-        </div>
-
-        <div className="land-section hero-split" style={{ position: "relative", zIndex: 1, display: "flex", gap: 56, alignItems: "center" }}>
+      <section className="reveal-on-scroll" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
+        <div className="land-section hero-split" style={{ display: "flex", gap: 56, alignItems: "center" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ background: "var(--bgColor-muted)", border: "1px solid var(--borderColor-default)", borderRadius: 10, overflow: "hidden", fontFamily: "var(--font-mono),ui-monospace,monospace", fontSize: "0.82rem", lineHeight: 1.8 }}>
               <div style={{ background: "var(--bgColor-mild)", borderBottom: "1px solid var(--borderColor-default)", padding: "10px 18px", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1831,8 +1757,8 @@ export function LandingPage() {
       </section>
 
       {/* ── WHY CHOOSE US ── */}
-      <section id="features" style={{ background: "#000", padding: "48px 0" }}>
-        <div className="land-section" style={{ background: "#000" }}>
+      <section id="features" style={{ background: "var(--bgColor-default)", padding: "48px 0" }}>
+        <div className="land-section" style={{ background: "var(--bgColor-default)" }}>
           <div style={{ textAlign: "center", marginBottom: 56 }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Why Choose Us</div>
             <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em" }}>Built for Academia, Better than Cloud</h2>
@@ -1844,57 +1770,103 @@ export function LandingPage() {
 
       {/* ── PRICING ── */}
       <section id="pricing" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
-        <div className="land-section">
-          <div className="reveal-on-scroll" style={{ textAlign: "center", marginBottom: 56 }}>
-            <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Pricing</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 12 }}>Pay as you go</h2>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-muted)", maxWidth: 520, margin: "0 auto", lineHeight: 1.7 }}>Our pricing model lets you pay only for what you use. No minimum commitments. Paused instances only incur storage fees.</p>
-          </div>
-          <div style={{ marginBottom: 40 }}>
-            <PricingGrid rows={pricing} />
-          </div>
-          <div className="reveal-on-scroll" style={{ width: "100%", transitionDelay: "0.2s" }}>
-            <div className="all-plans-container" style={{ background: "linear-gradient(180deg, var(--bgColor-mild) 0%, var(--bgColor-default) 100%)", border: "1px solid var(--borderColor-default)", borderRadius: 16, padding: "36px 44px", position: "relative", overflow: "hidden" }}>
-              <style>{`
-                 .dark .all-plans-container {
-                   background: linear-gradient(180deg, #121214 0%, #0a0a0c 100%) !important;
-                   border-color: rgba(255,255,255,0.06) !important;
-                   box-shadow: 0 10px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
-                 }
-                 .all-plans-item { transition: transform 0.2s ease; }
-                 .all-plans-item:hover { transform: translateY(-2px); }
-               `}</style>
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--fgColor-muted)", marginBottom: 28, textAlign: "center" }}>All plans include</div>
+        <div style={{ width: "100%", maxWidth: 1300, margin: "0 auto", padding: "120px 20px" }}>
+          
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 60, alignItems: "flex-start", marginBottom: 50 }}>
+            {/* Left Header Column */}
+            <div className="reveal-on-scroll" style={{ flex: "1 1 320px", textAlign: "left" }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Pricing</div>
+              <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 12 }}>Pay as you go</h2>
+              <p style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.7, marginBottom: 32 }}>Our pricing model lets you pay only for what you use. No minimum commitments. Paused instances only incur storage fees. <span style={{ color: ACCENT, fontWeight: 700 }}>Zero Lock-in!</span></p>
+              
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span style={{ fontSize: "0.95rem", color: "var(--fgColor-muted)", fontFamily: "var(--font-sans)" }}>Pay-as-you-go wallet with real-time billing</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span style={{ fontSize: "0.95rem", color: "var(--fgColor-muted)", fontFamily: "var(--font-sans)" }}>Fractional to Dedicated RTX 5090 GPUs</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span style={{ fontSize: "0.95rem", color: "var(--fgColor-muted)", fontFamily: "var(--font-sans)" }}>Pre-built stacks: Jupyter, VS Code & KDE Desktop</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span style={{ fontSize: "0.95rem", color: "var(--fgColor-muted)", fontFamily: "var(--font-sans)" }}>Containerized workspaces via WebRTC in seconds</span>
+                </div>
+              </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "28px 40px" }}>
-                {[
-                  { title: "Persistent ZFS Storage", desc: "Datasets outlive sessions with high-speed local mounts." },
-                  { title: "Pre-built ML Images", desc: "CUDA, PyTorch, and TensorFlow environments pre-configured." },
-                  { title: "Full Terminal Control", desc: "Root-level SSH and browser-based file management." },
-                  { title: "University SSO Integration", desc: "Instant secure access via KSRCE institutional identity." },
-                  { title: "Real-time Billing", desc: "Live spend tracking, limit controls, and session pausing." },
-                  { title: "Priority Support", desc: "Premium email support from our engineering team." },
-                ].map((f, i) => (
-                  <div key={i} className="all-plans-item" style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                    <div style={{ marginTop: 2 }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                    </div>
-                    <div>
-                      <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 700, color: "var(--fgColor-default)", marginBottom: 4 }}>{f.title}</div>
-                      <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)", lineHeight: 1.5 }}>{f.desc}</div>
-                    </div>
-                  </div>
-                ))}
+              <div style={{ marginTop: 36 }}>
+                <Link href="/signup"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "14px 32px", background: "#4f6ef7", color: "#ffffff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 12, textDecoration: "none", boxShadow: "0 8px 24px rgba(79,110,247,0.35), inset 0 1px 2px rgba(255,255,255,0.2)", transition: "all 0.2s" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "#3a56d4"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "#4f6ef7"; e.currentTarget.style.transform = "translateY(0)"; }}>
+                  Deploy Your AI Workspace
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </Link>
               </div>
             </div>
+            
+            {/* Right Table Column */}
+            <div style={{ flex: "2 1 600px", minWidth: 0 }}>
+              <PricingGrid rows={pricing} />
+            </div>
           </div>
-          <div className="reveal-on-scroll" style={{ textAlign: "center", marginTop: 40, transitionDelay: "0.3s" }}>
-            <Link href="/signup"
-              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "18px 48px", background: "#4f6ef7", color: "#ffffff", fontFamily: "var(--font-sans)", fontSize: "1.05rem", fontWeight: 700, borderRadius: 12, textDecoration: "none", boxShadow: `0 10px 30px rgba(79,110,247,0.3), inset 0 1px 2px rgba(255,255,255,0.25)`, transition: "all 0.2s" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "#3a56d4"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "#4f6ef7"; e.currentTarget.style.transform = "translateY(0)"; }}>
-              Deploy Your AI Workspace <span style={{ marginLeft: 4 }}>→</span>
-            </Link>
+
+          <div className="reveal-on-scroll" style={{ width: "100%", transitionDelay: "0.2s" }}>
+            <style>{`
+              @property --a {
+                syntax: '<angle>';
+                initial-value: 0deg;
+                inherits: false;
+              }
+              @keyframes border-rotate {
+                to { --a: 360deg; }
+              }
+              .all-plans-item { transition: transform 0.2s ease; }
+              .all-plans-item:hover { transform: translateY(-2px); }
+              .all-plans-border-wrap {
+                padding: 2px;
+                border-radius: 18px;
+                background: conic-gradient(from var(--a), transparent 20%, #4f6ef7 40%, #818cf8 50%, #4f6ef7 60%, transparent 80%);
+                animation: border-rotate 3s linear infinite;
+              }
+              .all-plans-inner {
+                background: #0d0d10;
+                border-radius: 16px;
+                padding: 36px 44px;
+                position: relative;
+                overflow: hidden;
+              }
+            `}</style>
+            <div className="all-plans-border-wrap">
+              <div className="all-plans-inner">
+                <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--fgColor-muted)", marginBottom: 28, textAlign: "center" }}>All plans include</div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "28px 40px" }}>
+                  {[
+                    { title: "Persistent ZFS Storage", desc: "Datasets outlive sessions with high-speed local mounts." },
+                    { title: "Pre-built ML Images", desc: "CUDA, PyTorch, and TensorFlow environments pre-configured." },
+                    { title: "Full Terminal Control", desc: "Root-level SSH and browser-based file management." },
+                    { title: "University SSO Integration", desc: "Instant secure access via KSRCE institutional identity." },
+                    { title: "Real-time Billing", desc: "Live spend tracking, limit controls, and session pausing." },
+                    { title: "Priority Support", desc: "Premium email support from our engineering team." },
+                  ].map((f, i) => (
+                    <div key={i} className="all-plans-item" style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                      <div style={{ marginTop: 2 }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 700, color: "var(--fgColor-default)", marginBottom: 4 }}>{f.title}</div>
+                        <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)", lineHeight: 1.5 }}>{f.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
