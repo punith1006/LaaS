@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface OnboardingProfileDto {
@@ -28,6 +28,8 @@ interface UpdateProfileDto {
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async saveOnboardingProfile(userId: string, data: OnboardingProfileDto) {
@@ -56,44 +58,60 @@ export class UserService {
     if (data.useCasePurposes !== undefined) profileData.useCasePurposes = data.useCasePurposes;
     if (data.useCaseOther !== undefined) profileData.useCaseOther = data.useCaseOther;
     if (data.country !== undefined) profileData.country = data.country;
-    if (data.departmentId !== undefined) profileData.departmentId = data.departmentId;
-    if (data.courseName !== undefined) profileData.courseName = data.courseName;
-    if (data.academicYear !== undefined) profileData.academicYear = data.academicYear;
-    if (data.graduationYear !== undefined) profileData.graduationYear = data.graduationYear;
+    if (data.departmentId !== undefined) profileData.departmentId = data.departmentId || null;
+    if (data.courseName !== undefined) profileData.courseName = data.courseName || null;
+    if (data.academicYear !== undefined) profileData.academicYear = data.academicYear || null;
+    if (data.graduationYear !== undefined) profileData.graduationYear = data.graduationYear || null;
 
-    let profile;
-    if (existingProfile) {
-      profile = await this.prisma.userProfile.update({
-        where: { userId },
-        data: profileData,
+    // Validate department exists before creating relationship
+    if (data.departmentId) {
+      const department = await this.prisma.department.findUnique({
+        where: { id: data.departmentId },
       });
-    } else {
-      profile = await this.prisma.userProfile.create({
-        data: {
-          userId,
-          ...profileData,
-        },
-      });
+      if (!department) {
+        throw new BadRequestException('Invalid department ID');
+      }
     }
 
-    // If departmentId is provided, upsert UserDepartment record
-    if (data.departmentId) {
-      await this.prisma.userDepartment.upsert({
-        where: {
-          userId_departmentId: {
+    let profile;
+    try {
+      if (existingProfile) {
+        profile = await this.prisma.userProfile.update({
+          where: { userId },
+          data: profileData,
+        });
+      } else {
+        profile = await this.prisma.userProfile.create({
+          data: {
+            userId,
+            ...profileData,
+          },
+        });
+      }
+
+      // If departmentId is provided, upsert UserDepartment record
+      if (data.departmentId) {
+        await this.prisma.userDepartment.upsert({
+          where: {
+            userId_departmentId: {
+              userId,
+              departmentId: data.departmentId,
+            },
+          },
+          update: {
+            isPrimary: true,
+          },
+          create: {
             userId,
             departmentId: data.departmentId,
+            isPrimary: true,
           },
-        },
-        update: {
-          isPrimary: true,
-        },
-        create: {
-          userId,
-          departmentId: data.departmentId,
-          isPrimary: true,
-        },
-      });
+        });
+      }
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error(`Failed to save onboarding profile for user ${userId}`, error);
+      throw new InternalServerErrorException('Failed to save profile. Please try again.');
     }
 
     return {

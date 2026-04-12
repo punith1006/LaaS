@@ -271,14 +271,58 @@ export async function getMe(): Promise<User | null> {
   return null;
 }
 
-export async function forgotPassword(email: string): Promise<void> {
+export async function forgotPassword(email: string): Promise<{ message: string }> {
   if (API_BASE) {
-    await fetch(`${API_BASE}/api/auth/forgot-password`, {
+    const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || "Failed to send reset code");
+    }
+    return res.json();
   }
+  // Mock for development
+  await delay(600);
+  return { message: "Reset code sent" };
+}
+
+export async function verifyResetOtp(email: string, otp: string): Promise<{ verified: boolean }> {
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/auth/verify-reset-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || "Invalid OTP");
+    }
+    return res.json();
+  }
+  // Mock for development
+  await delay(600);
+  return { verified: true };
+}
+
+export async function resetPassword(email: string, otp: string, newPassword: string): Promise<{ message: string }> {
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp, newPassword }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || "Failed to reset password");
+    }
+    return res.json();
+  }
+  // Mock for development
+  await delay(600);
+  return { message: "Password reset successfully" };
 }
 
 export function logout(): void {

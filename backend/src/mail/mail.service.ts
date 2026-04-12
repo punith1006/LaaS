@@ -13,6 +13,15 @@ export class MailService {
       context: { code },
     });
   }
+  
+  async sendPasswordResetOtpEmail(to: string, code: string): Promise<void> {
+    await this.mailer.sendMail({
+      to,
+      subject: 'LaaS - Password Reset Code',
+      template: 'password-reset',
+      context: { code },
+    });
+  }
 
   async sendWelcomeEmail(to: string, firstName: string): Promise<void> {
     await this.mailer.sendMail({

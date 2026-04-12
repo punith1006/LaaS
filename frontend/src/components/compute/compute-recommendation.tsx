@@ -694,8 +694,8 @@ export function ComputeRecommendation({
                   disabled={getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20}
                   style={{
                     padding: "10px 28px",
-                    backgroundColor: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--bgColor-neutral-muted, #333)" : "var(--bgColor-accent-emphasis, #3a73ff)",
-                    color: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--fgColor-muted)" : "#fff",
+                    backgroundColor: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--bgColor-muted)" : "var(--fgColor-default)",
+                    color: getWordCount([descriptionText, extractedText].filter(Boolean).join(' ')) < 20 ? "var(--fgColor-muted)" : "var(--fgColor-inverse)",
                     border: "none",
                     borderRadius: "6px",
                     fontSize: "var(--text-sm)",
@@ -723,9 +723,13 @@ export function ComputeRecommendation({
                     opacity: 0.85,
                   }}
                   onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--fgColor-default)";
+                    e.currentTarget.style.color = "var(--fgColor-inverse)";
                     e.currentTarget.style.opacity = "1";
                   }}
                   onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "var(--fgColor-default)";
                     e.currentTarget.style.opacity = "0.85";
                   }}
                 >
@@ -924,9 +928,13 @@ export function ComputeRecommendation({
                   opacity: 0.85,
                 }}
                 onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--fgColor-default)";
+                  e.currentTarget.style.color = "var(--fgColor-inverse)";
                   e.currentTarget.style.opacity = "1";
                 }}
                 onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = "var(--fgColor-default)";
                   e.currentTarget.style.opacity = "0.85";
                 }}
               >
@@ -1003,7 +1011,7 @@ export function ComputeRecommendation({
             right: "16px",
             fontSize: "0.7rem",
             fontStyle: "italic",
-            color: "var(--fgColor-muted)",
+            color: "var(--borderColor-info, #3a73ff)",
             fontFamily: "var(--font-sans)",
           }}>
             Auto-selected based on analysis — you can change this
@@ -1102,7 +1110,7 @@ export function ComputeRecommendation({
             right: "16px",
             fontSize: "0.7rem",
             fontStyle: "italic",
-            color: "var(--fgColor-muted)",
+            color: "var(--borderColor-info, #3a73ff)",
             fontFamily: "var(--font-sans)",
           }}>
             Auto-selected based on analysis — you can change this
@@ -1203,7 +1211,7 @@ export function ComputeRecommendation({
             right: "16px",
             fontSize: "0.7rem",
             fontStyle: "italic",
-            color: "var(--fgColor-muted)",
+            color: "var(--borderColor-info, #3a73ff)",
             fontFamily: "var(--font-sans)",
           }}>
             Auto-selected based on analysis — you can change this

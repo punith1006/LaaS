@@ -737,14 +737,180 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(email: string): Promise<void> {
-    if (!this.keycloak.isConfigured) {
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const normalised = email.toLowerCase();
+
+    // Look up user by email in the database
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: normalised,
+        deletedAt: null,
+      },
+    });
+
+    // If user not found, still return success (don't reveal if email exists)
+    if (!user) {
+      return { message: 'If an account exists, a password reset code has been sent.' };
+    }
+
+    // Check if user is SSO-only (has no local password / authProvider is not local)
+    // SSO users have authType like 'university_sso' or 'public_oauth'
+    const isSsoUser = user.authType === 'university_sso' || user.authType === 'public_oauth';
+    if (isSsoUser) {
+      return {
+        message: 'This account uses SSO. Please reset your password via your identity provider.',
+      };
+    }
+
+    // Check rate limiting: count recent OTPs for this email with purpose password_reset
+    const windowStart = new Date(Date.now() - RESEND_WINDOW_MINUTES * 60 * 1000);
+    const recentOtpCount = await this.prisma.otpVerification.count({
+      where: {
+        email: normalised,
+        purpose: 'password_reset',
+        createdAt: { gte: windowStart },
+      },
+    });
+
+    if (recentOtpCount >= MAX_RESENDS_PER_WINDOW) {
       throw new BadRequestException(
-        'Password reset is not available. Please contact support.',
+        'Too many password reset requests. Please try again later.',
       );
     }
 
-    await this.keycloak.triggerPasswordReset(email);
+    // Generate 6-digit OTP
+    const code = randomBytes(3).readUIntBE(0, 3) % 1000000;
+    const padded = code.toString().padStart(6, '0');
+    const codeHash = await bcrypt.hash(padded, SALT_ROUNDS);
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+    // Store in OtpVerification table
+    await this.prisma.otpVerification.create({
+      data: {
+        email: normalised,
+        codeHash,
+        purpose: 'password_reset',
+        expiresAt,
+      },
+    });
+
+    // Send email
+    await this.mail.sendPasswordResetOtpEmail(normalised, padded);
+
+    return { message: 'If an account exists, a password reset code has been sent.' };
+  }
+
+  async verifyResetOtp(
+    email: string,
+    otp: string,
+  ): Promise<{ verified: boolean }> {
+    const normalised = email.toLowerCase();
+
+    // Find the latest unused OTP for this email with purpose password_reset that hasn't expired
+    const record = await this.prisma.otpVerification.findFirst({
+      where: {
+        email: normalised,
+        purpose: 'password_reset',
+        usedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record || record.expiresAt < new Date()) {
+      throw new BadRequestException('Invalid or expired code');
+    }
+
+    // Check if attempts exceeded
+    if (record.attempts >= MAX_OTP_ATTEMPTS) {
+      throw new BadRequestException(
+        'Too many failed attempts. Request a new code.',
+      );
+    }
+
+    // Compare provided OTP against stored hash
+    const valid = await bcrypt.compare(otp, record.codeHash);
+    if (!valid) {
+      // Increment attempts counter
+      await this.prisma.otpVerification.update({
+        where: { id: record.id },
+        data: { attempts: record.attempts + 1 },
+      });
+      const remainingAttempts = MAX_OTP_ATTEMPTS - (record.attempts + 1);
+      throw new BadRequestException(
+        `Invalid code. ${remainingAttempts} attempt(s) remaining.`,
+      );
+    }
+
+    // OTP matches - return verified: true (DON'T mark as used yet - that happens on password reset)
+    return { verified: true };
+  }
+
+  async resetPassword(
+    email: string,
+    otp: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
+    const normalised = email.toLowerCase();
+
+    // Find the latest unused OTP for this email with purpose password_reset that hasn't expired
+    const record = await this.prisma.otpVerification.findFirst({
+      where: {
+        email: normalised,
+        purpose: 'password_reset',
+        usedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record || record.expiresAt < new Date()) {
+      throw new BadRequestException('Invalid or expired code');
+    }
+
+    // Check if attempts exceeded
+    if (record.attempts >= MAX_OTP_ATTEMPTS) {
+      throw new BadRequestException(
+        'Too many failed attempts. Request a new code.',
+      );
+    }
+
+    // Verify OTP again
+    const valid = await bcrypt.compare(otp, record.codeHash);
+    if (!valid) {
+      await this.prisma.otpVerification.update({
+        where: { id: record.id },
+        data: { attempts: record.attempts + 1 },
+      });
+      throw new BadRequestException('Invalid code');
+    }
+
+    // Find the user
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: normalised,
+        deletedAt: null,
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // Hash the new password
+    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+    // Update the user's passwordHash field
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+
+    // Mark OTP as used
+    await this.prisma.otpVerification.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    });
+
+    return { message: 'Password reset successfully' };
   }
 
   async retryStorageProvisioning(userId: string): Promise<{

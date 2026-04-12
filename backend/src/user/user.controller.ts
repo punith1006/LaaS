@@ -7,7 +7,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsArray, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsNumber, IsUUID, Min } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UserService } from './user.service';
 
@@ -44,7 +44,7 @@ class OnboardingProfileDto {
   country?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()

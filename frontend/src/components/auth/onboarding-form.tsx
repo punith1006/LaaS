@@ -392,11 +392,11 @@ export function OnboardingForm() {
         useCasePurposes: [primaryUseCase, ...selectedTools],
         useCaseOther: goalsOther || undefined,
         country,
-        // Academic fields for students
-        departmentId,
-        courseName,
-        academicYear,
-        graduationYear,
+        // Academic fields — only sent for students
+        ...(isStudent && departmentId ? { departmentId } : {}),
+        ...(isStudent && courseName ? { courseName } : {}),
+        ...(isStudent && academicYear ? { academicYear } : {}),
+        ...(isStudent && graduationYear ? { graduationYear } : {}),
       });
       toast.success("Profile completed successfully!");
       reset();
