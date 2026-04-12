@@ -1549,7 +1549,147 @@ function InteractiveGrid() {
   );
 }
 
+// ─── Capabilities Section ────────────────────────────────────────────────────────
+const capabilityItems = [
+  {
+    num: "01",
+    title: "On-Demand GPU Infrastructure.",
+    subtitle: "Bare-metal performance. Zero hardware setup.",
+    bullets: [
+      "Instantly provision fractional slices or full multi-GPU environments.",
+      "Pre-warmed configurations guarantee instant boot times for training workloads.",
+      "Strict resource isolation ensures peak computational consistency."
+    ]
+  },
+  {
+    num: "02",
+    title: "Persistent Stateful Storage.",
+    subtitle: "Your workspace, exactly how you left it.",
+    bullets: [
+      "Up to 100GB of dedicated, high-speed storage allocated per subscription.",
+      "Hard-isolated volumes guarantee absolute data privacy and security.",
+      "Switch flexibly between compute tiers without moving a single file or reinstalling environments."
+    ]
+  },
+  {
+    num: "03",
+    title: "Seamless GUI & CLI Access.",
+    subtitle: "A full remote workstation streamed directly to your browser.",
+    bullets: [
+      "High-fidelity desktop experiences powered by ultra-low latency rendering.",
+      "Pre-loaded with essential toolchains like MATLAB, PyTorch, Blender, and VS Code.",
+      "Absolute raw terminal access for maximum orchestration control."
+    ]
+  },
+  {
+    num: "04",
+    title: "Integrated Mentorship Program.",
+    subtitle: "Guided expertise from industry leaders.",
+    bullets: [
+      "Direct channels for architecture reviews and model optimization strategies.",
+      "Hands-on guidance to accelerate your research from prototype to production.",
+      "Comprehensive documentation paired with premium engineering support."
+    ]
+  }
+];
+
+function CapabilitiesSection() {
+  const [openIndex, setOpenIndex] = useState<number | null>(0);
+
+  return (
+    <section className="reveal-on-scroll" style={{ padding: "100px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
+      <div style={{ maxWidth: 1140, margin: "0 auto" }}>
+        
+        {/* Header */}
+        <div style={{ marginBottom: 64 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-default)", fontWeight: 500 }}>Capabilities</span>
+          </div>
+          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.5rem, 5vw, 4.5rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.03em", lineHeight: 1.1, marginBottom: 20 }}>
+            Everything you need to scale AI.
+          </h2>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.1rem, 2vw, 1.25rem)", color: "var(--fgColor-muted)", maxWidth: 700, lineHeight: 1.5 }}>
+            LaaS brings together infrastructure, workflows, and visibility so teams can build, deploy, and operate AI systems with confidence.
+          </p>
+        </div>
+
+        {/* Content Split */}
+        <div style={{ display: "flex", gap: 80, alignItems: "stretch", flexWrap: "wrap", borderTop: "1px solid var(--borderColor-default)" }}>
+          
+          {/* Left: Accordion */}
+          <div style={{ flex: "1 1 500px", display: "flex", flexDirection: "column" }}>
+            {capabilityItems.map((item, idx) => {
+              const isOpen = openIndex === idx;
+              return (
+                <div key={idx} style={{ borderBottom: "1px solid var(--borderColor-default)" }}>
+                  {/* Toggle Button */}
+                  <button onClick={() => setOpenIndex(isOpen ? null : idx)}
+                    style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "32px 0", cursor: "pointer", display: "flex", gap: 20, alignItems: "flex-start" }}>
+                    
+                    {/* Numbering */}
+                    <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "1.3rem", fontWeight: 600, color: isOpen ? ACCENT : "var(--fgColor-muted)", transition: "color 0.2s" }}>
+                      {item.num} <span style={{ color: "var(--fgColor-muted)" }}>/</span>
+                    </span>
+                    
+                    {/* Title */}
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: "1.7rem", fontWeight: 700, color: "var(--fgColor-default)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                        {item.title}
+                      </span>
+                    </div>
+
+                    {/* Plus / Minus */}
+                    <span style={{ fontFamily: "var(--font-mono)", color: "var(--fgColor-muted)", fontSize: "1.4rem", fontWeight: 400, transform: isOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease" }}>
+                      {isOpen ? "−" : "+"}
+                    </span>
+                  </button>
+
+                  {/* Expanded Content */}
+                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)", paddingLeft: 65 /* Aligned under title */ }}>
+                    <div style={{ paddingBottom: 40 }}>
+                      
+                      {/* Bent Pointer & Subtitle */}
+                      <div style={{ position: "relative", marginBottom: 24, paddingLeft: 24 }}>
+                        {/* CSS Drawing of the Bent Pointer */}
+                        <div style={{ position: "absolute", top: -30, left: 0, width: 14, height: 40, borderLeft: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }} />
+                        <p style={{ fontFamily: "var(--font-mono), monospace", fontSize: "0.9rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
+                          {item.subtitle}
+                        </p>
+                      </div>
+
+                      {/* Bullets */}
+                      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+                        {item.bullets.map((bullet, i) => (
+                          <li key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", fontFamily: "var(--font-mono), monospace", fontSize: "0.85rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
+                            <span style={{ color: "var(--fgColor-default)", fontWeight: 700 }}>+</span>
+                            <span>{bullet}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Right: Asset Section (Placeholder) */}
+          <div style={{ flex: "1 1 400px", minHeight: 400, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+             <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.02)", borderRadius: 16, border: "1px dashed var(--borderColor-default)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+               {/* Empty asset placeholder space per request */}
+             </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
+
 export function LandingPage() {
   const [isDark, toggle] = useTheme();
   const [zoom, setZoom] = useState(1);
@@ -1748,7 +1888,11 @@ export function LandingPage() {
         </div>
       </div>
 
+      {/* ── CAPABILITIES ── */}
+      <CapabilitiesSection />
+
       {/* ── HOW IT WORKS ── */}
+
       <section id="how-it-works" style={{ position: "relative" }}>
         <InteractiveGrid />
         <div className="land-section reveal-on-scroll" style={{ position: "relative", zIndex: 1, paddingTop: 40, paddingBottom: 40 }}>
