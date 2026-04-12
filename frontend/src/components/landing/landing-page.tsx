@@ -932,23 +932,29 @@ type TermStep =
 
 const termSequence: TermStep[] = [
   { type: "cmd", text: "$ laas login --sso ksrce.edu.in" },
-  { type: "output", lines: [
-    { t: "ok", s: "✓  Authenticated via KSRCE SSO" },
-    { t: "ok", s: "✓  Storage provisioned" },
-  ]},
+  {
+    type: "output", lines: [
+      { t: "ok", s: "✓  Authenticated via KSRCE SSO" },
+      { t: "ok", s: "✓  Storage provisioned" },
+    ]
+  },
   { type: "cmd", text: "$ laas launch --gpu 5090 --type jupyter" },
-  { type: "output", lines: [
-    { t: "muted", s: "  Selecting node …" },
-    { t: "muted", s: "  Pulling image  laas/jupyter:cuda12" },
-    { t: "ok", s: "✓  Session live in 8s" },
-    { t: "url", s: "  → https://sess.laas.io/xk9f2a" },
-  ]},
+  {
+    type: "output", lines: [
+      { t: "muted", s: "  Selecting node …" },
+      { t: "muted", s: "  Pulling image  laas/jupyter:cuda12" },
+      { t: "ok", s: "✓  Session live in 8s" },
+      { t: "url", s: "  → https://sess.laas.io/xk9f2a" },
+    ]
+  },
   { type: "cmd", text: "$ laas status" },
-  { type: "output", lines: [
-    { t: "muted", s: "  GPU   RTX 5090 32 GB   vCPU 8   RAM 16 GB" },
-    { t: "ok", s: "  Status: ● Running" },
-    { t: "url", s: "  Cost:  ₹65/hr" },
-  ]},
+  {
+    type: "output", lines: [
+      { t: "muted", s: "  GPU   RTX 5090 32 GB   vCPU 8   RAM 16 GB" },
+      { t: "ok", s: "  Status: ● Running" },
+      { t: "url", s: "  Cost:  ₹65/hr" },
+    ]
+  },
 ];
 
 const CHAR_DELAY = 38;       // ms per character when typing a command
@@ -1556,9 +1562,9 @@ const capabilityItems = [
     title: "On-Demand GPU Infrastructure.",
     subtitle: "Bare-metal performance. Zero hardware setup.",
     bullets: [
-      "Instantly provision fractional slices or full multi-GPU environments.",
-      "Pre-warmed configurations guarantee instant boot times for training workloads.",
-      "Strict resource isolation ensures peak computational consistency."
+      <>Instantly provision <span style={{ color: ACCENT }}>fractional slices</span> or full multi-GPU environments.</>,
+      <>Pre-warmed configurations guarantee <span style={{ color: ACCENT }}>instant boot times</span> for training workloads.</>,
+      <>Strict <span style={{ color: ACCENT }}>resource isolation</span> ensures peak computational consistency.</>
     ]
   },
   {
@@ -1566,9 +1572,9 @@ const capabilityItems = [
     title: "Persistent Stateful Storage.",
     subtitle: "Your workspace, exactly how you left it.",
     bullets: [
-      "Up to 100GB of dedicated, high-speed storage allocated per subscription.",
-      "Hard-isolated volumes guarantee absolute data privacy and security.",
-      "Switch flexibly between compute tiers without moving a single file or reinstalling environments."
+      <><span style={{ color: ACCENT }}>Up to 100GB</span> of dedicated, high-speed storage allocated per subscription.</>,
+      <><span style={{ color: ACCENT }}>Hard-isolated volumes</span> guarantee absolute data privacy and security.</>,
+      <>Switch flexibly between compute tiers <span style={{ color: ACCENT }}>without moving a single file</span> or reinstalling environments.</>
     ]
   },
   {
@@ -1576,9 +1582,9 @@ const capabilityItems = [
     title: "Seamless GUI & CLI Access.",
     subtitle: "A full remote workstation streamed directly to your browser.",
     bullets: [
-      "High-fidelity desktop experiences powered by ultra-low latency rendering.",
-      "Pre-loaded with essential toolchains like MATLAB, PyTorch, Blender, and VS Code.",
-      "Absolute raw terminal access for maximum orchestration control."
+      <>High-fidelity desktop experiences powered by <span style={{ color: ACCENT }}>ultra-low latency</span> rendering.</>,
+      <>Pre-loaded with essential toolchains like <span style={{ color: ACCENT }}>MATLAB, PyTorch, Blender, and VS Code.</span></>,
+      <>Absolute <span style={{ color: ACCENT }}>raw terminal access</span> for maximum orchestration control.</>
     ]
   },
   {
@@ -1586,9 +1592,9 @@ const capabilityItems = [
     title: "Integrated Mentorship Program.",
     subtitle: "Guided expertise from industry leaders.",
     bullets: [
-      "Direct channels for architecture reviews and model optimization strategies.",
-      "Hands-on guidance to accelerate your research from prototype to production.",
-      "Comprehensive documentation paired with premium engineering support."
+      <>Direct channels for architecture reviews and <span style={{ color: ACCENT }}>model optimization</span> strategies.</>,
+      <>Hands-on guidance to accelerate your research from <span style={{ color: ACCENT }}>prototype to production.</span></>,
+      <>Comprehensive documentation paired with <span style={{ color: ACCENT }}>premium engineering support.</span></>
     ]
   }
 ];
@@ -1599,11 +1605,11 @@ function CapabilitiesSection() {
   return (
     <section className="reveal-on-scroll" style={{ padding: "100px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
-        
+
         {/* Header */}
-        <div style={{ marginBottom: 64 }}>
+        <div style={{ marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7" /></svg>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-default)", fontWeight: 500 }}>Capabilities</span>
           </div>
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.5rem, 5vw, 4.5rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.03em", lineHeight: 1.1, marginBottom: 20 }}>
@@ -1615,8 +1621,8 @@ function CapabilitiesSection() {
         </div>
 
         {/* Content Split */}
-        <div style={{ display: "flex", gap: 80, alignItems: "stretch", flexWrap: "wrap", borderTop: "1px solid var(--borderColor-default)" }}>
-          
+        <div style={{ display: "flex", gap: 80, alignItems: "stretch", flexWrap: "wrap", paddingTop: 16 }}>
+
           {/* Left: Accordion */}
           <div style={{ flex: "1 1 500px", display: "flex", flexDirection: "column" }}>
             {capabilityItems.map((item, idx) => {
@@ -1626,12 +1632,12 @@ function CapabilitiesSection() {
                   {/* Toggle Button */}
                   <button onClick={() => setOpenIndex(isOpen ? null : idx)}
                     style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "32px 0", cursor: "pointer", display: "flex", gap: 20, alignItems: "flex-start" }}>
-                    
+
                     {/* Numbering */}
                     <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "1.3rem", fontWeight: 600, color: isOpen ? ACCENT : "var(--fgColor-muted)", transition: "color 0.2s" }}>
                       {item.num} <span style={{ color: "var(--fgColor-muted)" }}>/</span>
                     </span>
-                    
+
                     {/* Title */}
                     <div style={{ flex: 1 }}>
                       <span style={{ fontFamily: "var(--font-sans)", fontSize: "1.7rem", fontWeight: 700, color: "var(--fgColor-default)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
@@ -1646,20 +1652,20 @@ function CapabilitiesSection() {
                   </button>
 
                   {/* Expanded Content */}
-                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)", paddingLeft: 65 /* Aligned under title */ }}>
-                    <div style={{ paddingBottom: 40 }}>
-                      
+                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)" /* padding removed so we start flush left with numeric */ }}>
+                    <div style={{ paddingBottom: 40, paddingLeft: 12 /* Centers the vertical line cleanly under the numeric '0' */ }}>
+
                       {/* Bent Pointer & Subtitle */}
-                      <div style={{ position: "relative", marginBottom: 24, paddingLeft: 24 }}>
+                      <div style={{ position: "relative", marginBottom: 32, paddingLeft: 53 /* 53 + 12 offset = 65 total offset, perfectly aligning text with the title string above */ }}>
                         {/* CSS Drawing of the Bent Pointer */}
-                        <div style={{ position: "absolute", top: -30, left: 0, width: 14, height: 40, borderLeft: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }} />
-                        <p style={{ fontFamily: "var(--font-mono), monospace", fontSize: "0.9rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
+                        <div style={{ position: "absolute", top: -30, left: 0, width: 35 /* 53 padding - 35 width = 18px gap before text */, height: 43, borderLeft: "1.5px solid rgba(255,255,255,0.7)", borderBottom: "1.5px solid rgba(255,255,255,0.7)" }} />
+                        <p style={{ margin: 0, padding: 0, fontFamily: "var(--font-mono), monospace", fontSize: "0.9rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
                           {item.subtitle}
                         </p>
                       </div>
 
                       {/* Bullets */}
-                      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+                      <ul style={{ listStyle: "none", padding: 0, paddingLeft: 53, margin: 0, display: "flex", flexDirection: "column", gap: 16 }}>
                         {item.bullets.map((bullet, i) => (
                           <li key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", fontFamily: "var(--font-mono), monospace", fontSize: "0.85rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
                             <span style={{ color: "var(--fgColor-default)", fontWeight: 700 }}>+</span>
@@ -1677,9 +1683,9 @@ function CapabilitiesSection() {
 
           {/* Right: Asset Section (Placeholder) */}
           <div style={{ flex: "1 1 400px", minHeight: 400, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-             <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.02)", borderRadius: 16, border: "1px dashed var(--borderColor-default)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-               {/* Empty asset placeholder space per request */}
-             </div>
+            <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.02)", borderRadius: 16, border: "1px dashed var(--borderColor-default)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {/* Empty asset placeholder space per request */}
+            </div>
           </div>
 
         </div>
