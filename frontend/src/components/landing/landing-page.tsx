@@ -924,29 +924,100 @@ function Nav({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
 }
 
 // ─── Terminal Block ───────────────────────────────────────────────────────────
-const termLines = [
-  { t: "cmd", s: "$ laas login --sso ksrce.edu.in" },
-  { t: "ok", s: "✓  Authenticated via KSRCE SSO" },
-  { t: "ok", s: "✓  Storage provisioned  up to 100 GB ZFS" },
-  { t: "", s: "" },
-  { t: "cmd", s: "$ laas launch --gpu 5090 --type jupyter" },
-  { t: "muted", s: "  Selecting node …" },
-  { t: "muted", s: "  Pulling image  laas/jupyter:cuda12" },
-  { t: "ok", s: "✓  Session live in 8s" },
-  { t: "url", s: "  → https://sess.laas.io/xk9f2a" },
-  { t: "", s: "" },
-  { t: "muted", s: "  GPU  4x RTX 5090 32 GB     vCPU 64     RAM 256 GB" },
-  { t: "cursor", s: "▊" },
+// Each step is either a "cmd" (typewriter-typed) or "output" (appears instantly).
+// After all steps play, the terminal clears and loops.
+type TermStep =
+  | { type: "cmd"; text: string }
+  | { type: "output"; lines: { t: string; s: string }[] };
+
+const termSequence: TermStep[] = [
+  { type: "cmd", text: "$ laas login --sso ksrce.edu.in" },
+  { type: "output", lines: [
+    { t: "ok", s: "✓  Authenticated via KSRCE SSO" },
+    { t: "ok", s: "✓  Storage provisioned" },
+  ]},
+  { type: "cmd", text: "$ laas launch --gpu 5090 --type jupyter" },
+  { type: "output", lines: [
+    { t: "muted", s: "  Selecting node …" },
+    { t: "muted", s: "  Pulling image  laas/jupyter:cuda12" },
+    { t: "ok", s: "✓  Session live in 8s" },
+    { t: "url", s: "  → https://sess.laas.io/xk9f2a" },
+  ]},
+  { type: "cmd", text: "$ laas status" },
+  { type: "output", lines: [
+    { t: "muted", s: "  GPU   RTX 5090 32 GB   vCPU 8   RAM 16 GB" },
+    { t: "ok", s: "  Status: ● Running" },
+    { t: "url", s: "  Cost:  ₹65/hr" },
+  ]},
 ];
 
+const CHAR_DELAY = 38;       // ms per character when typing a command
+const OUTPUT_LINE_DELAY = 280; // ms between each output line appearing
+const LOOP_PAUSE = 2500;     // ms pause before clearing and restarting
+
 function HeroTerminal() {
-  const [shown, setShown] = useState(0);
+  const [lines, setLines] = useState<{ t: string; s: string }[]>([]);
+  const [typingText, setTypingText] = useState("");
+  const [showCursor, setShowCursor] = useState(true);
+  const cancelledRef = useRef(false);
+
   useEffect(() => {
-    const tids: ReturnType<typeof setTimeout>[] = [];
-    termLines.forEach((_, idx) => {
-      tids.push(setTimeout(() => setShown(idx + 1), idx * 380));
+    cancelledRef.current = false;
+
+    const sleep = (ms: number) => new Promise<void>(res => {
+      const id = setTimeout(res, ms);
+      // store cleanup handle
+      return () => clearTimeout(id);
     });
-    return () => tids.forEach(clearTimeout);
+
+    const waitSleep = (ms: number) =>
+      new Promise<void>(resolve => {
+        const id = setTimeout(() => {
+          if (!cancelledRef.current) resolve();
+        }, ms);
+        void id;
+      });
+
+    async function runSequence() {
+      while (!cancelledRef.current) {
+        setLines([]);
+        setTypingText("");
+        setShowCursor(true);
+
+        for (const step of termSequence) {
+          if (cancelledRef.current) return;
+
+          if (step.type === "cmd") {
+            // Typewriter: type the command character by character
+            for (let i = 0; i <= step.text.length; i++) {
+              if (cancelledRef.current) return;
+              setTypingText(step.text.slice(0, i));
+              await waitSleep(CHAR_DELAY);
+            }
+            // After typing is done, push the completed command into lines
+            await waitSleep(200);
+            setLines(prev => [...prev, { t: "cmd", s: step.text }]);
+            setTypingText("");
+          } else {
+            // Output lines: appear one by one instantly
+            for (const line of step.lines) {
+              if (cancelledRef.current) return;
+              setLines(prev => [...prev, line]);
+              await waitSleep(OUTPUT_LINE_DELAY);
+            }
+            // Add a blank line after output groups
+            setLines(prev => [...prev, { t: "", s: "" }]);
+            await waitSleep(150);
+          }
+        }
+
+        // Show blinking cursor for a bit, then pause and restart
+        await waitSleep(LOOP_PAUSE);
+      }
+    }
+
+    runSequence();
+    return () => { cancelledRef.current = true; };
   }, []);
 
   const col: Record<string, string> = {
@@ -956,6 +1027,9 @@ function HeroTerminal() {
 
   return (
     <div style={{ background: "var(--bgColor-mild)", border: "1px solid var(--borderColor-default)", borderRadius: 10, overflow: "hidden", fontFamily: "var(--font-mono),ui-monospace,monospace", fontSize: "0.82rem", lineHeight: 1.75 }}>
+      <style>{`
+        @keyframes blink-cursor { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+      `}</style>
       <div style={{ display: "flex", gap: 7, padding: "10px 16px", background: "var(--bgColor-muted)", borderBottom: "1px solid var(--borderColor-default)", alignItems: "center" }}>
         <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#ef4444" }} />
         <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#f59e0b" }} />
@@ -963,9 +1037,22 @@ function HeroTerminal() {
         <span style={{ marginLeft: "auto", fontSize: "0.72rem", color: "var(--fgColor-muted)" }}>laas — bash</span>
       </div>
       <div style={{ padding: "18px 22px", minHeight: 240 }}>
-        {termLines.slice(0, shown).map((l, i) => (
-          <div key={i} style={{ color: col[l.t] ?? "var(--fgColor-default)", animation: "fadeUp 0.2s ease" }}>{l.s}</div>
+        {lines.map((l, i) => (
+          <div key={i} style={{ color: col[l.t] ?? "var(--fgColor-default)" }}>{l.s || "\u00A0"}</div>
         ))}
+        {/* Current typing line with blinking cursor */}
+        {typingText !== "" && (
+          <div style={{ color: "var(--fgColor-default)" }}>
+            {typingText}
+            <span style={{ color: ACCENT, animation: "blink-cursor 1s step-end infinite", fontWeight: 700 }}>▊</span>
+          </div>
+        )}
+        {/* Resting cursor when not typing */}
+        {typingText === "" && showCursor && (
+          <div style={{ color: "var(--fgColor-default)" }}>
+            <span style={{ color: ACCENT, animation: "blink-cursor 1s step-end infinite", fontWeight: 700 }}>▊</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1219,16 +1306,15 @@ function FeatureComparison() {
 }
 
 // ─── FAQ ──────────────────────────────────────────────────────────────────────
-function FAQ({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = useState(false);
+function FAQ({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boolean; onToggle: () => void }) {
   return (
     <div style={{ borderBottom: "1px solid var(--borderColor-default)", overflow: "hidden" }}>
-      <button onClick={() => setOpen(!open)}
+      <button onClick={onToggle}
         style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "18px 0", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 500, color: "var(--fgColor-default)" }}>{q}</span>
-        <span style={{ color: "var(--fgColor-muted)", fontSize: "1.2rem", transform: open ? "rotate(45deg)" : "rotate(0)", transition: "transform 0.2s ease", flexShrink: 0 }}>+</span>
+        <span style={{ color: "var(--fgColor-muted)", fontSize: "1.2rem", transform: isOpen ? "rotate(45deg)" : "rotate(0)", transition: "transform 0.2s ease", flexShrink: 0 }}>+</span>
       </button>
-      <div style={{ maxHeight: open ? 300 : 0, overflow: "hidden", transition: "max-height 0.3s ease" }}>
+      <div style={{ maxHeight: isOpen ? 300 : 0, overflow: "hidden", transition: "max-height 0.3s ease" }}>
         <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", lineHeight: 1.7, color: "var(--fgColor-muted)", margin: "0 0 18px" }}>{a}</p>
       </div>
     </div>
@@ -1467,6 +1553,7 @@ function InteractiveGrid() {
 export function LandingPage() {
   const [isDark, toggle] = useTheme();
   const [zoom, setZoom] = useState(1);
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   // Apply zoom to match 1280px design viewport
   useEffect(() => {
@@ -1534,12 +1621,17 @@ export function LandingPage() {
   ];
 
   const faqs = [
-    { q: "What types of GPUs are available on LaaS?", a: "LaaS provides access to NVIDIA RTX 5090 GPUs across a 4-node cluster. Each GPU has 32 GB VRAM, and fractional GPU allocation via HAMI allows multiple users to share a single GPU efficiently for lighter workloads." },
-    { q: "How is storage handled across sessions?", a: "Institution SSO users receive up to 100 GB of persistent ZFS storage on first login. This dataset is mounted automatically into every session, so your datasets, notebooks, and code persist indefinitely between sessions." },
-    { q: "Can I access my session via SSH?", a: "Yes. Every session exposes an SSH endpoint. You can upload your public SSH keys through the Account → SSH Keys panel and connect directly from your local terminal." },
-    { q: "How does billing work?", a: "LaaS uses a wallet-based credit system with per-second billing charges. Active sessions burn credits at the configured compute rate. Paused sessions only incur minimal storage fees. You can set spend limits and view a real-time daily spend chart on your dashboard." },
-    { q: "Do I need to set up Keycloak for university SSO?", a: "Admins configure the Keycloak IDP federation (SAML or OIDC) once per institution. After that, all students and faculty can sign in using their existing university email credentials — no additional signup required." },
-    { q: "What happens when a session is idle?", a: "Sessions that exceed a configurable idle threshold are automatically terminated to conserve resources. Files saved to the persistent storage volume are always preserved regardless of session termination status." },
+    { q: "How do I launch my first session on LaaS?", a: "Sign up with your university email or Google account, top up your wallet, pick a compute tier that fits your workload, and click Launch. Within seconds a fully configured desktop or notebook environment is live in your browser — no drivers, no local installation required." },
+    { q: "How does GPU sharing work — can I really get my own VRAM slice?", a: "Yes. Each session is allocated a guaranteed, isolated slice of GPU memory. Your workload — whether PyTorch, TensorFlow, or any GPU-accelerated application — sees only the VRAM assigned to you and operates completely independently from other users on the same node." },
+    { q: "What is a Stateful Desktop session?", a: "A Stateful Desktop is a full-featured remote Linux desktop streamed directly to your browser — no downloads or plugins needed. All your files, installed packages, and project work are automatically saved to your personal storage and restored on every future session, just like picking up where you left off on your own machine." },
+    { q: "What is an Ephemeral session and who should use it?", a: "Ephemeral sessions provide a lightweight, browser-based compute environment (Jupyter Notebook, VS Code, or SSH) for temporary workloads. Compute data is cleared when the session ends, but your saved files remain intact. This mode is ideal for quick experiments, inference jobs, or users accessing the platform without university affiliation." },
+    { q: "How is my data isolated from other users?", a: "Your personal storage is provisioned with a hard quota and is inaccessible to any other user. Each session runs inside a fully isolated compute environment — GPU memory, CPU, RAM, and storage are all enforced at a system level to guarantee complete separation between concurrent users." },
+    { q: "Can I use MATLAB, Blender, or PyTorch without any setup?", a: "Yes. All sessions start from a pre-configured environment with MATLAB, Python, Blender, and a full suite of AI and development tools already installed. Simply launch a session and your software is ready to use immediately — GPU-accelerated on GPU-tier plans." },
+    { q: "How does billing work?", a: "LaaS uses a wallet-based credit system with per-hour billing charge cycles. Active sessions burn credits at the configured compute rate. Paused sessions only incur minimal storage fees. You can set spend limits and view a real-time daily spend chart on your dashboard." },
+    { q: "What happens when a session is idle?", a: "Sessions that exceed a configurable idle threshold are automatically terminated to conserve resources. Files saved to your persistent storage are always preserved regardless of session termination status." },
+    { q: "What happens when I end or delete a session?", a: "When a session ends, the temporary compute environment is permanently torn down — any in-session system changes are discarded. However, all files in your personal storage are always preserved. Compute charges stop immediately; any applicable storage fees continue based on your subscription." },
+    { q: "What happens if my browser disconnects mid-session?", a: "Your session keeps running on the platform until the booked time expires. Simply reopen the LaaS portal and reconnect — your desktop or notebook resumes exactly where you left off. You will also receive advance warnings before any scheduled session expiry." },
+    { q: "What is the refund policy?", a: "Credits consumed by active sessions are non-refundable. If you believe a deduction occurred due to a platform-side issue, contact us at project@gktech.ai with your session details and we will review it within 2 business days. Unused wallet balance refund requests from institutions are considered on a case-by-case basis." },
   ];
 
   const pricing = [
@@ -1771,14 +1863,14 @@ export function LandingPage() {
       {/* ── PRICING ── */}
       <section id="pricing" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
         <div style={{ width: "100%", maxWidth: 1300, margin: "0 auto", padding: "120px 20px" }}>
-          
+
           <div style={{ display: "flex", flexWrap: "wrap", gap: 60, alignItems: "flex-start", marginBottom: 50 }}>
             {/* Left Header Column */}
             <div className="reveal-on-scroll" style={{ flex: "1 1 320px", textAlign: "left" }}>
               <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Pricing</div>
               <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 12 }}>Pay as you go</h2>
               <p style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.7, marginBottom: 32 }}>Our pricing model lets you pay only for what you use. No minimum commitments. Paused instances only incur storage fees. <span style={{ color: ACCENT, fontWeight: 700 }}>Zero Lock-in!</span></p>
-              
+
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -1804,11 +1896,11 @@ export function LandingPage() {
                   onMouseEnter={e => { e.currentTarget.style.background = "#3a56d4"; e.currentTarget.style.transform = "translateY(-2px)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = "#4f6ef7"; e.currentTarget.style.transform = "translateY(0)"; }}>
                   Deploy Your AI Workspace
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
                 </Link>
               </div>
             </div>
-            
+
             {/* Right Table Column */}
             <div style={{ flex: "2 1 600px", minWidth: 0 }}>
               <PricingGrid rows={pricing} />
@@ -1876,10 +1968,19 @@ export function LandingPage() {
         <div className="land-section">
           <div style={{ textAlign: "center", marginBottom: 56 }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>FAQ</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em" }}>Frequently Asked Questions</h2>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 14 }}>Frequently Asked Questions</h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", color: "var(--fgColor-muted)" }}>
+              Can&apos;t find what you&apos;re looking for? Reach us at{" "}
+              <a href="mailto:project@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>project@gktech.ai</a>.
+            </p>
           </div>
-          <div style={{ maxWidth: 780, margin: "0 auto" }}>
-            {faqs.map((f, i) => <FAQ key={i} {...f} />)}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 48px", alignItems: "start" }}>
+            <div>{faqs.slice(0, 5).map((f, i) => (
+              <FAQ key={i} {...f} isOpen={openFaqIndex === i} onToggle={() => setOpenFaqIndex(openFaqIndex === i ? null : i)} />
+            ))}</div>
+            <div>{faqs.slice(5).map((f, i) => (
+              <FAQ key={i + 5} {...f} isOpen={openFaqIndex === i + 5} onToggle={() => setOpenFaqIndex(openFaqIndex === i + 5 ? null : i + 5)} />
+            ))}</div>
           </div>
         </div>
       </section>
@@ -1925,7 +2026,7 @@ export function LandingPage() {
         {/* Content - Centered */}
         <div style={{ position: "relative", zIndex: 2, maxWidth: 700, transform: "translateY(-15vh)" }}>
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.2rem, 5vw, 3.8rem)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15, textShadow: "0 4px 30px rgba(0,0,0,0.8)" }}>Ready to launch your first GPU session?</h2>
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1rem, 2vw, 1.25rem)", color: "rgba(255,255,255,0.9)", marginBottom: 40, lineHeight: 1.7, maxWidth: 560, margin: "0 auto 40px" }}>Sign up with your university email or institutional SSO and be running model training within 60 seconds.</p>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(0.9rem, 1.5vw, 1.1rem)", color: "rgba(255,255,255,0.85)", marginBottom: 40, lineHeight: 1.6, maxWidth: 640, margin: "0 auto 40px" }}>Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 60 seconds.</p>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
             <Link href="/signup"
               style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 700, borderRadius: 10, textDecoration: "none", boxShadow: `0 6px 30px rgba(79,110,247,0.6)`, transition: "all 0.2s" }}
