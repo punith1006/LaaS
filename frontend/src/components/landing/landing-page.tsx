@@ -1600,23 +1600,24 @@ const capabilityItems = [
 ];
 
 function CapabilitiesSection() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section className="reveal-on-scroll" style={{ padding: "100px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
+    <section className="reveal-on-scroll" style={{ padding: "48px 48px 100px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
 
         {/* Header */}
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 32 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7" /></svg>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-default)", fontWeight: 500 }}>Capabilities</span>
           </div>
-          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.5rem, 5vw, 4.5rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.03em", lineHeight: 1.1, marginBottom: 20 }}>
-            Everything you need to scale AI.
+          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 3.5vw, 3.2rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
+            You bring the ideas. We provide the <span style={{ color: ACCENT }}>compute</span>.
           </h2>
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.1rem, 2vw, 1.25rem)", color: "var(--fgColor-muted)", maxWidth: 700, lineHeight: 1.5 }}>
-            LaaS brings together infrastructure, workflows, and visibility so teams can build, deploy, and operate AI systems with confidence.
+          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.6 }}>
+            <span style={{ display: "block", textAlign: "center", marginBottom: "0.5rem" }}>No more fighting hardware limits or expensive cloud bills.</span>
+            LaaS gives students, researchers, and fast-moving teams instant, pay-as-you-go access to top-tier AI supercomputing.
           </p>
         </div>
 
