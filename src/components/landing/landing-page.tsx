@@ -1645,8 +1645,8 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     return { topY, botY };
   });
 
-  // Label Y = midpoint of each bracket
-  const labelYs = bracketYs.map(b => (b.topY + b.botY) / 2);
+  // Label Y = at the bottom turn of each bracket (not midpoint)
+  const labelYs = bracketYs.map(b => b.botY);
 
   const isoCorners = (cy: number) => ({
     top: { x: CX, y: cy - DY },
@@ -1831,7 +1831,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   const drawConnections = () => {
     // Bracket ⎤ connectors overlaying the south-east (right) face.
     const stubLen = 8;
-    const opacity = 0.25;
+    const opacity = 0.4;
     const stroke = `rgba(255,255,255,${opacity})`;
     const transition = "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -1844,19 +1844,19 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
               {/* Top horizontal stub ── */}
               <line
                 x1={x - stubLen} y1={b.topY} x2={x} y2={b.topY}
-                stroke={stroke} strokeWidth="1" strokeDasharray="2 3"
+                stroke={stroke} strokeWidth="1.2" strokeDasharray="2 3"
                 style={{ transition }}
               />
               {/* Vertical line | */}
               <line
                 x1={x} y1={b.topY} x2={x} y2={b.botY}
-                stroke={stroke} strokeWidth="1" strokeDasharray="2 3"
+                stroke={stroke} strokeWidth="1.2" strokeDasharray="2 3"
                 style={{ transition }}
               />
               {/* Bottom horizontal stub ── */}
               <line
                 x1={x - stubLen} y1={b.botY} x2={x} y2={b.botY}
-                stroke={stroke} strokeWidth="1" strokeDasharray="2 3"
+                stroke={stroke} strokeWidth="1.2" strokeDasharray="2 3"
                 style={{ transition }}
               />
             </g>
@@ -1867,16 +1867,15 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   };
 
   const drawRightLabels = () => {
-    const labelX = CX + DX + 6;
     return sideLabels.map((label, i) => (
       <text
         key={i}
-        x={labelX}
+        x={bracketXs[i] + 6}
         y={labelYs[i]}
-        fill="rgba(255,255,255,0.55)"
+        fill="rgba(255,255,255,0.75)"
         fontFamily="var(--font-mono), monospace"
-        fontSize="9"
-        fontWeight="600"
+        fontSize="10"
+        fontWeight="700"
         letterSpacing="0.14em"
         dominantBaseline="middle"
         style={{ transition: "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}
@@ -1950,7 +1949,7 @@ function CapabilitiesSection() {
 
                     {/* Numbering */}
                     <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "1.15rem", fontWeight: 600, color: isOpen ? ACCENT : "var(--fgColor-muted)", transition: "color 0.2s" }}>
-                      {item.num} <span style={{ color: "var(--fgColor-muted)" }}>/</span>
+                      {item.num} <span style={{ color: isOpen ? "var(--fgColor-muted)" : "#4f6ef7", transition: "color 0.2s" }}>/</span>
                     </span>
 
                     {/* Title */}
@@ -1967,13 +1966,13 @@ function CapabilitiesSection() {
                   </button>
 
                   {/* Expanded Content */}
-                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)" /* padding removed so we start flush left with numeric */ }}>
-                    <div style={{ paddingBottom: 30, paddingLeft: 12 /* Centers the vertical line cleanly under the numeric '0' */ }}>
+                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)", marginTop: -30 /* compensate for inner paddingTop */, paddingTop: 30 /* room for pointer to render without clipping */ }}>
+                    <div style={{ paddingBottom: 30, paddingLeft: 12 }}>
 
                       {/* Bent Pointer & Subtitle */}
-                      <div style={{ position: "relative", marginBottom: 24, paddingLeft: 53 /* 53 + 12 offset = 65 total offset, perfectly aligning text with the title string above */ }}>
+                      <div style={{ position: "relative", marginBottom: 24, paddingLeft: 53 }}>
                         {/* CSS Drawing of the Bent Pointer */}
-                        <div style={{ position: "absolute", top: -30, left: 0, width: 35 /* 53 padding - 35 width = 18px gap before text */, height: 35, borderLeft: "1.5px solid rgba(255,255,255,0.7)", borderBottom: "1.5px solid rgba(255,255,255,0.7)" }} />
+                        <div style={{ position: "absolute", top: -30, left: 0, width: 35, height: 35, borderLeft: "1.5px solid rgba(255,255,255,0.7)", borderBottom: "1.5px solid rgba(255,255,255,0.7)" }} />
                         <p style={{ margin: 0, padding: 0, fontFamily: "var(--font-mono), monospace", fontSize: "0.82rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
                           {item.subtitle}
                         </p>
