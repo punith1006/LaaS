@@ -1621,18 +1621,19 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     return BASE_Y + idx * tightGap + (idx >= activeIndex ? expandedGap : 0);
   }
 
-  // Bracket definitions: each label spans a range of slabs
-  // Bracket shape ⎤ on the right face: top stub, vertical, bottom stub
+  // Bracket definitions: ALL start from slab 0, each extends to a different depth
+  // Like the reference: all originate at the top slab, progressively deeper
   const brackets = [
-    { topIdx: 0, botIdx: 1 },  // LEARNERS: slabs 0-1
-    { topIdx: 2, botIdx: 2 },  // BUILDERS: slab 2
-    { topIdx: 3, botIdx: 3 },  // INNOVATORS: slab 3
+    { topIdx: 0, botIdx: 1 },  // LEARNERS: slab 0 → bottom of slab 1
+    { topIdx: 0, botIdx: 2 },  // BUILDERS: slab 0 → bottom of slab 2
+    { topIdx: 0, botIdx: 3 },  // INNOVATORS: slab 0 → below slab 3
   ];
 
-  // Top/bottom Y: right face spans from getCy(idx) to getCy(idx)+DEPTH
+  // Top Y: all start at right-face top of slab 0
+  // Bottom Y: right-face bottom of end slab + slight encroachment below depth
   const bracketYs = brackets.map(b => ({
     topY: getCy(b.topIdx),
-    botY: getCy(b.botIdx) + DEPTH,
+    botY: getCy(b.botIdx) + DEPTH + 4, // encroach slightly below the slab depth
   }));
 
   // Label Y = midpoint of each bracket
@@ -1820,9 +1821,9 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
 
   const drawConnections = () => {
     // Bracket ⎤ connectors overlaying the south-east (right) face.
-    // Staggered X positions across the right face, closer to the right edge
-    const bracketXs = [CX + DX * 0.72, CX + DX * 0.82, CX + DX * 0.92];
-    const stubLen = 12;
+    // X positions near the right edge of the right face, staggered
+    const bracketXs = [CX + DX * 0.82, CX + DX * 0.88, CX + DX * 0.94];
+    const stubLen = 8; // hook length going LEFT
     const opacity = activeIndex !== null ? 0.22 : 0.1;
     const stroke = `rgba(255,255,255,${opacity})`;
     const transition = "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)";
