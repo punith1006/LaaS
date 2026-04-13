@@ -1621,15 +1621,22 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     return BASE_Y + idx * tightGap + (idx >= activeIndex ? expandedGap : 0);
   }
 
-  // Each side label marks a tier boundary between slab groups
-  // Label 0 → between slabs 0 and 1
-  // Label 1 → between slabs 2 and 3
-  // Label 2 → below slab 3
-  const labelYs = [
-    (getCy(0) + getCy(1)) / 2 + DEPTH / 2,
-    (getCy(2) + getCy(3)) / 2 + DEPTH / 2,
-    getCy(3) + DEPTH + 20,
+  // Bracket definitions: each label spans a range of slabs
+  // Bracket shape ⎤ on the right face: top stub, vertical, bottom stub
+  const brackets = [
+    { topIdx: 0, botIdx: 1 },  // LEARNERS: slabs 0-1
+    { topIdx: 2, botIdx: 2 },  // BUILDERS: slab 2
+    { topIdx: 3, botIdx: 3 },  // INNOVATORS: slab 3
   ];
+
+  // Top/bottom Y: right face spans from getCy(idx) to getCy(idx)+DEPTH
+  const bracketYs = brackets.map(b => ({
+    topY: getCy(b.topIdx),
+    botY: getCy(b.botIdx) + DEPTH,
+  }));
+
+  // Label Y = midpoint of each bracket
+  const labelYs = bracketYs.map(b => (b.topY + b.botY) / 2);
 
   const isoCorners = (cy: number) => ({
     top: { x: CX, y: cy - DY },
@@ -1812,43 +1819,47 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   };
 
   const drawConnections = () => {
-    // Vertical dotted lines that OVERLAY the south-east (right) face of the slabs.
-    // Each line runs from slab 0 level down to its label Y, ON the right face.
-    // The right face spans X from CX (bottom corner) to CX+DX (right corner).
-    // Lines are staggered across the face at ~65%, 75%, 85% of the face width.
-    const lineXs = [CX + DX * 0.62, CX + DX * 0.74, CX + DX * 0.86];
-    const startY = getCy(0) + DY * 0.38; // start near top of right face area
-    const labelX = CX + DX + 10; // labels sit just past the right corner
+    // Bracket ⎤ connectors overlaying the south-east (right) face.
+    // Staggered X positions across the right face, closer to the right edge
+    const bracketXs = [CX + DX * 0.72, CX + DX * 0.82, CX + DX * 0.92];
+    const stubLen = 12;
     const opacity = activeIndex !== null ? 0.22 : 0.1;
     const stroke = `rgba(255,255,255,${opacity})`;
     const transition = "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)";
 
     return (
       <g>
-        {labelYs.map((ly, i) => (
-          <g key={i}>
-            {/* Vertical dotted line running down the right face */}
-            <line
-              x1={lineXs[i]} y1={startY}
-              x2={lineXs[i]} y2={ly}
-              stroke={stroke} strokeWidth="1" strokeDasharray="2 4"
-              style={{ transition }}
-            />
-            {/* Short horizontal stub from the line out to the label */}
-            <line
-              x1={lineXs[i]} y1={ly}
-              x2={labelX - 2} y2={ly}
-              stroke={stroke} strokeWidth="1" strokeDasharray="2 4"
-              style={{ transition }}
-            />
-          </g>
-        ))}
+        {bracketYs.map((b, i) => {
+          const x = bracketXs[i];
+          return (
+            <g key={i}>
+              {/* Top horizontal stub ── */}
+              <line
+                x1={x - stubLen} y1={b.topY} x2={x} y2={b.topY}
+                stroke={stroke} strokeWidth="1" strokeDasharray="2 3"
+                style={{ transition }}
+              />
+              {/* Vertical line | */}
+              <line
+                x1={x} y1={b.topY} x2={x} y2={b.botY}
+                stroke={stroke} strokeWidth="1" strokeDasharray="2 3"
+                style={{ transition }}
+              />
+              {/* Bottom horizontal stub ── */}
+              <line
+                x1={x - stubLen} y1={b.botY} x2={x} y2={b.botY}
+                stroke={stroke} strokeWidth="1" strokeDasharray="2 3"
+                style={{ transition }}
+              />
+            </g>
+          );
+        })}
       </g>
     );
   };
 
   const drawRightLabels = () => {
-    const labelX = CX + DX + 10;
+    const labelX = CX + DX + 6;
     return sideLabels.map((label, i) => (
       <text
         key={i}
