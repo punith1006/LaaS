@@ -1601,21 +1601,29 @@ const capabilityItems = [
 
 // ─── Isometric Stack Asset ──────────────────────────────────────────────────────
 function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
-  // Layer labels that appear on the face of each plate (isometric angled text)
-  const faceLabels = ["GPU compute", "Stateful storage", "GUI & CLI access", "Expert mentorship"];
-  // Right-side category labels
-  const sideLabels = ["STUDENTS", "RESEARCHERS", "TEAMS", "PRODUCTION"];
+  const blockLabels = ["Purpose-built datacenters", "AI infrastructure", "Managed services", "Co-engineering"];
+  const sideLabels = ["AI DEVELOPERS", "ENTERPRISE", "SUPERINTELLIGENCE"];
 
-  // Isometric geometry constants
-  const CX = 220;           // Center X of the iso stack
-  const BASE_Y = 60;        // Y of the topmost layer's center
-  const DX = 130;           // Half-width of diamond (X axis)
-  const DY = 55;            // Half-height of diamond (Y axis)
-  const DEPTH = 16;         // Thickness of each plate
-  const GAP = 80;           // Vertical spacing between layer centers
-  const ACTIVE_ACCENT = "#4f8ef7";
+  const CX = 200;
+  const BASE_Y = 130;
+  const DX = 160;
+  const DY = 80;
+  const DEPTH = 22;
+  
+  const tightGap = 55;
+  const expandedGap = 110;
 
-  // Helper: get the 4 corners of an isometric diamond at a given center
+  // Calculate gap index
+  const gapIndex = activeIndex === 0 ? 0 : activeIndex === 1 ? 1 : 2;
+
+  // The Y position for the right-side labels (fixed positions)
+  const labelYs = [180, 270, 360];
+
+  const getCy = (idx: number) => {
+    if (activeIndex === null) return BASE_Y + idx * (tightGap + 20);
+    return BASE_Y + idx * tightGap + (idx > gapIndex ? expandedGap : 0);
+  };
+
   const isoCorners = (cy: number) => ({
     top: { x: CX, y: cy - DY },
     right: { x: CX + DX, y: cy },
@@ -1623,180 +1631,232 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     left: { x: CX - DX, y: cy },
   });
 
-  // Helper: top face path
-  const topFace = (cy: number) => {
-    const c = isoCorners(cy);
-    return `M ${c.top.x} ${c.top.y} L ${c.right.x} ${c.right.y} L ${c.bottom.x} ${c.bottom.y} L ${c.left.x} ${c.left.y} Z`;
+  // Calculate angle for text rotation on left face
+  // The vector is from left to bottom: (+DX, +DY)
+  const angleRad = Math.atan2(DY, DX);
+  const angleDeg = (angleRad * 180) / Math.PI;
+
+  const getPoints = (c: any) => {
+    return {
+      topFace: `${c.top.x},${c.top.y} ${c.right.x},${c.right.y} ${c.bottom.x},${c.bottom.y} ${c.left.x},${c.left.y}`,
+      leftFace: `${c.left.x},${c.left.y} ${c.bottom.x},${c.bottom.y} ${c.bottom.x},${c.bottom.y + DEPTH} ${c.left.x},${c.left.y + DEPTH}`,
+      rightFace: `${c.bottom.x},${c.bottom.y} ${c.right.x},${c.right.y} ${c.right.x},${c.right.y + DEPTH} ${c.bottom.x},${c.bottom.y + DEPTH}`,
+    };
   };
 
-  // Helper: left depth face
-  const leftFace = (cy: number) => {
+  const drawPattern0 = (cy: number) => {
     const c = isoCorners(cy);
-    return `M ${c.left.x} ${c.left.y} L ${c.bottom.x} ${c.bottom.y} L ${c.bottom.x} ${c.bottom.y + DEPTH} L ${c.left.x} ${c.left.y + DEPTH} Z`;
-  };
-
-  // Helper: right depth face
-  const rightFace = (cy: number) => {
-    const c = isoCorners(cy);
-    return `M ${c.bottom.x} ${c.bottom.y} L ${c.right.x} ${c.right.y} L ${c.right.x} ${c.right.y + DEPTH} L ${c.bottom.x} ${c.bottom.y + DEPTH} Z`;
-  };
-
-  // Draw internal grid pattern on active layer
-  const drawGrid = (cy: number) => {
-    const c = isoCorners(cy);
-    const gridLines: React.ReactNode[] = [];
-    const steps = 6;
+    const elements: React.ReactNode[] = [];
+    const steps = 5;
+    // Grid Lines
     for (let i = 1; i < steps; i++) {
       const f = i / steps;
-      // Lines from left-top edge to right-bottom edge (parallel to right side)
       const x1 = c.top.x + (c.left.x - c.top.x) * f;
       const y1 = c.top.y + (c.left.y - c.top.y) * f;
       const x2 = c.right.x + (c.bottom.x - c.right.x) * f;
       const y2 = c.right.y + (c.bottom.y - c.right.y) * f;
-      gridLines.push(<line key={`ga-${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={ACTIVE_ACCENT} strokeWidth="0.5" opacity="0.35" />);
-      // Lines from top-right edge to bottom-left edge (parallel to left side)
+      elements.push(<line key={`h${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(255,255,255,0.15)" strokeWidth="1" />);
+      
       const x3 = c.top.x + (c.right.x - c.top.x) * f;
       const y3 = c.top.y + (c.right.y - c.top.y) * f;
       const x4 = c.left.x + (c.bottom.x - c.left.x) * f;
       const y4 = c.left.y + (c.bottom.y - c.left.y) * f;
-      gridLines.push(<line key={`gb-${i}`} x1={x3} y1={y3} x2={x4} y2={y4} stroke={ACTIVE_ACCENT} strokeWidth="0.5" opacity="0.35" />);
+      elements.push(<line key={`v${i}`} x1={x3} y1={y3} x2={x4} y2={y4} stroke="rgba(255,255,255,0.15)" strokeWidth="1" />);
     }
-    return gridLines;
-  };
-
-  // Draw dots at grid intersections for the active layer
-  const drawDots = (cy: number) => {
-    const c = isoCorners(cy);
-    const dots: React.ReactNode[] = [];
-    const steps = 6;
+    // Dots
     for (let i = 1; i < steps; i++) {
       for (let j = 1; j < steps; j++) {
-        const fi = i / steps;
-        const fj = j / steps;
-        // Bilinear interpolation on the isometric diamond
-        const x = c.top.x + (c.right.x - c.top.x) * fj + (c.left.x - c.top.x) * fi;
-        const y = c.top.y + (c.right.y - c.top.y) * fj + (c.left.y - c.top.y) * fi;
-        dots.push(<circle key={`d-${i}-${j}`} cx={x} cy={y} r="1.2" fill="rgba(255,255,255,0.25)" />);
+        const x = c.top.x + (c.right.x - c.top.x) * (j/steps) + (c.left.x - c.top.x) * (i/steps);
+        const y = c.top.y + (c.right.y - c.top.y) * (j/steps) + (c.left.y - c.top.y) * (i/steps);
+        const isCenter = i === 2 && j === 2;
+        elements.push(<circle key={`d${i}${j}`} cx={x} cy={y} r="2" fill={isCenter ? "#fff" : "rgba(255,255,255,0.6)"} />);
       }
     }
-    return dots;
+    return <g>{elements}</g>;
   };
 
-  // Draw concentric ellipse pattern (for alternating active layers)
-  const drawEllipsePattern = (cy: number) => (
-    <g>
-      <ellipse cx={CX} cy={cy} rx={DX * 0.55} ry={DY * 0.55} stroke={ACTIVE_ACCENT} strokeWidth="0.8" fill="none" opacity="0.5" />
-      <ellipse cx={CX} cy={cy} rx={DX * 0.35} ry={DY * 0.35} stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" fill="none" strokeDasharray="3 3" />
-      <ellipse cx={CX} cy={cy} rx={DX * 0.15} ry={DY * 0.15} stroke="rgba(255,255,255,0.6)" strokeWidth="0.5" fill="rgba(255,255,255,0.03)" />
-      <circle cx={CX} cy={cy} r="2.5" fill="#fff" />
-    </g>
-  );
+  const drawPattern1 = (cy: number) => {
+    // Concentric squares
+    const elements: React.ReactNode[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const scale = i * 0.25;
+      const c = isoCorners(cy);
+      const points = `${CX},${cy - DY * scale} ${CX + DX * scale},${cy} ${CX},${cy + DY * scale} ${CX - DX * scale},${cy}`;
+      elements.push(<polygon key={`sq${i}`} points={points} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray={i === 2 ? "4 4" : "none"} />);
+    }
+    // Inner solid square
+    const scale = 0.15;
+    const points = `${CX},${cy - DY * scale} ${CX + DX * scale},${cy} ${CX},${cy + DY * scale} ${CX - DX * scale},${cy}`;
+    elements.push(<polygon key="sq_solid" points={points} fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.6)" strokeWidth="1.5" />);
+    return <g>{elements}</g>;
+  };
 
-  // Vertical dashed bounding lines connecting corners across the full stack
-  const drawBoundingLines = () => {
-    const topCy = BASE_Y;
-    const bottomCy = BASE_Y + 3 * GAP;
-    const cTop = isoCorners(topCy);
-    const cBot = isoCorners(bottomCy);
+  const drawPattern2 = (cy: number) => {
     return (
-      <g stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="3 5">
-        <line x1={cTop.top.x} y1={cTop.top.y} x2={cBot.top.x} y2={cBot.top.y + DEPTH} />
-        <line x1={cTop.left.x} y1={cTop.left.y} x2={cBot.left.x} y2={cBot.left.y + DEPTH} />
-        <line x1={cTop.right.x} y1={cTop.right.y} x2={cBot.right.x} y2={cBot.right.y + DEPTH} />
-        <line x1={cTop.bottom.x} y1={cTop.bottom.y} x2={cBot.bottom.x} y2={cBot.bottom.y + DEPTH} />
+      <g>
+        <ellipse cx={CX} cy={cy} rx={DX * 0.4} ry={DY * 0.4} stroke="rgba(255,255,255,0.15)" strokeWidth="1" fill="none" strokeDasharray="3 4" />
+        <ellipse cx={CX} cy={cy} rx={DX * 0.25} ry={DY * 0.25} stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" fill="none" />
+        <ellipse cx={CX} cy={cy} rx={DX * 0.1} ry={DY * 0.1} stroke="#fff" strokeWidth="2" fill="none" />
       </g>
     );
   };
 
-  // Draw a single layer
+  const drawPattern3 = (cy: number) => {
+    const rx = DX * 0.25;
+    const ry = DY * 0.25;
+    const offset = DX * 0.15;
+    return (
+      <g>
+        <ellipse cx={CX - offset} cy={cy} rx={rx} ry={ry} stroke="#4f8ef7" strokeWidth="1.5" fill="rgba(79,142,247,0.05)" />
+        <ellipse cx={CX + offset} cy={cy} rx={rx} ry={ry} stroke="#fff" strokeWidth="1.5" fill="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
+        <circle cx={CX} cy={cy - ry*0.6} r="3" fill="#3bff3b" />
+        <circle cx={CX} cy={cy + ry*0.6} r="3" fill="#ff3b3b" />
+        {/* Intersection dots approximation */}
+        <circle cx={CX} cy={cy} r="1" fill="#fff" />
+        <circle cx={CX - 8} cy={cy} r="1" fill="#fff" />
+        <circle cx={CX + 8} cy={cy} r="1" fill="#fff" />
+        <circle cx={CX} cy={cy - 8} r="1" fill="#fff" />
+        <circle cx={CX} cy={cy + 8} r="1" fill="#fff" />
+      </g>
+    );
+  };
+
   const drawLayer = (idx: number) => {
-    const cy = BASE_Y + idx * GAP;
+    const cy = getCy(idx);
     const isActive = activeIndex === idx;
     const c = isoCorners(cy);
+    const pts = getPoints(c);
 
-    const wireStroke = isActive ? ACTIVE_ACCENT : "rgba(255,255,255,0.12)";
-    const topFill = isActive ? "rgba(10, 18, 30, 0.9)" : "transparent";
-    const lFill = isActive ? "rgba(30, 50, 90, 0.5)" : "rgba(255,255,255,0.015)";
-    const rFill = isActive ? "rgba(15, 25, 50, 0.5)" : "rgba(255,255,255,0.008)";
-
-    // RGB corner accent dots (only on active)
-    const cornerAccents = isActive ? (
-      <g>
-        <circle cx={c.top.x} cy={c.top.y} r="2" fill="#ff3b3b" opacity="0.8" />
-        <circle cx={c.left.x} cy={c.left.y} r="2" fill="#3bff3b" opacity="0.8" />
-        <circle cx={c.right.x} cy={c.right.y} r="2" fill="#3b3bff" opacity="0.8" />
-        <circle cx={c.bottom.x} cy={c.bottom.y} r="2" fill="#ff3bff" opacity="0.8" />
-      </g>
-    ) : null;
+    // Styling
+    const topFill = isActive ? "rgba(10, 10, 15, 0.95)" : "rgba(5, 5, 8, 0.8)";
+    const leftFill = "rgba(15, 15, 20, 0.95)";
+    const rightFill = "rgba(8, 8, 12, 0.95)";
+    
+    const strokeBase = isActive ? "url(#activeBorder)" : "rgba(255,255,255,0.15)";
+    const strokeWidth = isActive ? "2" : "1";
 
     return (
-      <g key={idx} style={{ transition: "all 0.5s ease" }}>
-        {/* Depth faces (drawn first, behind the top) */}
-        <path d={leftFace(cy)} fill={lFill} stroke={wireStroke} strokeWidth={isActive ? "1.2" : "0.8"} style={{ transition: "all 0.5s ease" }} />
-        <path d={rightFace(cy)} fill={rFill} stroke={wireStroke} strokeWidth={isActive ? "1.2" : "0.8"} style={{ transition: "all 0.5s ease" }} />
+      <g key={idx} style={{ transition: "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+        {/* Depth Faces */}
+        <polygon points={pts.leftFace} fill={leftFill} stroke={strokeBase} strokeWidth={strokeWidth} style={{ transition: "all 0.6s ease" }} />
+        <polygon points={pts.rightFace} fill={rightFill} stroke={strokeBase} strokeWidth={strokeWidth} style={{ transition: "all 0.6s ease" }} />
+        
+        {/* Top Face */}
+        <polygon points={pts.topFace} fill={topFill} stroke={strokeBase} strokeWidth={strokeWidth} style={{ transition: "all 0.6s ease" }} />
 
-        {/* Top face */}
-        <path d={topFace(cy)} fill={topFill} stroke={wireStroke} strokeWidth={isActive ? "1.5" : "0.8"} style={{ transition: "all 0.5s ease" }} />
-
-        {/* Internal pattern on active layer */}
-        {isActive && (idx % 2 === 0 ? (
+        {/* Highlight inner edges for 3D effect */}
+        {isActive && (
           <g>
-            {drawGrid(cy)}
-            {drawDots(cy)}
-            <circle cx={CX} cy={cy} r="3" fill="#fff" filter="drop-shadow(0 0 8px rgba(79,142,247,0.8))" />
+            <line x1={c.left.x} y1={c.left.y} x2={c.bottom.x} y2={c.bottom.y} stroke="#00f3ff" strokeWidth="1" />
+            <line x1={c.bottom.x} y1={c.bottom.y} x2={c.right.x} y2={c.right.y} stroke="#ff3366" strokeWidth="1" />
           </g>
-        ) : (
-          drawEllipsePattern(cy)
-        ))}
+        )}
 
-        {/* Corner accents */}
-        {cornerAccents}
+        {/* Patterns */}
+        {isActive && (
+          <g style={{ opacity: 0, animation: "fadeIn 0.5s forwards 0.3s" }}>
+            {idx === 0 && drawPattern0(cy)}
+            {idx === 1 && drawPattern1(cy)}
+            {idx === 2 && drawPattern2(cy)}
+            {idx === 3 && drawPattern3(cy)}
+          </g>
+        )}
 
-        {/* Angled text label on the face */}
+        {/* Corner Accents on Active */}
+        {isActive && (
+          <g>
+            <circle cx={c.top.x} cy={c.top.y} r="2.5" fill="#fff" />
+            <circle cx={c.left.x} cy={c.left.y} r="2.5" fill="#00f3ff" />
+            <circle cx={c.right.x} cy={c.right.y} r="2.5" fill="#ff3366" />
+            <circle cx={c.bottom.x} cy={c.bottom.y} r="2.5" fill="#3bff3b" />
+          </g>
+        )}
+
+        {/* Slanted Text on Left Face */}
         <text
-          x={CX - 10} y={cy + 5}
-          fill={isActive ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.2)"}
+          x={c.left.x + 15}
+          y={c.left.y + DEPTH - 4}
+          fill={isActive ? "#fff" : "rgba(255,255,255,0.4)"}
           fontFamily="var(--font-mono), monospace"
-          fontSize="10"
-          fontWeight="600"
-          letterSpacing="0.04em"
-          transform={`rotate(-30, ${CX - 10}, ${cy + 5})`}
-          style={{ transition: "fill 0.5s ease" }}
+          fontSize="14"
+          fontWeight="700"
+          letterSpacing="0.02em"
+          transform={`rotate(${angleDeg}, ${c.left.x + 15}, ${c.left.y + DEPTH - 4})`}
+          style={{ transition: "fill 0.4s ease" }}
         >
-          {faceLabels[idx]}
-        </text>
-
-        {/* Dashed connector line to right-side label */}
-        <line
-          x1={c.right.x} y1={c.right.y}
-          x2={c.right.x + 60} y2={c.right.y}
-          stroke={isActive ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)"}
-          strokeWidth="1"
-          strokeDasharray="2 3"
-          style={{ transition: "stroke 0.5s ease" }}
-        />
-
-        {/* Right-side category label */}
-        <text
-          x={c.right.x + 68} y={c.right.y + 4}
-          fill={isActive ? "#fff" : "rgba(255,255,255,0.25)"}
-          fontFamily="var(--font-mono), monospace"
-          fontSize="9"
-          fontWeight={isActive ? "700" : "500"}
-          letterSpacing="0.1em"
-          style={{ transition: "fill 0.5s ease" }}
-        >
-          {sideLabels[idx]}
+          {blockLabels[idx]}
         </text>
       </g>
     );
+  };
+
+  const drawConnections = () => {
+    if (activeIndex === null) return null;
+    
+    const activeCy = getCy(activeIndex);
+    const ac = isoCorners(activeCy);
+
+    // 3 connector origin points on the top-right back edge
+    const p1 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.4, y: ac.top.y + (ac.right.y - ac.top.y) * 0.4 };
+    const p2 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.6, y: ac.top.y + (ac.right.y - ac.top.y) * 0.6 };
+    const p3 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.8, y: ac.top.y + (ac.right.y - ac.top.y) * 0.8 };
+    
+    const origins = [p1, p2, p3];
+
+    return (
+      <g style={{ opacity: 0, animation: "fadeIn 0.5s forwards 0.3s" }}>
+        {origins.map((origin, i) => (
+          <path
+            key={i}
+            d={`M ${origin.x} ${origin.y} L ${origin.x} ${labelYs[i]} L ${CX + DX + 60} ${labelYs[i]}`}
+            fill="none"
+            stroke="rgba(255,255,255,0.25)"
+            strokeWidth="1.5"
+            strokeDasharray="2 4"
+          />
+        ))}
+      </g>
+    );
+  };
+
+  const drawRightLabels = () => {
+    return sideLabels.map((label, i) => (
+      <text
+        key={i}
+        x={CX + DX + 70}
+        y={labelYs[i] + 4}
+        fill={activeIndex !== null ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.15)"}
+        fontFamily="var(--font-mono), monospace"
+        fontSize="10"
+        fontWeight="600"
+        letterSpacing="0.1em"
+        style={{ transition: "fill 0.4s ease" }}
+      >
+        {label}
+      </text>
+    ));
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <svg viewBox="0 -10 530 420" style={{ width: "100%", height: "100%", overflow: "visible" }}>
-        {drawBoundingLines()}
-        {/* Draw bottom layers first, then top layers on top */}
+    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 40, pointerEvents: "none" }}>
+      <svg viewBox="0 0 600 500" style={{ width: "120%", height: "120%", overflow: "visible" }}>
+        <defs>
+          <linearGradient id="activeBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#ff3366" />
+            <stop offset="50%" stopColor="#4f8ef7" />
+            <stop offset="100%" stopColor="#00f3ff" />
+          </linearGradient>
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+          `}</style>
+        </defs>
+        
+        {drawConnections()}
+        {drawRightLabels()}
+        {/* Draw layers from bottom to top for correct z-indexing */}
         {[3, 2, 1, 0].map(idx => drawLayer(idx))}
       </svg>
     </div>
