@@ -1629,12 +1629,21 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     { topIdx: 0, botIdx: 3 },  // INNOVATORS: slab 0 → below slab 3
   ];
 
-  // Top Y: all start at right-face top of slab 0
-  // Bottom Y: right-face bottom of end slab + slight encroachment below depth
-  const bracketYs = brackets.map(b => ({
-    topY: getCy(b.topIdx),
-    botY: getCy(b.botIdx) + DEPTH + 4, // encroach slightly below the slab depth
-  }));
+  // Bracket X positions: longest (all slabs) leftmost, shortest rightmost
+  const bracketXs = [CX + DX * 0.88, CX + DX * 0.74, CX + DX * 0.58];
+
+  // Top/bottom Y follow the isometric slope of the right face edges
+  // Right face top edge: (CX, cy+DY) → (CX+DX, cy). At fraction f: y = cy + DY*(1-f)
+  // Right face bottom edge: (CX, cy+DY+DEPTH) → (CX+DX, cy+DEPTH). Same slope offset by DEPTH
+  const bracketYs = brackets.map((b, i) => {
+    const f = (bracketXs[i] - CX) / DX;
+    const slopeOffset = DY * (1 - f);
+    // Top: on slab 0's right face top edge, nudged slightly inward (-4)
+    const topY = getCy(0) + slopeOffset - 4;
+    // Bottom: on closing slab's right face bottom edge, nudged slightly below (+6)
+    const botY = getCy(b.botIdx) + DEPTH + slopeOffset + 6;
+    return { topY, botY };
+  });
 
   // Label Y = midpoint of each bracket
   const labelYs = bracketYs.map(b => (b.topY + b.botY) / 2);
@@ -1821,10 +1830,8 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
 
   const drawConnections = () => {
     // Bracket ⎤ connectors overlaying the south-east (right) face.
-    // X positions near the right edge of the right face, staggered
-    const bracketXs = [CX + DX * 0.82, CX + DX * 0.88, CX + DX * 0.94];
-    const stubLen = 8; // hook length going LEFT
-    const opacity = activeIndex !== null ? 0.22 : 0.1;
+    const stubLen = 8;
+    const opacity = 0.25;
     const stroke = `rgba(255,255,255,${opacity})`;
     const transition = "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -1866,7 +1873,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
         key={i}
         x={labelX}
         y={labelYs[i]}
-        fill={activeIndex !== null ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)"}
+        fill="rgba(255,255,255,0.55)"
         fontFamily="var(--font-mono), monospace"
         fontSize="9"
         fontWeight="600"
