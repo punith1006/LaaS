@@ -1,26 +1,167 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: #ffffff;
+  --color-foreground: #171717;
+  --font-sans: "Suisse Intl", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Suisse Intl Mono", "SF Mono", Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* App shell — Lambda's exact CSS system (from Lambda.ai) */
+:root {
+  /* Lambda Color Tokens */
+  --bgColor-default: #F0EFE2;
+  --bgColor-mild: #E7E6D9;
+  --bgColor-muted: #D7D6CE;
+  --fgColor-default: #0B0B0B;
+  --fgColor-mild: #2E2E2E;
+  --fgColor-muted: #636363;
+  --fgColor-inverse: #F0EFE2;
+  --borderColor-default: #BFBEB4;
+  --fgColor-accent: #6236F4;
+
+  /* Info/Alert colors */
+  --bgColor-info: #cedeff;
+  --fgColor-info: #3a73ff;
+  --borderColor-info: #3a73ff;
+
+  /* Info Section (for info banners) */
+  --bgColor-info-section: #e6f0ff;
+  --bgColor-warning-section: #fff4e5;
+  --borderColor-warning: #d98b0c;
+  --fgColor-warning: #d98b0c;
+  --fgColor-critical: #e70000;
+
+  /* Shell */
+  --shell-bg: var(--bgColor-default);
+  --shell-border: var(--borderColor-default);
+  --shell-header-height: 72px;  /* Scaled up header */
+  --shell-sidebar-width: 256px;  /* Lambda's sidebar width */
+
+  /* Font Sizes - scaled up for better visibility at 100% zoom */
+  --text-xs: 0.8125rem;    /* 13px - micro labels */
+  --text-sm: 0.9375rem;    /* 15px - table headers */
+  --text-base: 1.0625rem;   /* 17px - body text (slightly larger) */
+  --text-lg: 1.375rem;     /* 22px - subheadings */
+  --text-xl: 1.875rem;     /* 30px - page titles */
+  --text-2xl: 2.5rem;      /* 40px - h1 */
+
+  /* Letter Spacing */
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;
+  --tracking-label: 0.06em;  /* Uppercase labels */
+}
+
+html {
+  /* Standard 16px base */
+  font-size: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bgColor-default);
+  color: var(--fgColor-default);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark mode toggle class - applies to root/html */
+.dark body,
+.dark {
+  --shell-bg: #0B0B0B;
+  --shell-border: #2E2E2E;
+  /* Dark mode tokens */
+  --bgColor-default: #0B0B0B;
+  --bgColor-mild: #161616;
+  --bgColor-muted: #2E2E2E;
+  --fgColor-default: #F0EFE2;
+  --fgColor-mild: #BFBEB4;
+  --fgColor-muted: #818178;
+  --fgColor-inverse: #0B0B0B;
+  --borderColor-default: #2E2E2E;
+  --fgColor-accent: #7565F6;
+
+  /* Info/Alert colors - dark theme */
+  --bgColor-info: #00094a;
+  --fgColor-info: #6c9aff;
+  --borderColor-info: #6c9aff;
+
+  /* Info Section - dark theme */
+  --bgColor-info-section: #00094a;
+  --bgColor-warning-section: #3d2800;
+  --borderColor-warning: #fda422;
+  --fgColor-warning: #fda422;
+  --fgColor-critical: #ff6742;
+}
+
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease;
+}
+
+/* Header nav link hover effect - Lambda style */
+header button:hover {
+  opacity: 0.8;
+}
+
+/* Status indicator hover */
+header > div:hover {
+  opacity: 0.8;
+}
+
+/* Utilitarian minimalism: uppercase labels with wide letter-spacing */
+.label-upper {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  font-weight: 500;
+}
+
+/* Status text — slightly smaller, technical feel */
+.text-status {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+}
+
+.auth-flow {
+  font-family: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Policy modal rich text */
+.policy-content h3 {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #000000;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.policy-content h3:first-child {
+  margin-top: 0;
+}
+
+.policy-content p {
+  margin-bottom: 0.625rem;
+}
+
+.policy-content ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.625rem;
+}
+
+.policy-content li {
+  margin-bottom: 0.375rem;
+}
+
+/* Hide scrollbar but keep scrollable */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
