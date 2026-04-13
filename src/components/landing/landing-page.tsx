@@ -1773,21 +1773,33 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
         )}
 
         {/* Slanted Text on Left Face */}
-        <text
-          x={0}
-          y={0}
-          fill="rgba(255,255,255,0.85)"
-          fontFamily="var(--font-mono), monospace"
-          fontSize="12.5"
-          fontWeight="700"
-          letterSpacing="0.04em"
-          dominantBaseline="middle"
-          textAnchor="middle"
-          transform={`translate(${(c.left.x + c.bottom.x) / 2}, ${(c.left.y + c.bottom.y) / 2 + DEPTH / 2 + 1.5}) skewY(${angleDeg})`}
-          style={{ transition: "fill 0.4s ease", pointerEvents: "none" }}
-        >
-          {blockLabels[idx]}
-        </text>
+        {(() => {
+          const label = blockLabels[idx];
+          // Face diagonal length for auto-fit
+          const faceLen = Math.sqrt(Math.pow(c.bottom.x - c.left.x, 2) + Math.pow(c.bottom.y - c.left.y, 2));
+          const baseFontSize = 10;
+          const charWidth = 6; // approximate monospace char width at baseFontSize
+          const estimatedWidth = label.length * charWidth;
+          const usable = faceLen * 0.85; // 85% of face length for padding
+          const fontSize = estimatedWidth > usable ? baseFontSize * (usable / estimatedWidth) : baseFontSize;
+          return (
+            <text
+              x={0}
+              y={0}
+              fill="rgba(255,255,255,0.9)"
+              fontFamily="var(--font-mono), monospace"
+              fontSize={fontSize}
+              fontWeight="700"
+              letterSpacing="0.05em"
+              dominantBaseline="middle"
+              textAnchor="middle"
+              transform={`translate(${(c.left.x + c.bottom.x) / 2}, ${(c.left.y + c.bottom.y) / 2 + DEPTH / 2 + 1.3}) skewY(${angleDeg})`}
+              style={{ pointerEvents: "none" }}
+            >
+              {label}
+            </text>
+          );
+        })()}
       </g>
     );
   };
