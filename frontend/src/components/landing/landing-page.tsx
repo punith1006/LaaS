@@ -1562,8 +1562,8 @@ const capabilityItems = [
     title: "On-Demand GPU Infrastructure.",
     subtitle: "Bare-metal performance. Zero hardware setup.",
     bullets: [
-      <>Instantly provision <span style={{ color: ACCENT }}>fractional slices</span> or full multi-GPU environments.</>,
-      <>Pre-warmed configurations guarantee <span style={{ color: ACCENT }}>instant boot times</span> for training workloads.</>,
+      <>Instantly provision <span style={{ color: ACCENT }}>fractional GPU slices</span> or an entire dedicated RTX 5090 node.</>,
+      <>Containerized architecture guarantees <span style={{ color: ACCENT }}>sub-30 second boot times</span> for your workloads.</>,
       <>Strict <span style={{ color: ACCENT }}>resource isolation</span> ensures peak computational consistency.</>
     ]
   },
@@ -1599,11 +1599,215 @@ const capabilityItems = [
   }
 ];
 
+// ─── Isometric Stack Asset ──────────────────────────────────────────────────────
+function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
+  // Layer labels that appear on the face of each plate (isometric angled text)
+  const faceLabels = ["GPU compute", "Stateful storage", "GUI & CLI access", "Expert mentorship"];
+  // Right-side category labels
+  const sideLabels = ["STUDENTS", "RESEARCHERS", "TEAMS", "PRODUCTION"];
+
+  // Isometric geometry constants
+  const CX = 220;           // Center X of the iso stack
+  const BASE_Y = 60;        // Y of the topmost layer's center
+  const DX = 130;           // Half-width of diamond (X axis)
+  const DY = 55;            // Half-height of diamond (Y axis)
+  const DEPTH = 16;         // Thickness of each plate
+  const GAP = 80;           // Vertical spacing between layer centers
+  const ACTIVE_ACCENT = "#4f8ef7";
+
+  // Helper: get the 4 corners of an isometric diamond at a given center
+  const isoCorners = (cy: number) => ({
+    top: { x: CX, y: cy - DY },
+    right: { x: CX + DX, y: cy },
+    bottom: { x: CX, y: cy + DY },
+    left: { x: CX - DX, y: cy },
+  });
+
+  // Helper: top face path
+  const topFace = (cy: number) => {
+    const c = isoCorners(cy);
+    return `M ${c.top.x} ${c.top.y} L ${c.right.x} ${c.right.y} L ${c.bottom.x} ${c.bottom.y} L ${c.left.x} ${c.left.y} Z`;
+  };
+
+  // Helper: left depth face
+  const leftFace = (cy: number) => {
+    const c = isoCorners(cy);
+    return `M ${c.left.x} ${c.left.y} L ${c.bottom.x} ${c.bottom.y} L ${c.bottom.x} ${c.bottom.y + DEPTH} L ${c.left.x} ${c.left.y + DEPTH} Z`;
+  };
+
+  // Helper: right depth face
+  const rightFace = (cy: number) => {
+    const c = isoCorners(cy);
+    return `M ${c.bottom.x} ${c.bottom.y} L ${c.right.x} ${c.right.y} L ${c.right.x} ${c.right.y + DEPTH} L ${c.bottom.x} ${c.bottom.y + DEPTH} Z`;
+  };
+
+  // Draw internal grid pattern on active layer
+  const drawGrid = (cy: number) => {
+    const c = isoCorners(cy);
+    const gridLines: React.ReactNode[] = [];
+    const steps = 6;
+    for (let i = 1; i < steps; i++) {
+      const f = i / steps;
+      // Lines from left-top edge to right-bottom edge (parallel to right side)
+      const x1 = c.top.x + (c.left.x - c.top.x) * f;
+      const y1 = c.top.y + (c.left.y - c.top.y) * f;
+      const x2 = c.right.x + (c.bottom.x - c.right.x) * f;
+      const y2 = c.right.y + (c.bottom.y - c.right.y) * f;
+      gridLines.push(<line key={`ga-${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={ACTIVE_ACCENT} strokeWidth="0.5" opacity="0.35" />);
+      // Lines from top-right edge to bottom-left edge (parallel to left side)
+      const x3 = c.top.x + (c.right.x - c.top.x) * f;
+      const y3 = c.top.y + (c.right.y - c.top.y) * f;
+      const x4 = c.left.x + (c.bottom.x - c.left.x) * f;
+      const y4 = c.left.y + (c.bottom.y - c.left.y) * f;
+      gridLines.push(<line key={`gb-${i}`} x1={x3} y1={y3} x2={x4} y2={y4} stroke={ACTIVE_ACCENT} strokeWidth="0.5" opacity="0.35" />);
+    }
+    return gridLines;
+  };
+
+  // Draw dots at grid intersections for the active layer
+  const drawDots = (cy: number) => {
+    const c = isoCorners(cy);
+    const dots: React.ReactNode[] = [];
+    const steps = 6;
+    for (let i = 1; i < steps; i++) {
+      for (let j = 1; j < steps; j++) {
+        const fi = i / steps;
+        const fj = j / steps;
+        // Bilinear interpolation on the isometric diamond
+        const x = c.top.x + (c.right.x - c.top.x) * fj + (c.left.x - c.top.x) * fi;
+        const y = c.top.y + (c.right.y - c.top.y) * fj + (c.left.y - c.top.y) * fi;
+        dots.push(<circle key={`d-${i}-${j}`} cx={x} cy={y} r="1.2" fill="rgba(255,255,255,0.25)" />);
+      }
+    }
+    return dots;
+  };
+
+  // Draw concentric ellipse pattern (for alternating active layers)
+  const drawEllipsePattern = (cy: number) => (
+    <g>
+      <ellipse cx={CX} cy={cy} rx={DX * 0.55} ry={DY * 0.55} stroke={ACTIVE_ACCENT} strokeWidth="0.8" fill="none" opacity="0.5" />
+      <ellipse cx={CX} cy={cy} rx={DX * 0.35} ry={DY * 0.35} stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" fill="none" strokeDasharray="3 3" />
+      <ellipse cx={CX} cy={cy} rx={DX * 0.15} ry={DY * 0.15} stroke="rgba(255,255,255,0.6)" strokeWidth="0.5" fill="rgba(255,255,255,0.03)" />
+      <circle cx={CX} cy={cy} r="2.5" fill="#fff" />
+    </g>
+  );
+
+  // Vertical dashed bounding lines connecting corners across the full stack
+  const drawBoundingLines = () => {
+    const topCy = BASE_Y;
+    const bottomCy = BASE_Y + 3 * GAP;
+    const cTop = isoCorners(topCy);
+    const cBot = isoCorners(bottomCy);
+    return (
+      <g stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="3 5">
+        <line x1={cTop.top.x} y1={cTop.top.y} x2={cBot.top.x} y2={cBot.top.y + DEPTH} />
+        <line x1={cTop.left.x} y1={cTop.left.y} x2={cBot.left.x} y2={cBot.left.y + DEPTH} />
+        <line x1={cTop.right.x} y1={cTop.right.y} x2={cBot.right.x} y2={cBot.right.y + DEPTH} />
+        <line x1={cTop.bottom.x} y1={cTop.bottom.y} x2={cBot.bottom.x} y2={cBot.bottom.y + DEPTH} />
+      </g>
+    );
+  };
+
+  // Draw a single layer
+  const drawLayer = (idx: number) => {
+    const cy = BASE_Y + idx * GAP;
+    const isActive = activeIndex === idx;
+    const c = isoCorners(cy);
+
+    const wireStroke = isActive ? ACTIVE_ACCENT : "rgba(255,255,255,0.12)";
+    const topFill = isActive ? "rgba(10, 18, 30, 0.9)" : "transparent";
+    const lFill = isActive ? "rgba(30, 50, 90, 0.5)" : "rgba(255,255,255,0.015)";
+    const rFill = isActive ? "rgba(15, 25, 50, 0.5)" : "rgba(255,255,255,0.008)";
+
+    // RGB corner accent dots (only on active)
+    const cornerAccents = isActive ? (
+      <g>
+        <circle cx={c.top.x} cy={c.top.y} r="2" fill="#ff3b3b" opacity="0.8" />
+        <circle cx={c.left.x} cy={c.left.y} r="2" fill="#3bff3b" opacity="0.8" />
+        <circle cx={c.right.x} cy={c.right.y} r="2" fill="#3b3bff" opacity="0.8" />
+        <circle cx={c.bottom.x} cy={c.bottom.y} r="2" fill="#ff3bff" opacity="0.8" />
+      </g>
+    ) : null;
+
+    return (
+      <g key={idx} style={{ transition: "all 0.5s ease" }}>
+        {/* Depth faces (drawn first, behind the top) */}
+        <path d={leftFace(cy)} fill={lFill} stroke={wireStroke} strokeWidth={isActive ? "1.2" : "0.8"} style={{ transition: "all 0.5s ease" }} />
+        <path d={rightFace(cy)} fill={rFill} stroke={wireStroke} strokeWidth={isActive ? "1.2" : "0.8"} style={{ transition: "all 0.5s ease" }} />
+
+        {/* Top face */}
+        <path d={topFace(cy)} fill={topFill} stroke={wireStroke} strokeWidth={isActive ? "1.5" : "0.8"} style={{ transition: "all 0.5s ease" }} />
+
+        {/* Internal pattern on active layer */}
+        {isActive && (idx % 2 === 0 ? (
+          <g>
+            {drawGrid(cy)}
+            {drawDots(cy)}
+            <circle cx={CX} cy={cy} r="3" fill="#fff" filter="drop-shadow(0 0 8px rgba(79,142,247,0.8))" />
+          </g>
+        ) : (
+          drawEllipsePattern(cy)
+        ))}
+
+        {/* Corner accents */}
+        {cornerAccents}
+
+        {/* Angled text label on the face */}
+        <text
+          x={CX - 10} y={cy + 5}
+          fill={isActive ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.2)"}
+          fontFamily="var(--font-mono), monospace"
+          fontSize="10"
+          fontWeight="600"
+          letterSpacing="0.04em"
+          transform={`rotate(-30, ${CX - 10}, ${cy + 5})`}
+          style={{ transition: "fill 0.5s ease" }}
+        >
+          {faceLabels[idx]}
+        </text>
+
+        {/* Dashed connector line to right-side label */}
+        <line
+          x1={c.right.x} y1={c.right.y}
+          x2={c.right.x + 60} y2={c.right.y}
+          stroke={isActive ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)"}
+          strokeWidth="1"
+          strokeDasharray="2 3"
+          style={{ transition: "stroke 0.5s ease" }}
+        />
+
+        {/* Right-side category label */}
+        <text
+          x={c.right.x + 68} y={c.right.y + 4}
+          fill={isActive ? "#fff" : "rgba(255,255,255,0.25)"}
+          fontFamily="var(--font-mono), monospace"
+          fontSize="9"
+          fontWeight={isActive ? "700" : "500"}
+          letterSpacing="0.1em"
+          style={{ transition: "fill 0.5s ease" }}
+        >
+          {sideLabels[idx]}
+        </text>
+      </g>
+    );
+  };
+
+  return (
+    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <svg viewBox="0 -10 530 420" style={{ width: "100%", height: "100%", overflow: "visible" }}>
+        {drawBoundingLines()}
+        {/* Draw bottom layers first, then top layers on top */}
+        {[3, 2, 1, 0].map(idx => drawLayer(idx))}
+      </svg>
+    </div>
+  );
+}
+
 function CapabilitiesSection() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section className="reveal-on-scroll" style={{ padding: "48px 48px 100px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
+    <section className="reveal-on-scroll" style={{ padding: "48px 48px 24px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
 
         {/* Header */}
@@ -1682,11 +1886,9 @@ function CapabilitiesSection() {
             })}
           </div>
 
-          {/* Right: Asset Section (Placeholder) */}
-          <div style={{ flex: "1 1 400px", minHeight: 400, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-            <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.02)", borderRadius: 16, border: "1px dashed var(--borderColor-default)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {/* Empty asset placeholder space per request */}
-            </div>
+          {/* Right: Isometric Stack Asset */}
+          <div style={{ flex: "1 1 400px", minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+            <IsometricStackAsset activeIndex={openIndex} />
           </div>
 
         </div>
@@ -1773,7 +1975,7 @@ export function LandingPage() {
     { q: "What is a Stateful Desktop session?", a: "A Stateful Desktop is a full-featured remote Linux desktop streamed directly to your browser — no downloads or plugins needed. All your files, installed packages, and project work are automatically saved to your personal storage and restored on every future session, just like picking up where you left off on your own machine." },
     { q: "What is an Ephemeral session and who should use it?", a: "Ephemeral sessions provide a lightweight, browser-based compute environment (Jupyter Notebook, VS Code, or SSH) for temporary workloads. Compute data is cleared when the session ends, but your saved files remain intact. This mode is ideal for quick experiments, inference jobs, or users accessing the platform without university affiliation." },
     { q: "How is my data isolated from other users?", a: "Your personal storage is provisioned with a hard quota and is inaccessible to any other user. Each session runs inside a fully isolated compute environment — GPU memory, CPU, RAM, and storage are all enforced at a system level to guarantee complete separation between concurrent users." },
-    { q: "Can I use MATLAB, Blender, or PyTorch without any setup?", a: "Yes. All sessions start from a pre-configured environment with MATLAB, Python, Blender, and a full suite of AI and development tools already installed. Simply launch a session and your software is ready to use immediately — GPU-accelerated on GPU-tier plans." },
+    { q: "Can I use MATLAB, Blender, or PyTorch without any setup?", a: "It depends on the template you select. If a pre-configured template with these tools is available, you're ready to go instantly. Alternatively, you can launch a fresh instance and fully customize it with any software you need, no restrictions." },
     { q: "How does billing work?", a: "LaaS uses a wallet-based credit system with per-hour billing charge cycles. Active sessions burn credits at the configured compute rate. Paused sessions only incur minimal storage fees. You can set spend limits and view a real-time daily spend chart on your dashboard." },
     { q: "What happens when a session is idle?", a: "Sessions that exceed a configurable idle threshold are automatically terminated to conserve resources. Files saved to your persistent storage are always preserved regardless of session termination status." },
     { q: "What happens when I end or delete a session?", a: "When a session ends, the temporary compute environment is permanently torn down — any in-session system changes are discarded. However, all files in your personal storage are always preserved. Compute charges stop immediately; any applicable storage fees continue based on your subscription." },
