@@ -1605,19 +1605,19 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   const sideLabels = ["AI DEVELOPERS", "ENTERPRISE", "SUPERINTELLIGENCE"];
 
   const CX = 200;
-  const BASE_Y = 130;
+  const BASE_Y = 110;
   const DX = 160;
   const DY = 80;
   const DEPTH = 22;
-  
-  const tightGap = 55;
-  const expandedGap = 110;
+
+  const tightGap = 36;
+  const expandedGap = 100;
 
   // Calculate gap index
   const gapIndex = activeIndex === 0 ? 0 : activeIndex === 1 ? 1 : 2;
 
   // The Y position for the right-side labels (fixed positions)
-  const labelYs = [180, 270, 360];
+  const labelYs = [170, 225, 280];
 
   const getCy = (idx: number) => {
     if (activeIndex === null) return BASE_Y + idx * (tightGap + 20);
@@ -1656,7 +1656,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
       const x2 = c.right.x + (c.bottom.x - c.right.x) * f;
       const y2 = c.right.y + (c.bottom.y - c.right.y) * f;
       elements.push(<line key={`h${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(255,255,255,0.15)" strokeWidth="1" />);
-      
+
       const x3 = c.top.x + (c.right.x - c.top.x) * f;
       const y3 = c.top.y + (c.right.y - c.top.y) * f;
       const x4 = c.left.x + (c.bottom.x - c.left.x) * f;
@@ -1666,8 +1666,8 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     // Dots
     for (let i = 1; i < steps; i++) {
       for (let j = 1; j < steps; j++) {
-        const x = c.top.x + (c.right.x - c.top.x) * (j/steps) + (c.left.x - c.top.x) * (i/steps);
-        const y = c.top.y + (c.right.y - c.top.y) * (j/steps) + (c.left.y - c.top.y) * (i/steps);
+        const x = c.top.x + (c.right.x - c.top.x) * (j / steps) + (c.left.x - c.top.x) * (i / steps);
+        const y = c.top.y + (c.right.y - c.top.y) * (j / steps) + (c.left.y - c.top.y) * (i / steps);
         const isCenter = i === 2 && j === 2;
         elements.push(<circle key={`d${i}${j}`} cx={x} cy={y} r="2" fill={isCenter ? "#fff" : "rgba(255,255,255,0.6)"} />);
       }
@@ -1709,8 +1709,8 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
       <g>
         <ellipse cx={CX - offset} cy={cy} rx={rx} ry={ry} stroke="#4f8ef7" strokeWidth="1.5" fill="rgba(79,142,247,0.05)" />
         <ellipse cx={CX + offset} cy={cy} rx={rx} ry={ry} stroke="#fff" strokeWidth="1.5" fill="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
-        <circle cx={CX} cy={cy - ry*0.6} r="3" fill="#3bff3b" />
-        <circle cx={CX} cy={cy + ry*0.6} r="3" fill="#ff3b3b" />
+        <circle cx={CX} cy={cy - ry * 0.6} r="3" fill="#3bff3b" />
+        <circle cx={CX} cy={cy + ry * 0.6} r="3" fill="#ff3b3b" />
         {/* Intersection dots approximation */}
         <circle cx={CX} cy={cy} r="1" fill="#fff" />
         <circle cx={CX - 8} cy={cy} r="1" fill="#fff" />
@@ -1731,7 +1731,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     const topFill = isActive ? "rgba(10, 10, 15, 0.95)" : "rgba(5, 5, 8, 0.8)";
     const leftFill = "rgba(15, 15, 20, 0.95)";
     const rightFill = "rgba(8, 8, 12, 0.95)";
-    
+
     const strokeBase = isActive ? "url(#activeBorder)" : "rgba(255,255,255,0.15)";
     const strokeWidth = isActive ? "2" : "1";
 
@@ -1740,7 +1740,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
         {/* Depth Faces */}
         <polygon points={pts.leftFace} fill={leftFill} stroke={strokeBase} strokeWidth={strokeWidth} style={{ transition: "all 0.6s ease" }} />
         <polygon points={pts.rightFace} fill={rightFill} stroke={strokeBase} strokeWidth={strokeWidth} style={{ transition: "all 0.6s ease" }} />
-        
+
         {/* Top Face */}
         <polygon points={pts.topFace} fill={topFill} stroke={strokeBase} strokeWidth={strokeWidth} style={{ transition: "all 0.6s ease" }} />
 
@@ -1774,15 +1774,17 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
 
         {/* Slanted Text on Left Face */}
         <text
-          x={c.left.x + 15}
-          y={c.left.y + DEPTH - 4}
-          fill={isActive ? "#fff" : "rgba(255,255,255,0.4)"}
+          x={0}
+          y={0}
+          fill={isActive ? "#fff" : "rgba(255,255,255,0.45)"}
           fontFamily="var(--font-mono), monospace"
-          fontSize="14"
+          fontSize="9.2"
           fontWeight="700"
-          letterSpacing="0.02em"
-          transform={`rotate(${angleDeg}, ${c.left.x + 15}, ${c.left.y + DEPTH - 4})`}
-          style={{ transition: "fill 0.4s ease" }}
+          letterSpacing="0.05em"
+          dominantBaseline="middle"
+          textAnchor="middle"
+          transform={`translate(${(c.left.x + c.bottom.x) / 2}, ${(c.left.y + c.bottom.y) / 2 + DEPTH / 2 + 1.3}) skewY(${angleDeg})`}
+          style={{ transition: "fill 0.4s ease", pointerEvents: "none" }}
         >
           {blockLabels[idx]}
         </text>
@@ -1792,15 +1794,15 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
 
   const drawConnections = () => {
     if (activeIndex === null) return null;
-    
+
     const activeCy = getCy(activeIndex);
     const ac = isoCorners(activeCy);
 
     // 3 connector origin points on the top-right back edge
-    const p1 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.4, y: ac.top.y + (ac.right.y - ac.top.y) * 0.4 };
-    const p2 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.6, y: ac.top.y + (ac.right.y - ac.top.y) * 0.6 };
-    const p3 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.8, y: ac.top.y + (ac.right.y - ac.top.y) * 0.8 };
-    
+    const p1 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.65, y: ac.top.y + (ac.right.y - ac.top.y) * 0.65 };
+    const p2 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.75, y: ac.top.y + (ac.right.y - ac.top.y) * 0.75 };
+    const p3 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.85, y: ac.top.y + (ac.right.y - ac.top.y) * 0.85 };
+
     const origins = [p1, p2, p3];
 
     return (
@@ -1808,7 +1810,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
         {origins.map((origin, i) => (
           <path
             key={i}
-            d={`M ${origin.x} ${origin.y} L ${origin.x} ${labelYs[i]} L ${CX + DX + 60} ${labelYs[i]}`}
+            d={`M ${origin.x} ${origin.y} L ${origin.x} ${labelYs[i]} L ${CX + DX + 6} ${labelYs[i]}`}
             fill="none"
             stroke="rgba(255,255,255,0.25)"
             strokeWidth="1.5"
@@ -1823,11 +1825,11 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     return sideLabels.map((label, i) => (
       <text
         key={i}
-        x={CX + DX + 70}
+        x={CX + DX + 10}
         y={labelYs[i] + 4}
         fill={activeIndex !== null ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.15)"}
         fontFamily="var(--font-mono), monospace"
-        fontSize="10"
+        fontSize="8"
         fontWeight="600"
         letterSpacing="0.1em"
         style={{ transition: "fill 0.4s ease" }}
@@ -1838,8 +1840,8 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   };
 
   return (
-    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 40, pointerEvents: "none" }}>
-      <svg viewBox="0 0 600 500" style={{ width: "120%", height: "120%", overflow: "visible" }}>
+    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", overflow: "hidden" }}>
+      <svg viewBox="0 0 500 500" style={{ width: "115%", height: "115%", overflow: "visible", transform: "translateX(2%)" }}>
         <defs>
           <linearGradient id="activeBorder" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#ff3366" />
@@ -1853,7 +1855,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
             }
           `}</style>
         </defs>
-        
+
         {drawConnections()}
         {drawRightLabels()}
         {/* Draw layers from bottom to top for correct z-indexing */}
@@ -1876,7 +1878,7 @@ function CapabilitiesSection() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7" /></svg>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-default)", fontWeight: 500 }}>Capabilities</span>
           </div>
-          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 3.5vw, 3.2rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
+          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.65rem, 3.1vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
             You bring the ideas. We provide the <span style={{ color: ACCENT }}>compute</span>.
           </h2>
           <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.6 }}>
@@ -1896,43 +1898,43 @@ function CapabilitiesSection() {
                 <div key={idx} style={{ borderBottom: "1px solid var(--borderColor-default)" }}>
                   {/* Toggle Button */}
                   <button onClick={() => setOpenIndex(isOpen ? null : idx)}
-                    style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "32px 0", cursor: "pointer", display: "flex", gap: 20, alignItems: "flex-start" }}>
+                    style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "26px 0", cursor: "pointer", display: "flex", gap: 20, alignItems: "flex-start" }}>
 
                     {/* Numbering */}
-                    <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "1.3rem", fontWeight: 600, color: isOpen ? ACCENT : "var(--fgColor-muted)", transition: "color 0.2s" }}>
+                    <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "1.15rem", fontWeight: 600, color: isOpen ? ACCENT : "var(--fgColor-muted)", transition: "color 0.2s" }}>
                       {item.num} <span style={{ color: "var(--fgColor-muted)" }}>/</span>
                     </span>
 
                     {/* Title */}
                     <div style={{ flex: 1 }}>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: "1.7rem", fontWeight: 700, color: "var(--fgColor-default)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: "1.55rem", fontWeight: 700, color: "var(--fgColor-default)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                         {item.title}
                       </span>
                     </div>
 
                     {/* Plus / Minus */}
-                    <span style={{ fontFamily: "var(--font-mono)", color: "var(--fgColor-muted)", fontSize: "1.4rem", fontWeight: 400, transform: isOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease" }}>
+                    <span style={{ fontFamily: "var(--font-mono)", color: "var(--fgColor-muted)", fontSize: "1.25rem", fontWeight: 400, transform: isOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease" }}>
                       {isOpen ? "−" : "+"}
                     </span>
                   </button>
 
                   {/* Expanded Content */}
                   <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)" /* padding removed so we start flush left with numeric */ }}>
-                    <div style={{ paddingBottom: 40, paddingLeft: 12 /* Centers the vertical line cleanly under the numeric '0' */ }}>
+                    <div style={{ paddingBottom: 30, paddingLeft: 12 /* Centers the vertical line cleanly under the numeric '0' */ }}>
 
                       {/* Bent Pointer & Subtitle */}
-                      <div style={{ position: "relative", marginBottom: 32, paddingLeft: 53 /* 53 + 12 offset = 65 total offset, perfectly aligning text with the title string above */ }}>
+                      <div style={{ position: "relative", marginBottom: 24, paddingLeft: 53 /* 53 + 12 offset = 65 total offset, perfectly aligning text with the title string above */ }}>
                         {/* CSS Drawing of the Bent Pointer */}
-                        <div style={{ position: "absolute", top: -30, left: 0, width: 35 /* 53 padding - 35 width = 18px gap before text */, height: 43, borderLeft: "1.5px solid rgba(255,255,255,0.7)", borderBottom: "1.5px solid rgba(255,255,255,0.7)" }} />
-                        <p style={{ margin: 0, padding: 0, fontFamily: "var(--font-mono), monospace", fontSize: "0.9rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
+                        <div style={{ position: "absolute", top: -30, left: 0, width: 35 /* 53 padding - 35 width = 18px gap before text */, height: 35, borderLeft: "1.5px solid rgba(255,255,255,0.7)", borderBottom: "1.5px solid rgba(255,255,255,0.7)" }} />
+                        <p style={{ margin: 0, padding: 0, fontFamily: "var(--font-mono), monospace", fontSize: "0.82rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
                           {item.subtitle}
                         </p>
                       </div>
 
                       {/* Bullets */}
-                      <ul style={{ listStyle: "none", padding: 0, paddingLeft: 53, margin: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+                      <ul style={{ listStyle: "none", padding: 0, paddingLeft: 53, margin: 0, display: "flex", flexDirection: "column", gap: 12 }}>
                         {item.bullets.map((bullet, i) => (
-                          <li key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", fontFamily: "var(--font-mono), monospace", fontSize: "0.85rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
+                          <li key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", fontFamily: "var(--font-mono), monospace", fontSize: "0.8rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
                             <span style={{ color: "var(--fgColor-default)", fontWeight: 700 }}>+</span>
                             <span>{bullet}</span>
                           </li>
@@ -1947,7 +1949,7 @@ function CapabilitiesSection() {
           </div>
 
           {/* Right: Isometric Stack Asset */}
-          <div style={{ flex: "1 1 400px", minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+          <div style={{ flex: "1 1 400px", minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", alignSelf: "flex-start" }}>
             <IsometricStackAsset activeIndex={openIndex} />
           </div>
 
