@@ -1601,8 +1601,8 @@ const capabilityItems = [
 
 // ─── Isometric Stack Asset ──────────────────────────────────────────────────────
 function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
-  const blockLabels = ["Purpose-built datacenters", "AI infrastructure", "Managed services", "Co-engineering"];
-  const sideLabels = ["AI DEVELOPERS", "ENTERPRISE", "SUPERINTELLIGENCE"];
+  const blockLabels = ["GPU compute layer", "Persistent storage", "Access & interface", "Expert support"];
+  const sideLabels = ["LEARNERS", "BUILDERS", "INNOVATORS"];
 
   const CX = 200;
   const BASE_Y = 110;
@@ -1613,16 +1613,23 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   const tightGap = 36;
   const expandedGap = 100;
 
-  // The Y position for the right-side labels (fixed positions)
-  const labelYs = [170, 225, 280];
-
-  const getCy = (idx: number) => {
+  function getCy(idx: number) {
     if (activeIndex === null) return BASE_Y + idx * (tightGap + 20);
     // For first item (index 0): no expansion gap, just highlight — keep default spacing
     if (activeIndex === 0) return BASE_Y + idx * (tightGap + 20);
     // For items 1-3: gap opens ABOVE the active slab
     return BASE_Y + idx * tightGap + (idx >= activeIndex ? expandedGap : 0);
-  };
+  }
+
+  // Each side label marks a tier boundary between slab groups
+  // Label 0 → between slabs 0 and 1
+  // Label 1 → between slabs 2 and 3
+  // Label 2 → below slab 3
+  const labelYs = [
+    (getCy(0) + getCy(1)) / 2 + DEPTH / 2,
+    (getCy(2) + getCy(3)) / 2 + DEPTH / 2,
+    getCy(3) + DEPTH + 20,
+  ];
 
   const isoCorners = (cy: number) => ({
     top: { x: CX, y: cy - DY },
@@ -1805,46 +1812,55 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   };
 
   const drawConnections = () => {
-    if (activeIndex === null) return null;
-
-    const activeCy = getCy(activeIndex);
-    const ac = isoCorners(activeCy);
-
-    // 3 connector origin points on the top-right back edge
-    const p1 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.65, y: ac.top.y + (ac.right.y - ac.top.y) * 0.65 };
-    const p2 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.75, y: ac.top.y + (ac.right.y - ac.top.y) * 0.75 };
-    const p3 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.85, y: ac.top.y + (ac.right.y - ac.top.y) * 0.85 };
-
-    const origins = [p1, p2, p3];
+    // Vertical dotted lines that OVERLAY the south-east (right) face of the slabs.
+    // Each line runs from slab 0 level down to its label Y, ON the right face.
+    // The right face spans X from CX (bottom corner) to CX+DX (right corner).
+    // Lines are staggered across the face at ~65%, 75%, 85% of the face width.
+    const lineXs = [CX + DX * 0.62, CX + DX * 0.74, CX + DX * 0.86];
+    const startY = getCy(0) + DY * 0.38; // start near top of right face area
+    const labelX = CX + DX + 10; // labels sit just past the right corner
+    const opacity = activeIndex !== null ? 0.22 : 0.1;
+    const stroke = `rgba(255,255,255,${opacity})`;
+    const transition = "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)";
 
     return (
-      <g style={{ opacity: 0, animation: "fadeIn 0.5s forwards 0.3s" }}>
-        {origins.map((origin, i) => (
-          <path
-            key={i}
-            d={`M ${origin.x} ${origin.y} L ${origin.x} ${labelYs[i]} L ${CX + DX + 6} ${labelYs[i]}`}
-            fill="none"
-            stroke="rgba(255,255,255,0.25)"
-            strokeWidth="1.5"
-            strokeDasharray="2 4"
-          />
+      <g>
+        {labelYs.map((ly, i) => (
+          <g key={i}>
+            {/* Vertical dotted line running down the right face */}
+            <line
+              x1={lineXs[i]} y1={startY}
+              x2={lineXs[i]} y2={ly}
+              stroke={stroke} strokeWidth="1" strokeDasharray="2 4"
+              style={{ transition }}
+            />
+            {/* Short horizontal stub from the line out to the label */}
+            <line
+              x1={lineXs[i]} y1={ly}
+              x2={labelX - 2} y2={ly}
+              stroke={stroke} strokeWidth="1" strokeDasharray="2 4"
+              style={{ transition }}
+            />
+          </g>
         ))}
       </g>
     );
   };
 
   const drawRightLabels = () => {
+    const labelX = CX + DX + 10;
     return sideLabels.map((label, i) => (
       <text
         key={i}
-        x={CX + DX + 10}
-        y={labelYs[i] + 4}
-        fill={activeIndex !== null ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.15)"}
+        x={labelX}
+        y={labelYs[i]}
+        fill={activeIndex !== null ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)"}
         fontFamily="var(--font-mono), monospace"
-        fontSize="8"
+        fontSize="9"
         fontWeight="600"
-        letterSpacing="0.1em"
-        style={{ transition: "fill 0.4s ease" }}
+        letterSpacing="0.14em"
+        dominantBaseline="middle"
+        style={{ transition: "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}
       >
         {label}
       </text>
@@ -1868,10 +1884,11 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
           `}</style>
         </defs>
 
-        {drawConnections()}
-        {drawRightLabels()}
         {/* Draw layers from bottom to top for correct z-indexing */}
         {[3, 2, 1, 0].map(idx => drawLayer(idx))}
+        {/* Connectors and labels render AFTER slabs so they overlay the right face */}
+        {drawConnections()}
+        {drawRightLabels()}
       </svg>
     </div>
   );
@@ -1893,8 +1910,8 @@ function CapabilitiesSection() {
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.65rem, 3.1vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
             You bring the ideas. We provide the <span style={{ color: ACCENT }}>compute</span>.
           </h2>
-          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.6 }}>
-            <span style={{ display: "block", textAlign: "center", marginBottom: "0.5rem" }}>No more fighting hardware limits or expensive cloud bills.</span>
+          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.6, textAlign: "center" }}>
+            <span style={{ display: "block", marginBottom: "0.5rem", color: "#FFD700", fontFamily: "'Courier New', 'Lucida Console', monospace", fontWeight: 700, letterSpacing: "0.04em", fontSize: "1.1rem" }}>No more fighting hardware limits or expensive cloud bills.</span>
             LaaS gives students, researchers, and fast-moving teams instant, pay-as-you-go access to top-tier AI supercomputing.
           </p>
         </div>
