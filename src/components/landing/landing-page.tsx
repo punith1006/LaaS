@@ -952,7 +952,7 @@ const termSequence: TermStep[] = [
     type: "output", lines: [
       { t: "muted", s: "  GPU   RTX 5090 32 GB   vCPU 8   RAM 16 GB" },
       { t: "ok", s: "  Status: ● Running" },
-      { t: "url", s: "  Cost:  ₹65/hr" },
+      { t: "url", s: "  Cost:  ₹210/hr" },
     ]
   },
 ];
@@ -1966,7 +1966,7 @@ function CapabilitiesSection() {
                   </button>
 
                   {/* Expanded Content */}
-                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)", marginTop: -30 /* compensate for inner paddingTop */, paddingTop: 30 /* room for pointer to render without clipping */ }}>
+                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)", marginTop: isOpen ? -30 : 0, paddingTop: isOpen ? 30 : 0 }}>
                     <div style={{ paddingBottom: 30, paddingLeft: 12 }}>
 
                       {/* Bent Pointer & Subtitle */}
@@ -2209,50 +2209,6 @@ export function LandingPage() {
       {/* ── CAPABILITIES ── */}
       <CapabilitiesSection />
 
-      {/* ── HOW IT WORKS ── */}
-
-      <section id="how-it-works" style={{ position: "relative" }}>
-        <InteractiveGrid />
-        <div className="land-section reveal-on-scroll" style={{ position: "relative", zIndex: 1, paddingTop: 40, paddingBottom: 40 }}>
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 12 }}>How It Works</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 4vw, 2.6rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Launch AI Workspaces<br />in Minutes</h2>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
-          </div>
-
-          <style>{`
-            .bento-asymmetric-grid {
-               display: grid;
-               grid-template-columns: repeat(12, 1fr);
-               gap: 16px;
-               max-width: 1040px;
-               margin: 0 auto;
-               padding: 0 20px;
-            }
-            .bento-card-01 { grid-column: span 7; }
-            .bento-card-02 { grid-column: span 5; }
-            .bento-card-03 { grid-column: span 5; }
-            .bento-card-04 { grid-column: span 7; }
-            .bento-card-05 { grid-column: span 12; }
-            
-            @media (max-width: 960px) {
-               .bento-card-01, .bento-card-02, .bento-card-03, .bento-card-04, .bento-card-05 {
-                  grid-column: span 12;
-               }
-            }
-          `}</style>
-          <div className="bento-asymmetric-grid">
-            <div className="reveal-on-scroll bento-card-01" style={{ transitionDelay: "0.1s" }}><BentoStepCard {...steps[0]} /></div>
-            <div className="reveal-on-scroll bento-card-02" style={{ transitionDelay: "0.15s" }}><BentoStepCard {...steps[1]} /></div>
-
-            <div className="reveal-on-scroll bento-card-03" style={{ transitionDelay: "0.2s" }}><BentoStepCard {...steps[2]} /></div>
-            <div className="reveal-on-scroll bento-card-04" style={{ transitionDelay: "0.25s" }}><BentoStepCard {...steps[3]} /></div>
-
-            <div className="reveal-on-scroll bento-card-05" style={{ transitionDelay: "0.3s" }}><BentoStepCard {...steps[4]} /></div>
-          </div>
-        </div>
-      </section>
-
       {/* ── YOUR GPU, YOUR TERMINAL ── */}
       <section className="reveal-on-scroll" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
         <div className="land-section hero-split" style={{ display: "flex", gap: 56, alignItems: "center" }}>
@@ -2306,6 +2262,50 @@ export function LandingPage() {
                 Start Free →
               </Link>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ── */}
+
+      <section id="how-it-works" style={{ position: "relative" }}>
+        <InteractiveGrid />
+        <div className="land-section reveal-on-scroll" style={{ position: "relative", zIndex: 1, paddingTop: 40, paddingBottom: 40 }}>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 12 }}>How It Works</div>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 4vw, 2.6rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Launch AI Workspaces<br />in Minutes</h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
+          </div>
+
+          <style>{`
+            .bento-asymmetric-grid {
+               display: grid;
+               grid-template-columns: repeat(12, 1fr);
+               gap: 16px;
+               max-width: 1040px;
+               margin: 0 auto;
+               padding: 0 20px;
+            }
+            .bento-card-01 { grid-column: span 7; }
+            .bento-card-02 { grid-column: span 5; }
+            .bento-card-03 { grid-column: span 5; }
+            .bento-card-04 { grid-column: span 7; }
+            .bento-card-05 { grid-column: span 12; }
+            
+            @media (max-width: 960px) {
+               .bento-card-01, .bento-card-02, .bento-card-03, .bento-card-04, .bento-card-05 {
+                  grid-column: span 12;
+               }
+            }
+          `}</style>
+          <div className="bento-asymmetric-grid">
+            <div className="reveal-on-scroll bento-card-01" style={{ transitionDelay: "0.1s" }}><BentoStepCard {...steps[0]} /></div>
+            <div className="reveal-on-scroll bento-card-02" style={{ transitionDelay: "0.15s" }}><BentoStepCard {...steps[1]} /></div>
+
+            <div className="reveal-on-scroll bento-card-03" style={{ transitionDelay: "0.2s" }}><BentoStepCard {...steps[2]} /></div>
+            <div className="reveal-on-scroll bento-card-04" style={{ transitionDelay: "0.25s" }}><BentoStepCard {...steps[3]} /></div>
+
+            <div className="reveal-on-scroll bento-card-05" style={{ transitionDelay: "0.3s" }}><BentoStepCard {...steps[4]} /></div>
           </div>
         </div>
       </section>
