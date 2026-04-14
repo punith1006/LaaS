@@ -938,8 +938,8 @@ function Nav({ isDark, onToggle, isAuthenticated, userName }: { isDark: boolean;
         <img src="/images/ksrce-logo.png" alt="KSRCE LaaS" style={{ height: 44, objectFit: "contain", verticalAlign: "middle" }} />
       </a>
       <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
-        {["Features", "How It Works", "Pricing", "FAQ"].map(l => (
-          <a key={l} href={`#${l.toLowerCase().replace(/ /g, "-")}`}
+        {["Features", "How It Works", "Pricing", "FAQ"].map((l, i) => (
+          <a key={l} href={i === 0 ? "#capabilities" : `#${l.toLowerCase().replace(/ /g, "-")}`}
             style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", color: "var(--fgColor-muted)", textDecoration: "none", transition: "color 0.15s" }}
             onMouseEnter={e => (e.currentTarget.style.color = "var(--fgColor-default)")}
             onMouseLeave={e => (e.currentTarget.style.color = "var(--fgColor-muted)")}>
@@ -984,21 +984,12 @@ function Nav({ isDark, onToggle, isAuthenticated, userName }: { isDark: boolean;
             Sign In
           </Link>
         )}
-        {isAuthenticated ? (
-          <Link href="/waitlist"
-            style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: "7px 20px", backgroundColor: ACCENT, borderRadius: 6, border: `1px solid ${ACCENT}`, transition: "all 0.15s", boxShadow: `0 0 20px ${ACCENT_GLOW}` }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = ACCENT_DARK)}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = ACCENT)}>
-            Join Waitlist
-          </Link>
-        ) : (
-          <Link href="/signup"
+        <Link href={isAuthenticated ? "/waitlist" : "/signup"}
             style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: "7px 20px", backgroundColor: ACCENT, borderRadius: 6, border: `1px solid ${ACCENT}`, transition: "all 0.15s", boxShadow: `0 0 20px ${ACCENT_GLOW}` }}
             onMouseEnter={e => (e.currentTarget.style.backgroundColor = ACCENT_DARK)}
             onMouseLeave={e => (e.currentTarget.style.backgroundColor = ACCENT)}>
             Get Started →
           </Link>
-        )}
       </div>
     </nav>
     <SignOutModal
@@ -2000,7 +1991,7 @@ function CapabilitiesSection() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section className="reveal-on-scroll" style={{ padding: "48px 48px 24px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
+    <section id="capabilities" className="reveal-on-scroll" style={{ padding: "48px 48px 24px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
 
         {/* Header */}
@@ -2182,11 +2173,11 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
     { q: "What happens when a session is idle?", a: "Sessions that exceed a configurable idle threshold are automatically terminated to conserve resources. Files saved to your persistent storage are always preserved regardless of session termination status." },
     { q: "What happens when I end or delete a session?", a: "When a session ends, the temporary compute environment is permanently torn down — any in-session system changes are discarded. However, all files in your personal storage are always preserved. Compute charges stop immediately; any applicable storage fees continue based on your subscription." },
     { q: "What happens if my browser disconnects mid-session?", a: "Your session keeps running on the platform until the booked time expires. Simply reopen the LaaS portal and reconnect — your desktop or notebook resumes exactly where you left off. You will also receive advance warnings before any scheduled session expiry." },
-    { q: "What is the refund policy?", a: "Credits consumed by active sessions are non-refundable. If you believe a deduction occurred due to a platform-side issue, contact us at project@gktech.ai with your session details and we will review it within 2 business days. Unused wallet balance refund requests from institutions are considered on a case-by-case basis." },
+    { q: "What is the refund policy?", a: "Credits consumed by active sessions are non-refundable. If you believe a deduction occurred due to a platform-side issue, contact us at ksrcsupport@gktech.ai with your session details and we will review it within 2 business days. Unused wallet balance refund requests from institutions are considered on a case-by-case basis." },
   ];
 
   const pricing = [
-    { title: "Spark", price: "₹120", vcpu: 2, memory: "4 GB", vram: "2 GB", hami: "8%", bestFor: "Small PyTorch inference, Jupyter notebooks, educational projects", badge: undefined, highlight: false },
+    { title: "Spark", price: "₹120", vcpu: 2, memory: "4 GB", vram: "2 GB", hami: "8%", bestFor: "Small PyTorch inference, Jupyter notebooks, Coursework & proof-of-concept", badge: undefined, highlight: false },
     { title: "Blaze", price: "₹210", vcpu: 4, memory: "8 GB", vram: "4 GB", hami: "17%", bestFor: "Model fine-tuning, GPU-accelerated rendering, professional development", badge: "Popular", highlight: true },
     { title: "Inferno", price: "₹300", vcpu: 8, memory: "16 GB", vram: "8 GB", hami: "33%", bestFor: "Large model training, complex 3D rendering, GPU-intensive simulations", badge: undefined, highlight: false },
     { title: "Supernova", price: "₹360", vcpu: 12, memory: "32 GB", vram: "16 GB", hami: "67%", bestFor: "Large-scale deep learning, exclusive research sessions, production inference", badge: "Exclusive", highlight: false },
@@ -2229,7 +2220,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
         {/* Radial glow top-left */}
         <div style={{ position: "absolute", top: -120, left: -120, width: 600, height: 600, background: `radial-gradient(circle, ${ACCENT_GLOW} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
-        <div className="hero-split" style={{ display: "flex", alignItems: "center", gap: 48, padding: "72px 48px 56px", maxWidth: 1140, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
+        <div className="hero-split" style={{ display: "flex", alignItems: "center", gap: 48, padding: "100px 48px 28px", maxWidth: 1140, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
           {/* Left */}
           <div style={{ flex: "1 1 52%", minWidth: 0 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", background: "var(--bgColor-mild)", border: `1px solid ${ACCENT}`, borderRadius: 9999, marginBottom: 20, animation: "fadeUp 0.4s ease 0.1s both" }}>
@@ -2246,21 +2237,12 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
               Built for the ones who build what's next — GPU power that scales with your ambition, not your budget.
             </p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20, animation: "fadeUp 0.4s ease 0.5s both" }}>
-              {isAuthenticated ? (
-                <Link href="/waitlist"
+              <Link href="/waitlist"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
                   onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
-                  Join Waitlist
+                  Launch GPU Instance →
                 </Link>
-              ) : (
-                <Link href="/signup"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
-                  onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
-                  Launch a GPU →
-                </Link>
-              )}
               <a href="#how-it-works"
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bgColor-mild)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
@@ -2309,7 +2291,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
           Powering institutions that push boundaries
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "20px 48px" }}>
-          {["KSRCE", "Partner Colleges", "Research Groups", "Industry Labs", "Institutional. R&D Units"].map(l => (
+          {["KSRCE", "Partner Colleges", "Research Groups", "Industry Labs", "Innovation & Incubation Labs"].map(l => (
             <span key={l} style={{ fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, color: "var(--fgColor-muted)", letterSpacing: "0.03em" }}>{l}</span>
           ))}
         </div>
@@ -2364,7 +2346,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
               ))}
             </div>
             <div style={{ marginTop: 32 }}>
-              <Link href="/signup"
+              <Link href="/waitlist"
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, borderRadius: 7, textDecoration: "none", transition: "all 0.2s" }}
                 onMouseEnter={e => (e.currentTarget.style.background = ACCENT_DARK)}
                 onMouseLeave={e => (e.currentTarget.style.background = ACCENT)}>
@@ -2419,17 +2401,6 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
         </div>
       </section>
 
-      {/* ── WHY CHOOSE US ── */}
-      <section id="features" style={{ background: "var(--bgColor-default)", padding: "48px 0" }}>
-        <div className="land-section" style={{ background: "var(--bgColor-default)" }}>
-          <div style={{ textAlign: "center", marginBottom: 56 }}>
-            <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Why Choose Us</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em" }}>Built for Academia, Better than Cloud</h2>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-muted)", marginTop: 12, maxWidth: 640, margin: "12px auto 0", lineHeight: 1.6 }}>LaaS eliminates the hidden costs and complexity of AWS/GCP, offering zero-setup persistent storage and tailored institutional integration.</p>
-          </div>
-          <FeatureComparison />
-        </div>
-      </section>
 
       {/* ── PRICING ── */}
       <section id="pricing" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
@@ -2462,7 +2433,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
               </div>
 
               <div style={{ marginTop: 36 }}>
-                <Link href="/signup"
+                <Link href="/waitlist"
                   style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "14px 32px", background: "#4f6ef7", color: "#ffffff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 12, textDecoration: "none", boxShadow: "0 8px 24px rgba(79,110,247,0.35), inset 0 1px 2px rgba(255,255,255,0.2)", transition: "all 0.2s" }}
                   onMouseEnter={e => { e.currentTarget.style.background = "#3a56d4"; e.currentTarget.style.transform = "translateY(-2px)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = "#4f6ef7"; e.currentTarget.style.transform = "translateY(0)"; }}>
@@ -2542,7 +2513,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
             <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 14 }}>Frequently Asked Questions</h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", color: "var(--fgColor-muted)" }}>
               Can&apos;t find what you&apos;re looking for? Reach us at{" "}
-              <a href="mailto:project@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>project@gktech.ai</a>.
+              <a href="mailto:ksrcsupport@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>ksrcsupport@gktech.ai</a>.
             </p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 48px", alignItems: "start" }}>
@@ -2599,29 +2570,12 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.2rem, 5vw, 3.8rem)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15, textShadow: "0 4px 30px rgba(0,0,0,0.8)" }}>Ready to launch your first GPU session?</h2>
           <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(0.9rem, 1.5vw, 1.1rem)", color: "rgba(255,255,255,0.85)", marginBottom: 40, lineHeight: 1.6, maxWidth: 640, margin: "0 auto 40px" }}>Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 60 seconds.</p>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-            {isAuthenticated ? (
-              <Link href="/waitlist"
-                style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 700, borderRadius: 10, textDecoration: "none", boxShadow: `0 6px 30px rgba(79,110,247,0.6)`, transition: "all 0.2s" }}
-                onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-3px)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
-                Join Waitlist
-              </Link>
-            ) : (
-              <>
-                <Link href="/signup"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 700, borderRadius: 10, textDecoration: "none", boxShadow: `0 6px 30px rgba(79,110,247,0.6)`, transition: "all 0.2s" }}
-                  onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-3px)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
-                  Create Account →
-                </Link>
-                <Link href="/signin"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: "rgba(255,255,255,0.1)", color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 600, borderRadius: 10, border: "2px solid rgba(255,255,255,0.4)", textDecoration: "none", transition: "all 0.2s" }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; e.currentTarget.style.transform = "translateY(-3px)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.transform = "translateY(0)"; }}>
-                  Sign In
-                </Link>
-              </>
-            )}
+            <Link href="/waitlist"
+              style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 700, borderRadius: 10, textDecoration: "none", boxShadow: `0 6px 30px rgba(79,110,247,0.6)`, transition: "all 0.2s" }}
+              onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-3px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
+              Ignite Your Session →
+            </Link>
           </div>
         </div>
       </section>

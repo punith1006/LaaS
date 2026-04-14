@@ -1,35 +1,31 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { getAccessToken } from "@/lib/token";
 import { getMe } from "@/lib/api";
 import type { User } from "@/types/auth";
 import { WaitlistPage } from "@/components/waitlist/waitlist-page";
 
 export default function WaitlistRoute() {
-  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = getAccessToken();
     if (!token) {
-      router.replace("/signin");
+      setLoading(false);
       return;
     }
     getMe()
       .then((u) => {
-        if (!u) {
-          router.replace("/signin");
-          return;
-        }
-        setUser(u);
+        setUser(u ?? null);
       })
-      .catch(() => router.replace("/signin"))
+      .catch(() => {
+        setUser(null);
+      })
       .finally(() => setLoading(false));
-  }, [router]);
+  }, []);
 
-  if (loading || !user) return null;
+  if (loading) return null;
   return <WaitlistPage user={user} />;
 }

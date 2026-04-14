@@ -148,4 +148,26 @@ export class MailService {
       context,
     });
   }
+
+  async sendWaitlistConfirmationEmail(
+    to: string,
+    context: {
+      firstName: string;
+      email: string;
+      currentStatus: string;
+      companyOrOrg: string;
+      roleOrDesignation: string;
+      primaryWorkload: string;
+      computeNeeds: string;
+      expectedDuration?: string;
+      expectations: string[];
+    },
+  ): Promise<void> {
+    await this.mailer.sendMail({
+      to,
+      subject: "You're on the List — Welcome to LaaS!",
+      template: 'waitlist-confirmation',
+      context,
+    });
+  }
 }

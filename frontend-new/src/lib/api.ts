@@ -1466,12 +1466,16 @@ export async function updateUserProfile(data: Partial<EditableProfileData>): Pro
 
 // ── Waitlist ──────────────────────────────────────────────
 export interface WaitlistFormData {
+  // Optional manual fields for unauthenticated submissions
+  firstName?: string;
+  lastName?: string;
+  email?: string;
   currentStatus: string;
   organizationName?: string;
   jobTitle?: string;
   computeNeeds: string;
-  expectedDuration: string;
-  urgency: string;
+  expectedDuration?: string;
+  urgency?: string;
   expectations: string[];
   primaryWorkload: string;
   workloadDescription?: string;
@@ -1497,4 +1501,69 @@ export async function submitWaitlist(data: WaitlistFormData): Promise<WaitlistRe
     throw new Error(err.message || 'Failed to submit waitlist entry');
   }
   return res.json();
+}
+
+export async function analyzeWaitlistWorkload(description: string): Promise<{
+  detectedGoal: string;
+  detectedFrameworks: string[];
+  estimatedVramNeedGb: number;
+  estimatedComputeIntensity: 'low' | 'medium' | 'high' | 'very_high';
+  datasetSizeCategory: string;
+  keyInsights: string[];
+  confidence: number;
+  inputQuality: 'sufficient' | 'insufficient';
+  missingCategories: string[];
+  suggestions: string;
+  fieldConfidence: { goal: number; vram: number; intensity: number };
+}> {
+  const res = await apiFetch(`${API_BASE}/api/waitlist/analyze-workload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: 'Analysis failed' }));
+    throw new Error(err.message || 'Failed to analyze workload');
+  }
+  return res.json();
+}
+
+// Waitlist Status Types
+export interface WaitlistEntry {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  currentStatus: string;
+  organizationName: string | null;
+  jobTitle: string | null;
+  computeNeeds: string | null;
+  expectedDuration: string | null;
+  urgency: string | null;
+  primaryWorkload: string | null;
+  workloadDescription: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface WaitlistStatusResponse {
+  enrolled: boolean;
+  entry?: WaitlistEntry;
+  position?: number;
+}
+
+// Check if the current user is already enrolled in the waitlist
+export async function checkWaitlistStatus(): Promise<WaitlistStatusResponse> {
+  if (!getAccessToken()) return { enrolled: false };
+
+  if (API_BASE) {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/waitlist/status`);
+      if (!res.ok) return { enrolled: false };
+      return res.json();
+    } catch {
+      return { enrolled: false };
+    }
+  }
+  return { enrolled: false };
 }

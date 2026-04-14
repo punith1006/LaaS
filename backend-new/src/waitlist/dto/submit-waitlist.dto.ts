@@ -1,6 +1,18 @@
-import { IsString, IsOptional, IsBoolean, IsArray, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsArray, MaxLength, IsEmail } from 'class-validator';
 
 export class SubmitWaitlistDto {
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
   @IsString()
   currentStatus: string;
 
@@ -15,11 +27,13 @@ export class SubmitWaitlistDto {
   @IsString()
   computeNeeds: string;
 
+  @IsOptional()
   @IsString()
-  expectedDuration: string;
+  expectedDuration?: string;
 
+  @IsOptional()
   @IsString()
-  urgency: string;
+  urgency?: string;
 
   @IsArray()
   @IsString({ each: true })

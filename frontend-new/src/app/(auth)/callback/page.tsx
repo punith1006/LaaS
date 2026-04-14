@@ -67,15 +67,17 @@ export default function OAuthCallbackPage() {
         }
         
         saveTokens(responseData);
-        toast.success("Signed in successfully");
-        
-        // Check if onboarding is complete and redirect accordingly
-        const isOnboardingComplete = responseData.isOnboardingComplete ?? true;
-        if (isOnboardingComplete) {
-          router.replace("/");
-        } else {
-          router.replace("/signup/onboarding");
+
+        // Check for return-to URL (e.g., waitlist page OAuth flow)
+        const returnTo = sessionStorage.getItem('oauth_return_to');
+        if (returnTo) {
+          sessionStorage.removeItem('oauth_return_to');
+          router.push(returnTo);
+          return;
         }
+
+        toast.success("Signed in successfully");
+        router.replace("/");
       } catch (e) {
         toast.error(
           e instanceof Error ? e.message : "Authentication failed",

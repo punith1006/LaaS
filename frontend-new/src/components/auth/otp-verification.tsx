@@ -57,8 +57,9 @@ export function OtpVerification() {
       }
       
       toast.success("Account created successfully!");
-      // Don't reset store - onboarding needs the data. Reset will happen after onboarding completes.
-      router.push("/signup/onboarding");
+      // Reset the signup store since we're skipping onboarding
+      reset();
+      router.push("/");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Verification failed");
     } finally {
