@@ -2132,7 +2132,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
   `;
 
   const stats = [
-    { val: 500, suffix: "+", label: "Active Students" },
+    { val: "RTX 5090", suffix: "", label: "NVIDIA Compute Nodes", icon: "/images/nvidia_logo_icon_169902.png" },
     { val: 128, suffix: " GB", label: "Cluster GPU VRAM" },
     { val: "Upto 100", suffix: "GB", label: "Storage / User" },
     { val: 99, suffix: "%", label: "Uptime SLA" },
@@ -2290,7 +2290,8 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
         <div style={{ maxWidth: 1140, margin: "0 auto", padding: "0 48px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
           {stats.map((s, i) => (
             <div key={i} style={{ padding: "32px 24px", borderRight: i < stats.length - 1 ? "1px solid var(--borderColor-default)" : "none", textAlign: "center" }}>
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: "2.2rem", fontWeight: 800, color: "var(--fgColor-default)", lineHeight: 1, marginBottom: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "var(--font-sans)", fontSize: "2.2rem", fontWeight: 800, color: "var(--fgColor-default)", lineHeight: 1, marginBottom: 6 }}>
+                {(s as any).icon && <img src={(s as any).icon} alt="" style={{ height: 32, objectFit: "contain" }} />}
                 {"val" in s && typeof s.val === "string"
                   ? `${s.val}${s.suffix}`
                   : <Counter end={s.val as number} suffix={s.suffix} />
