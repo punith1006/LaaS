@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f8f8f7;color:#1a1a1a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8f8f7;">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+          <!-- Header -->
+          <tr>
+            <td style="padding:32px 40px 24px;border-bottom:1px solid #eee;">
+              <span style="font-size:20px;font-weight:600;color:#1a1a1a;">LaaS</span>
+              <span style="font-size:14px;color:#f59e0b;font-weight:500;float:right;padding-top:4px;">⚠ Spend Warning</span>
+            </td>
+          </tr>
+          <!-- Content -->
+          <tr>
+            <td style="padding:32px 40px;">
+              <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">Hi {{firstName}},</p>
+              
+              <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">
+                Your spending has reached <strong style="color:#d97706;">{{percentUsed}}%</strong> of your configured limit.
+              </p>
+              
+              <!-- Details Table -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;border:1px solid #e5e5e5;border-radius:6px;overflow:hidden;">
+                <tr style="background-color:#fafafa;">
+                  <td style="padding:12px 16px;font-size:14px;color:#666;border-bottom:1px solid #e5e5e5;">Current Spend</td>
+                  <td style="padding:12px 16px;font-size:14px;font-weight:600;text-align:right;border-bottom:1px solid #e5e5e5;">₹{{currentSpendRupees}}</td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 16px;font-size:14px;color:#666;border-bottom:1px solid #e5e5e5;">Limit</td>
+                  <td style="padding:12px 16px;font-size:14px;font-weight:600;text-align:right;border-bottom:1px solid #e5e5e5;">₹{{limitRupees}}</td>
+                </tr>
+                <tr style="background-color:#fafafa;">
+                  <td style="padding:12px 16px;font-size:14px;color:#666;border-bottom:1px solid #e5e5e5;">Remaining</td>
+                  <td style="padding:12px 16px;font-size:14px;font-weight:600;text-align:right;color:#16a34a;border-bottom:1px solid #e5e5e5;">₹{{remainingRupees}}</td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 16px;font-size:14px;color:#666;">Period</td>
+                  <td style="padding:12px 16px;font-size:14px;text-align:right;">{{period}}</td>
+                </tr>
+              </table>
+              
+              <!-- Warning -->
+              <div style="margin:0 0 24px;padding:16px;background-color:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 4px 4px 0;">
+                <p style="margin:0;font-size:14px;line-height:1.6;color:#92400e;">
+                  <strong>Important:</strong> When your spend reaches ₹{{limitRupees}}, all active compute instances will be automatically terminated. Storage volumes will not be affected.
+                </p>
+              </div>
+              
+              <!-- Action -->
+              <p style="margin:0 0 8px;font-size:15px;line-height:1.6;color:#333;">
+                <strong>Recommended action:</strong> Review your active instances and consider terminating unused ones to stay within your limit.
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 40px;background-color:#fafafa;border-top:1px solid #eee;border-radius:0 0 8px 8px;">
+              <p style="margin:0;font-size:13px;color:#888;line-height:1.5;">
+                This is an automated notification from LaaS. You can adjust your spend limit from the Billing tab.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

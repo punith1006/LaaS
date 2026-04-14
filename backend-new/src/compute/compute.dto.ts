@@ -1,0 +1,296 @@
+import { IsString, IsNotEmpty, IsUUID, IsIn, Length, Matches, IsObject, IsOptional, IsNumber, IsArray, IsBoolean, IsDateString } from 'class-validator';
+
+// ============================================================================
+// REQUEST DTOs
+// ============================================================================
+
+export class LaunchSessionDto {
+  @IsUUID()
+  computeConfigId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Length(3, 64)
+  @Matches(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, {
+    message: 'Instance name must be lowercase alphanumeric with hyphens, 3-64 chars',
+  })
+  instanceName: string;
+
+  @IsIn(['gui', 'cli'])
+  interfaceMode: 'gui' | 'cli';
+
+  @IsIn(['stateful', 'ephemeral'])
+  storageType: 'stateful' | 'ephemeral';
+}
+
+// ============================================================================
+// RESPONSE INTERFACES
+// ============================================================================
+
+export interface ResourceValues {
+  vramMb: number;
+  vcpu: number;
+  ramMb: number;
+}
+
+export interface ResourceSummary {
+  total: ResourceValues;
+  used: ResourceValues;
+  available: ResourceValues;
+}
+
+export interface ComputeConfigResponse {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  tier: string | null;
+  sessionType: string;
+  vcpu: number;
+  memoryMb: number;
+  gpuVramMb: number;
+  gpuModel: string | null;
+  hamiSmPercent: number | null;
+  basePricePerHourCents: number;
+  currency: string;
+  bestFor: string | null;
+  sortOrder: number;
+  // Availability info
+  available: boolean;
+  maxLaunchable: number;
+}
+
+export interface ComputeConfigsResponse {
+  configs: ComputeConfigResponse[];
+  resources: ResourceSummary;
+  runningInstances: number;
+}
+
+export interface SessionResponse {
+  id: string;
+  userId: string;
+  instanceName: string | null;
+  containerName: string | null;
+  sessionType: string;
+  storageMode: string;
+  status: string;
+  sessionUrl: string | null;
+  nfsMountPath: string | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  createdAt: Date;
+  // Computed fields
+  uptimeSeconds: number;
+  costSoFarCents: number;
+  // Resource allocation
+  allocatedVcpu: number | null;
+  allocatedMemoryMb: number | null;
+  allocatedGpuVramMb: number | null;
+  allocatedHamiSmPercent: number | null;
+  // Config info
+  computeConfig: {
+    id: string;
+    slug: string;
+    name: string;
+    vcpu: number;
+    memoryMb: number;
+    gpuVramMb: number;
+    gpuModel: string | null;
+    basePricePerHourCents: number;
+  } | null;
+  // Node info
+  node: {
+    id: string;
+    hostname: string;
+    gpuModel: string | null;
+  } | null;
+  // Termination info
+  terminationReason: string | null;
+  terminatedBy: string | null;
+  terminatedAt: Date | null;
+  cumulativeCostCents: number;
+  durationSeconds: number | null;
+}
+
+export interface SessionListResponse {
+  sessions: SessionResponse[];
+  total: number;
+}
+
+export interface SessionDetailResponse extends SessionResponse {
+  resourceSnapshot: Record<string, unknown> | null;
+  walletHolds: {
+    id: string;
+    amountCents: number;
+    status: string;
+    holdReason: string | null;
+    createdAt: Date;
+    releasedAt: Date | null;
+  }[];
+  billingCharges: {
+    id: string;
+    chargeType: string;
+    durationSeconds: number;
+    rateCentsPerHour: number;
+    amountCents: number;
+    createdAt: Date;
+  }[];
+  nodeResourceReservation: {
+    id: string;
+    reservedVcpu: number;
+    reservedMemoryMb: number;
+    reservedGpuVramMb: number;
+    reservedHamiSmPercent: number | null;
+    status: string;
+    reservedAt: Date;
+    releasedAt: Date | null;
+  } | null;
+}
+
+export interface NodeResourceStatus {
+  nodeId: string;
+  hostname: string;
+  displayName: string | null;
+  gpuModel: string | null;
+  status: string;
+  total: ResourceValues;
+  allocated: ResourceValues;
+  available: ResourceValues;
+  sessionCount: number;
+  maxConcurrentSessions: number | null;
+  lastHeartbeatAt: Date | null;
+}
+
+export interface AdminSessionResponse extends SessionResponse {
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+}
+
+export interface AdminSessionListResponse {
+  sessions: AdminSessionResponse[];
+  total: number;
+}
+
+// ============================================================================
+// SESSION ORCHESTRATION TYPES
+// ============================================================================
+
+export interface LaunchSessionResponse {
+  sessionId: string;
+  containerName: string | null;
+  status: string;
+  instanceName: string | null;
+}
+
+export interface SessionEventResponse {
+  id: string;
+  sessionId: string;
+  eventType: string;
+  payload: Record<string, unknown> | null;
+  createdAt: Date;
+}
+
+export interface ConnectionResponse {
+  status: 'ready' | 'launching' | 'unavailable';
+  sessionUrl?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface SessionLogsResponse {
+  containerName: string;
+  logs: string;
+  tail: number;
+}
+
+export class RestartSessionDto {
+  // Empty class for typing - no additional fields needed
+}
+
+// ============================================================================
+// WORKLOAD ANALYSIS DTOs
+// ============================================================================
+
+// Workload analysis request
+export class AnalyzeWorkloadDto {
+  @IsString()
+  description: string;
+
+  @IsOptional()
+  @IsString()
+  primaryGoal?: string;
+}
+
+// Workload analysis response
+export interface WorkloadAnalysisResponse {
+  detectedGoal: string;
+  detectedFrameworks: string[];
+  estimatedVramNeedGb: number;
+  estimatedComputeIntensity: 'low' | 'medium' | 'high' | 'very_high';
+  datasetSizeCategory: string;
+  keyInsights: string[];
+  confidence: number;
+  // New fields
+  inputQuality: 'sufficient' | 'insufficient';
+  missingCategories: string[];
+  suggestions: string;
+  fieldConfidence: { goal: number; vram: number; intensity: number };
+}
+
+// For creating a recommendation session
+export class CreateRecommendationSessionDto {
+  @IsOptional() @IsString() workloadDescription?: string;
+  @IsOptional() @IsString() documentFileName?: string;
+  @IsOptional() @IsString() documentExtractedText?: string;
+  @IsOptional() @IsObject() analysisResult?: any;
+  @IsOptional() @IsString() analysisQuality?: string;
+  @IsOptional() @IsNumber() analysisConfidence?: number;
+  @IsOptional() @IsString() detectedGoal?: string;
+  @IsOptional() @IsNumber() detectedVramGb?: number;
+  @IsOptional() @IsString() detectedIntensity?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) detectedFrameworks?: string[];
+}
+
+// For updating a recommendation session
+export class UpdateRecommendationSessionDto {
+  @IsOptional() @IsString() selectedGoal?: string;
+  @IsOptional() @IsString() selectedDatasetSize?: string;
+  @IsOptional() @IsNumber() selectedIntensity?: number;
+  @IsOptional() @IsString() selectedBudgetType?: string;
+  @IsOptional() @IsNumber() selectedBudgetAmount?: number;
+  @IsOptional() @IsString() selectedDuration?: string;
+  @IsOptional() @IsBoolean() goalAutoSelected?: boolean;
+  @IsOptional() @IsBoolean() datasetAutoSelected?: boolean;
+  @IsOptional() @IsBoolean() intensityAutoSelected?: boolean;
+  @IsOptional() @IsObject() recommendations?: any;
+  @IsOptional() @IsString() selectedConfigSlug?: string;
+  @IsOptional() @IsDateString() completedAt?: string;
+}
+
+// Explanation request
+export class GenerateExplanationDto {
+  @IsString()
+  configSlug: string;
+
+  @IsObject()
+  configSpecs: Record<string, any>;
+
+  @IsString()
+  userGoal: string;
+
+  @IsString()
+  userContext: string;
+}
+
+export interface ExplanationResponse {
+  explanation: string;
+}
+
+export interface ExtractDocumentResponse {
+  text: string;
+  wordCount: number;
+}
