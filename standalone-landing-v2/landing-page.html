@@ -1,0 +1,2876 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaaS - Your Remote AI Workstation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+/* CSS Variables - Dark Mode Only */
+:root {
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  --bgColor-default: #0B0B0B;
+  --bgColor-mild: #161616;
+  --bgColor-muted: #2E2E2E;
+  --fgColor-default: #F0EFE2;
+  --fgColor-mild: #BFBEB4;
+  --fgColor-muted: #818178;
+  --fgColor-inverse: #0B0B0B;
+  --borderColor-default: #2E2E2E;
+  --fgColor-accent: #7565F6;
+  
+  --accent: #4f6ef7;
+  --accent-dark: #3a56d4;
+  --accent-glow: rgba(79,110,247,0.18);
+}
+
+/* Reset & Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bgColor-default);
+  color: var(--fgColor-default);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Landing Page Zoom */
+.landing-page {
+  zoom: calc(100vw / 1280);
+}
+
+/* Animations */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes blink-cursor {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes autoWaveAnim {
+  0% { transform: translate(-50%, -50%) scale(0.1) rotate(0deg); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(3.5) rotate(90deg); opacity: 0; }
+}
+
+@keyframes rippleAnim {
+  0% { transform: translate(-50%, -50%) scale(0.1); opacity: 1; border-width: 10px; }
+  100% { transform: translate(-50%, -50%) scale(8); opacity: 0; border-width: 1px; }
+}
+
+@keyframes border-rotate {
+  to { --a: 360deg; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes gridPulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.35; }
+}
+
+/* Utility Classes */
+.land-section {
+  padding: 90px 48px;
+  max-width: 1140px;
+  margin: 0 auto;
+}
+
+.land-section-full {
+  padding: 90px 48px;
+}
+
+@media (max-width: 860px) {
+  .hero-split, .gpu-split { flex-direction: column !important; }
+  .land-section { padding: 64px 20px; }
+}
+
+.highlight-text { color: var(--accent); }
+
+.reveal-on-scroll {
+  opacity: 0;
+  transform: translateY(30px) scale(0.98);
+  transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: opacity, transform;
+}
+
+.reveal-on-scroll.revealed {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Nav */
+.nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 48px;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.nav.scrolled {
+  background: rgba(8,10,18,0.92);
+  border-bottom: 1px solid var(--borderColor-default);
+  backdrop-filter: blur(14px);
+}
+
+.nav-logo {
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fgColor-default);
+  text-decoration: none;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.nav-link {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--fgColor-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.nav-link:hover {
+  color: var(--fgColor-default);
+}
+
+.nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-signin {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--fgColor-default);
+  text-decoration: none;
+  padding: 7px 18px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.btn-signin:hover {
+  background: var(--bgColor-muted);
+}
+
+.btn-signup {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  text-decoration: none;
+  padding: 7px 20px;
+  background-color: var(--accent);
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  transition: all 0.15s;
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+.btn-signup:hover {
+  background-color: var(--accent-dark);
+}
+
+/* Hero Section */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hero-radial {
+  position: absolute;
+  top: -120px;
+  left: -120px;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#particles-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero-split {
+  display: flex;
+  align-items: center;
+  gap: 48px;
+  padding: 72px 48px 56px;
+  max-width: 1140px;
+  margin: 0 auto;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-left {
+  flex: 1 1 52%;
+  min-width: 0;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--bgColor-mild);
+  border: 1px solid var(--accent);
+  border-radius: 9999px;
+  margin-bottom: 20px;
+  animation: fadeUp 0.4s ease 0.1s both;
+}
+
+.hero-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.hero-badge-text {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.hero-title {
+  font-family: var(--font-sans);
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--fgColor-default);
+  margin-bottom: 10px;
+  letter-spacing: -0.02em;
+  animation: fadeUp 0.4s ease 0.2s both;
+}
+
+.hero-title-accent {
+  font-family: var(--font-sans);
+  font-size: clamp(1.6rem, 3.5vw, 2.6rem);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--accent);
+  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+  animation: fadeUp 0.4s ease 0.3s both;
+}
+
+.hero-desc {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--fgColor-muted);
+  max-width: 440px;
+  margin-bottom: 24px;
+  animation: fadeUp 0.4s ease 0.4s both;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  animation: fadeUp 0.4s ease 0.5s both;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 26px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  text-decoration: none;
+  box-shadow: 0 4px 24px var(--accent-glow);
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: var(--accent-dark);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 26px;
+  background: transparent;
+  color: var(--fgColor-default);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--borderColor-default);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: var(--bgColor-mild);
+  transform: translateY(-2px);
+}
+
+.hero-right {
+  flex: 1 1 48%;
+  min-width: 0;
+  animation: fadeUp 0.5s ease 0.5s both;
+}
+
+/* Terminal */
+.terminal {
+  background: var(--bgColor-mild);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.82rem;
+  line-height: 1.75;
+}
+
+.terminal-header {
+  display: flex;
+  gap: 7px;
+  padding: 10px 16px;
+  background: var(--bgColor-muted);
+  border-bottom: 1px solid var(--borderColor-default);
+  align-items: center;
+}
+
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-dot.red { background: #ef4444; }
+.terminal-dot.yellow { background: #f59e0b; }
+.terminal-dot.green { background: #22c55e; }
+
+.terminal-title {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--fgColor-muted);
+}
+
+.terminal-body {
+  padding: 18px 22px;
+  min-height: 240px;
+}
+
+.terminal-line {
+  color: var(--fgColor-default);
+}
+
+.terminal-line.ok { color: #22c55e; }
+.terminal-line.muted { color: var(--fgColor-muted); }
+.terminal-line.url { color: var(--accent); }
+
+.terminal-cursor {
+  color: var(--accent);
+  animation: blink-cursor 1s step-end infinite;
+  font-weight: 700;
+}
+
+/* Stats Bar */
+.stats-bar {
+  border-top: 1px solid var(--borderColor-default);
+  border-bottom: 1px solid var(--borderColor-default);
+  background: var(--bgColor-mild);
+}
+
+.stats-grid {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 48px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.stat-item {
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.stat-item:not(:last-child) {
+  border-right: 1px solid var(--borderColor-default);
+}
+
+.stat-value {
+  font-family: var(--font-sans);
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--fgColor-default);
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.stat-label {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fgColor-muted);
+}
+
+/* Trusted By */
+.trusted-bar {
+  border-bottom: 1px solid var(--borderColor-default);
+  padding: 28px 48px;
+  text-align: center;
+}
+
+.trusted-title {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+
+.trusted-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px 48px;
+}
+
+.trusted-item {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+  letter-spacing: 0.03em;
+}
+
+/* Capabilities Section */
+.capabilities {
+  padding: 48px 48px 24px 48px;
+  background: var(--bgColor-default);
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.capabilities-inner {
+  max-width: 1140px;
+  margin: 0 auto;
+}
+
+.capabilities-header {
+  margin-bottom: 32px;
+}
+
+.capabilities-header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.capabilities-title {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  color: var(--fgColor-default);
+  font-weight: 500;
+}
+
+.capabilities-heading {
+  font-family: var(--font-sans);
+  font-size: clamp(1.65rem, 3.1vw, 2.8rem);
+  font-weight: 800;
+  color: var(--fgColor-default);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+
+.capabilities-heading span {
+  color: var(--accent);
+}
+
+.capabilities-subtitle {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  color: var(--fgColor-muted);
+  max-width: 100%;
+  line-height: 1.6;
+}
+
+.capabilities-subtitle span {
+  display: block;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.capabilities-content {
+  display: flex;
+  gap: 80px;
+  align-items: stretch;
+  flex-wrap: wrap;
+  padding-top: 16px;
+}
+
+.capabilities-accordion {
+  flex: 1 1 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+.accordion-item {
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.accordion-header {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 26px 0;
+  cursor: pointer;
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.accordion-num {
+  font-family: var(--font-mono), monospace;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+  transition: color 0.2s;
+}
+
+.accordion-num span {
+  color: var(--fgColor-muted);
+}
+
+.accordion-item.open .accordion-num {
+  color: var(--accent);
+}
+
+.accordion-title {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: var(--fgColor-default);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.accordion-icon {
+  font-family: var(--font-mono);
+  color: var(--fgColor-muted);
+  font-size: 1.25rem;
+  font-weight: 400;
+  transform: rotate(0);
+  transition: transform 0.3s ease;
+}
+
+.accordion-item.open .accordion-icon {
+  transform: rotate(180deg);
+}
+
+.accordion-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1);
+}
+
+.accordion-item.open .accordion-body {
+  max-height: 500px;
+}
+
+.accordion-body-inner {
+  padding-bottom: 30px;
+  padding-left: 12px;
+}
+
+.accordion-pointer {
+  position: relative;
+  margin-bottom: 24px;
+  padding-left: 53px;
+}
+
+.accordion-pointer::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  left: 0;
+  width: 35px;
+  height: 35px;
+  border-left: 1.5px solid rgba(255,255,255,0.7);
+  border-bottom: 1.5px solid rgba(255,255,255,0.7);
+}
+
+.accordion-subtitle {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.82rem;
+  color: var(--fgColor-muted);
+  line-height: 1.6;
+}
+
+.accordion-bullets {
+  list-style: none;
+  padding: 0;
+  padding-left: 53px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.accordion-bullet {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.8rem;
+  color: var(--fgColor-muted);
+  line-height: 1.6;
+}
+
+.accordion-bullet span:first-child {
+  color: var(--fgColor-default);
+  font-weight: 700;
+}
+
+.accordion-bullet .accent {
+  color: var(--accent);
+}
+
+.isometric-container {
+  flex: 1 1 400px;
+  min-height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  align-self: flex-start;
+}
+
+.isometric-svg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.isometric-svg svg {
+  width: 115%;
+  height: 115%;
+  overflow: visible;
+  transform: translateX(2%);
+}
+
+/* How It Works Section */
+.how-it-works {
+  position: relative;
+}
+
+.interactive-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #06070a;
+  overflow: hidden;
+}
+
+.dot-matrix {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: radial-gradient(white 1.5px, transparent 1.5px);
+  -webkit-mask-size: 24px 24px;
+  pointer-events: none;
+}
+
+.dot-matrix-base {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.06);
+}
+
+.auto-wave {
+  position: absolute;
+  width: 800px;
+  height: 800px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0.1);
+  animation: autoWaveAnim 12s cubic-bezier(0.1, 0.4, 0.5, 1) forwards;
+  pointer-events: none;
+  mix-blend-mode: color-dodge;
+}
+
+.grid-ripple {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 212, 255, 0.6);
+  background: radial-gradient(circle, rgba(0,212,255,0.3) 0%, transparent 60%);
+  transform: translate(-50%, -50%) scale(0.1);
+  animation: rippleAnim 1.5s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  mix-blend-mode: color-dodge;
+  pointer-events: none;
+}
+
+.how-it-works-inner {
+  position: relative;
+  z-index: 1;
+  padding-top: 40px;
+  padding-bottom: 40px;
+}
+
+.how-it-works-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.section-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-family: var(--font-sans);
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+}
+
+.section-desc {
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  color: rgba(255,255,255,0.6);
+  white-space: nowrap;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+/* Bento Asymmetric Grid */
+.bento-asymmetric-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.bento-card-01 { grid-column: span 7; }
+.bento-card-02 { grid-column: span 5; }
+.bento-card-03 { grid-column: span 5; }
+.bento-card-04 { grid-column: span 7; }
+.bento-card-05 { grid-column: span 12; }
+
+@media (max-width: 960px) {
+  .bento-card-01, .bento-card-02, .bento-card-03, .bento-card-04, .bento-card-05 {
+    grid-column: span 12;
+  }
+}
+
+/* Bento Step Card */
+.bento-step-card {
+  position: relative;
+  background: #111318;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 24px 36px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: all 0.3s ease;
+}
+
+.bento-step-card:hover {
+  background: #191c24;
+  border-color: var(--accent);
+}
+
+.bento-step-card .watermark {
+  position: absolute;
+  top: -24px;
+  right: -12px;
+  font-family: var(--font-sans);
+  font-size: 10rem;
+  font-weight: 900;
+  line-height: 0.8;
+  color: white;
+  opacity: 0.03;
+  transition: all 0.4s ease;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: -0.05em;
+  z-index: 0;
+}
+
+.bento-step-card:hover .watermark {
+  opacity: 0.08;
+}
+
+.bento-step-card-inner {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.bento-step-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  transition: all 0.3s;
+}
+
+.bento-step-title {
+  font-family: var(--font-sans);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: white;
+  margin-bottom: 6px;
+  letter-spacing: -0.02em;
+}
+
+.bento-step-desc {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.45);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.bento-step-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.bento-step-pill {
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 6px;
+  padding: 4px 10px;
+  transition: all 0.2s;
+}
+
+/* GPU Section */
+.gpu-section {
+  background: var(--bgColor-mild);
+  border-top: 1px solid var(--borderColor-default);
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.gpu-split {
+  display: flex;
+  gap: 56px;
+  align-items: center;
+}
+
+.gpu-terminal {
+  flex: 1;
+  min-width: 0;
+}
+
+.gpu-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.gpu-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gpu-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gpu-check-item svg {
+  color: #22c55e;
+  flex-shrink: 0;
+}
+
+.gpu-check-item span {
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  color: var(--fgColor-default);
+}
+
+/* Features Section */
+.features-section {
+  background: var(--bgColor-default);
+  padding: 48px 0;
+}
+
+.features-header {
+  text-align: center;
+  margin-bottom: 56px;
+}
+
+.features-heading {
+  font-family: var(--font-sans);
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 800;
+  color: var(--fgColor-default);
+  letter-spacing: -0.02em;
+}
+
+.features-subtitle {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  color: var(--fgColor-muted);
+  margin-top: 12px;
+  max-width: 640px;
+  margin: 12px auto 0;
+  line-height: 1.6;
+}
+
+/* Bento Feature Grid */
+.bento-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 48px;
+}
+
+.bento-card {
+  position: relative;
+  background: var(--bgColor-mild);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 20px;
+  overflow: hidden;
+  transition: border-color 0.3s, transform 0.3s;
+}
+
+.bento-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(320px circle at var(--mx,50%) var(--my,50%), rgba(79,110,247,0.07), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bento-card:hover::before {
+  opacity: 1;
+}
+
+.bento-card:hover {
+  border-color: rgba(79,110,247,0.35);
+  transform: translateY(-3px);
+}
+
+.bento-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.bento-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 6px;
+  padding: 3px 10px;
+  margin-bottom: 14px;
+}
+
+.vs-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bgColor-muted);
+  border: 1px solid var(--borderColor-default);
+  margin-bottom: 6px;
+}
+
+.bento-animate {
+  opacity: 0;
+  transform: translateY(28px) scale(0.97);
+  transition:
+    opacity 0.65s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.65s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.3s,
+    box-shadow 0.3s;
+}
+
+.bento-animate.bento-revealed {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Demo Video in Bento */
+.bento-video {
+  grid-row: span 2;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+/* Pricing Section */
+.pricing-section {
+  background: var(--bgColor-mild);
+  border-top: 1px solid var(--borderColor-default);
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.pricing-inner {
+  width: 100%;
+  max-width: 1300px;
+  margin: 0 auto;
+  padding: 120px 20px;
+}
+
+.pricing-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 60px;
+  align-items: flex-start;
+  margin-bottom: 50px;
+}
+
+.pricing-header-left {
+  flex: 1 1 320px;
+  text-align: left;
+}
+
+.pricing-header-right {
+  flex: 2 1 600px;
+  min-width: 0;
+}
+
+.pricing-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pricing-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pricing-check svg {
+  stroke: var(--accent);
+}
+
+.pricing-check span {
+  font-size: 0.95rem;
+  color: var(--fgColor-muted);
+  font-family: var(--font-sans);
+}
+
+.btn-deploy {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 32px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 12px;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(79,110,247,0.35), inset 0 1px 2px rgba(255,255,255,0.2);
+  transition: all 0.2s;
+  margin-top: 36px;
+}
+
+.btn-deploy:hover {
+  background: var(--accent-dark);
+  transform: translateY(-2px);
+}
+
+/* Pricing Table */
+.pricing-table-wrapper {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pricing-table th {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fgColor-muted);
+  text-align: left;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.pricing-table th:last-child {
+  text-align: right;
+}
+
+.pricing-table td {
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--borderColor-default);
+  color: var(--fgColor-default);
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.pricing-table td:last-child {
+  text-align: right;
+}
+
+.pricing-table tr:last-child td {
+  border-bottom: none;
+}
+
+.pricing-row {
+  transition: background 0.15s;
+}
+
+.pricing-row:hover td {
+  background: var(--bgColor-muted);
+}
+
+.pricing-row.featured td {
+  background: rgba(79,110,247,0.15);
+}
+
+.pricing-row.featured:hover td {
+  background: rgba(79,110,247,0.25);
+}
+
+/* All Plans Section */
+.all-plans-wrapper {
+  width: 100%;
+  transition-delay: 0.2s;
+}
+
+@property --a {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.all-plans-border-wrap {
+  padding: 2px;
+  border-radius: 18px;
+  background: conic-gradient(from var(--a), transparent 20%, #4f6ef7 40%, #818cf8 50%, #4f6ef7 60%, transparent 80%);
+  animation: border-rotate 3s linear infinite;
+}
+
+.all-plans-inner {
+  background: #0d0d10;
+  border-radius: 16px;
+  padding: 36px 44px;
+  position: relative;
+  overflow: hidden;
+}
+
+.all-plans-title {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fgColor-muted);
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.all-plans-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 28px 40px;
+}
+
+.all-plans-item {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  transition: transform 0.2s ease;
+}
+
+.all-plans-item:hover {
+  transform: translateY(-2px);
+}
+
+.all-plans-item-title {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--fgColor-default);
+  margin-bottom: 4px;
+}
+
+.all-plans-item-desc {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--fgColor-muted);
+  line-height: 1.5;
+}
+
+/* FAQ Section */
+.faq-section {
+  background: var(--bgColor-default);
+}
+
+.faq-header {
+  text-align: center;
+  margin-bottom: 56px;
+}
+
+.faq-contact {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--fgColor-muted);
+}
+
+.faq-contact a {
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.faq-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: 0 48px;
+  align-items: start;
+}
+
+.faq-item {
+  border-bottom: 1px solid var(--borderColor-default);
+  overflow: hidden;
+}
+
+.faq-question {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 18px 0;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.faq-question span:first-child {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--fgColor-default);
+}
+
+.faq-icon {
+  color: var(--fgColor-muted);
+  font-size: 1.2rem;
+  transform: rotate(0);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.faq-item.open .faq-icon {
+  transform: rotate(45deg);
+}
+
+.faq-answer {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.faq-item.open .faq-answer {
+  max-height: 300px;
+}
+
+.faq-answer p {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: var(--fgColor-muted);
+  margin: 0 0 18px;
+}
+
+/* CTA Section */
+.cta-section {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #050810;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+  z-index: 0;
+}
+
+.cta-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(5,8,16,0.7) 0%, rgba(5,8,16,0.4) 40%, rgba(5,8,16,0.4) 60%, rgba(5,8,16,0.7) 100%);
+  z-index: 1;
+}
+
+.cta-content {
+  position: relative;
+  z-index: 2;
+  max-width: 700px;
+  transform: translateY(-15vh);
+}
+
+.cta-title {
+  font-family: var(--font-sans);
+  font-size: clamp(2.2rem, 5vw, 3.8rem);
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  margin-bottom: 20px;
+  line-height: 1.15;
+  text-shadow: 0 4px 30px rgba(0,0,0,0.8);
+}
+
+.cta-desc {
+  font-family: var(--font-sans);
+  font-size: clamp(0.9rem, 1.5vw, 1.1rem);
+  color: rgba(255,255,255,0.85);
+  margin-bottom: 40px;
+  line-height: 1.6;
+  max-width: 640px;
+  margin: 0 auto 40px;
+}
+
+.cta-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 40px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-radius: 10px;
+  text-decoration: none;
+  box-shadow: 0 6px 30px rgba(79,110,247,0.6);
+  transition: all 0.2s;
+}
+
+.btn-create:hover {
+  background: var(--accent-dark);
+  transform: translateY(-3px);
+}
+
+.btn-signin-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 40px;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 2px solid rgba(255,255,255,0.4);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn-signin-cta:hover {
+  background: rgba(255,255,255,0.2);
+  transform: translateY(-3px);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--borderColor-default);
+  padding: 28px 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.footer-logo {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fgColor-default);
+}
+
+.footer-text {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--fgColor-muted);
+}
+
+.footer-links {
+  display: flex;
+  gap: 24px;
+}
+
+.footer-link {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--fgColor-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.footer-link:hover {
+  color: var(--fgColor-default);
+}
+  </style>
+</head>
+<body>
+  <div class="landing-page">
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+      <a href="#" class="nav-logo">LaaS</a>
+      <div class="nav-links">
+        <a href="#features" class="nav-link">Features</a>
+        <a href="#how-it-works" class="nav-link">How It Works</a>
+        <a href="#pricing" class="nav-link">Pricing</a>
+        <a href="#faq" class="nav-link">FAQ</a>
+      </div>
+      <div class="nav-buttons">
+        <a href="/signin" class="btn-signin">Sign In</a>
+        <a href="/signup" class="btn-signup">Get Started →</a>
+      </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+      <canvas id="particles-canvas"></canvas>
+      <div class="hero-radial"></div>
+      
+      <div class="hero-split">
+        <div class="hero-left">
+          <div class="hero-badge">
+            <span class="hero-badge-dot"></span>
+            <span class="hero-badge-text">KSRCE AI Lab Infrastructure</span>
+          </div>
+          <h1 class="hero-title">Your Remote AI Workstation.</h1>
+          <h2 class="hero-title-accent">Work Anywhere. Create Everywhere.</h2>
+          <p class="hero-desc">LaaS gives KSRCE students and researchers instant access to NVIDIA RTX 5090 GPUs across a 4-node cluster with 32 GB VRAM per GPU, up to 100 GB persistent storage, and Jupyter notebooks — secured by university SSO.</p>
+          <div class="hero-buttons">
+            <a href="/signup" class="btn-primary">Launch a GPU →</a>
+            <a href="#how-it-works" class="btn-secondary">See How It Works</a>
+          </div>
+        </div>
+        <div class="hero-right">
+          <div class="terminal">
+            <div class="terminal-header">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+              <span class="terminal-title">laas — bash</span>
+            </div>
+            <div class="terminal-body" id="terminal-body"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar reveal-on-scroll">
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-value"><span class="counter" data-end="500" data-suffix="+">0</span></div>
+          <div class="stat-label">Active Students</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value"><span class="counter" data-end="128" data-suffix=" GB">0</span></div>
+          <div class="stat-label">Cluster GPU VRAM</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">Upto 100<span class="counter" data-end="" data-suffix="GB"></span></div>
+          <div class="stat-label">Storage / User</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value"><span class="counter" data-end="99" data-suffix="%">0</span></div>
+          <div class="stat-label">Uptime SLA</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trusted By -->
+    <div class="trusted-bar reveal-on-scroll">
+      <div class="trusted-title">Powering institutions that push boundaries</div>
+      <div class="trusted-list">
+        <span class="trusted-item">KSRCE</span>
+        <span class="trusted-item">Partner Colleges</span>
+        <span class="trusted-item">Research Groups</span>
+        <span class="trusted-item">Industry Labs</span>
+        <span class="trusted-item">Institutional. R&D Units</span>
+      </div>
+    </div>
+
+    <!-- Capabilities Section -->
+    <section class="capabilities reveal-on-scroll">
+      <div class="capabilities-inner">
+        <div class="capabilities-header">
+          <div class="capabilities-header-row">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h7" /></svg>
+            <span class="capabilities-title">Capabilities</span>
+          </div>
+          <h2 class="capabilities-heading">You bring the ideas. We provide the <span>compute</span>.</h2>
+          <p class="capabilities-subtitle">
+            <span>No more fighting hardware limits or expensive cloud bills.</span>
+            LaaS gives students, researchers, and fast-moving teams instant, pay-as-you-go access to top-tier AI supercomputing.
+          </p>
+        </div>
+        <div class="capabilities-content">
+          <div class="capabilities-accordion" id="accordion-container"></div>
+          <div class="isometric-container">
+            <div class="isometric-svg" id="isometric-svg"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how-it-works" class="how-it-works">
+      <div class="interactive-grid" id="interactive-grid">
+        <div class="dot-matrix"><div class="dot-matrix-base"></div></div>
+      </div>
+      <div class="land-section how-it-works-inner">
+        <div class="how-it-works-header">
+          <div class="section-label">How It Works</div>
+          <h2 class="section-title">Launch AI Workspaces<br />in Minutes</h2>
+          <p class="section-desc">From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
+        </div>
+        <div class="bento-asymmetric-grid" id="bento-grid"></div>
+      </div>
+    </section>
+
+    <!-- Your GPU Section -->
+    <section class="gpu-section reveal-on-scroll">
+      <div class="land-section hero-split gpu-split">
+        <div class="gpu-terminal">
+          <div class="terminal">
+            <div class="terminal-header">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+              <span class="terminal-title">ssh student@sess.laas.io</span>
+            </div>
+            <div class="terminal-body">
+              <div class="terminal-line muted">Welcome to LaaS — 4-Node GPU Cluster</div>
+              <div class="terminal-line muted">NVIDIA RTX 5090 · 32 GB VRAM · CUDA 12.x · Ubuntu 22.04</div>
+              <div style="height: 12px"></div>
+              <div class="terminal-line">$ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader</div>
+              <div class="terminal-line ok">NVIDIA GeForce RTX 5090, 32768 MiB</div>
+              <div style="height: 8px"></div>
+              <div class="terminal-line">$ du -sh ~/data/</div>
+              <div class="terminal-line muted">3.2G    /home/student/data/</div>
+              <div style="height: 8px"></div>
+              <div class="terminal-line">$ python train.py --epochs 50 --model resnet50</div>
+              <div class="terminal-line ok">Epoch  1/50  loss: 2.4132  acc: 0.312 ✓</div>
+              <div class="terminal-line ok">Epoch  2/50  loss: 1.9820  acc: 0.418 ✓</div>
+              <div class="terminal-cursor">▊</div>
+            </div>
+          </div>
+        </div>
+        <div class="gpu-content">
+          <div class="section-label">Full Linux Access</div>
+          <h2 class="section-title" style="text-align:left;color:var(--fgColor-default)">Your GPU,<br />Your Terminal</h2>
+          <p style="font-family:var(--font-sans);font-size:0.95rem;line-height:1.75;color:var(--fgColor-muted);margin-bottom:28px">Get root-level SSH access to your GPU node. Run any workload — training, inference, data processing — with no restrictions. Your home directory persists across all sessions.</p>
+          <div class="gpu-checklist">
+            <div class="gpu-check-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>Instance & session management from dashboard</span>
+            </div>
+            <div class="gpu-check-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>Managed background runs with log tailing</span>
+            </div>
+            <div class="gpu-check-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>File transfer via SCP, SFTP or browser UI</span>
+            </div>
+            <div class="gpu-check-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>Agent-native API for CI/CD automation</span>
+            </div>
+          </div>
+          <a href="/signup" class="btn-primary" style="margin-top:32px;display:inline-flex">Start Free →</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why Choose Us -->
+    <section id="features" class="features-section">
+      <div class="land-section" style="background:var(--bgColor-default)">
+        <div class="features-header">
+          <div class="section-label">Why Choose Us</div>
+          <h2 class="features-heading">Built for Academia, Better than Cloud</h2>
+          <p class="features-subtitle">LaaS eliminates the hidden costs and complexity of AWS/GCP, offering zero-setup persistent storage and tailored institutional integration.</p>
+        </div>
+        <div class="bento-feature-grid reveal-on-scroll" id="feature-grid"></div>
+      </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="pricing-section">
+      <div class="pricing-inner">
+        <div class="pricing-header reveal-on-scroll">
+          <div class="pricing-header-left">
+            <div class="section-label">Pricing</div>
+            <h2 class="section-title" style="text-align:left">Pay as you go</h2>
+            <p style="font-family:var(--font-sans);font-size:1rem;color:var(--fgColor-muted);max-width:100%;line-height:1.7;margin-bottom:32px">Our pricing model lets you pay only for what you use. No minimum commitments. Paused instances only incur storage fees. <span style="color:var(--accent);font-weight:700">Zero Lock-in!</span></p>
+            <div class="pricing-checklist">
+              <div class="pricing-check">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Pay-as-you-go wallet with real-time billing</span>
+              </div>
+              <div class="pricing-check">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Fractional to Dedicated RTX 5090 GPUs</span>
+              </div>
+              <div class="pricing-check">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Pre-built stacks: Jupyter, VS Code & KDE Desktop</span>
+              </div>
+              <div class="pricing-check">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Containerized workspaces via WebRTC in seconds</span>
+              </div>
+            </div>
+            <a href="/signup" class="btn-deploy">
+              Deploy Your AI Workspace
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            </a>
+          </div>
+          <div class="pricing-header-right">
+            <div class="pricing-table-wrapper">
+              <table class="pricing-table">
+                <thead>
+                  <tr>
+                    <th>Tier</th>
+                    <th>vCPUs</th>
+                    <th>RAM</th>
+                    <th>GPU VRAM</th>
+                    <th>HAMI %</th>
+                    <th>₹/hour</th>
+                  </tr>
+                </thead>
+                <tbody id="pricing-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="all-plans-wrapper reveal-on-scroll">
+          <div class="all-plans-border-wrap">
+            <div class="all-plans-inner">
+              <div class="all-plans-title">All plans include</div>
+              <div class="all-plans-grid" id="all-plans-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="faq-section">
+      <div class="land-section">
+        <div class="faq-header">
+          <div class="section-label">FAQ</div>
+          <h2 class="section-title" style="color:var(--fgColor-default)">Frequently Asked Questions</h2>
+          <p class="faq-contact">
+            Can't find what you're looking for? Reach us at <a href="mailto:project@gktech.ai">project@gktech.ai</a>.
+          </p>
+        </div>
+        <div class="faq-grid" id="faq-grid-left"></div>
+        <div class="faq-grid" id="faq-grid-right" style="margin-top:0"></div>
+      </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+      <video class="cta-video" autoplay muted loop playsinline preload="auto">
+        <source src="assets/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31.mp4" type="video/mp4">
+      </video>
+      <div class="cta-overlay"></div>
+      <div class="cta-content">
+        <h2 class="cta-title">Ready to launch your first GPU session?</h2>
+        <p class="cta-desc">Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 60 seconds.</p>
+        <div class="cta-buttons">
+          <a href="/signup" class="btn-create">Create Account →</a>
+          <a href="/signin" class="btn-signin-cta">Sign In</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <span class="footer-logo">LaaS</span>
+      <span class="footer-text">KSRCE AI Lab — Lab as a Service Platform · © 2025</span>
+      <div class="footer-links">
+        <a href="#" class="footer-link">Privacy</a>
+        <a href="#" class="footer-link">Terms</a>
+        <a href="#" class="footer-link">Docs</a>
+        <a href="#" class="footer-link">Pricing</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+// LaaS Landing Page - JavaScript
+// All logic converted from React TypeScript
+
+const ACCENT = "#4f6ef7";
+const ACCENT_DARK = "#3a56d4";
+
+// ============================================
+// NAVIGATION - Scroll Behavior
+// ============================================
+function initNav() {
+  const nav = document.getElementById('nav');
+  if (!nav) return;
+  
+  const handleScroll = () => {
+    if (window.scrollY > 30) {
+      nav.classList.add('scrolled');
+    } else {
+      nav.classList.remove('scrolled');
+    }
+  };
+  
+  window.addEventListener('scroll', handleScroll);
+  handleScroll();
+}
+
+// ============================================
+// PARTICLES - Canvas Animation
+// ============================================
+function initParticles() {
+  const canvas = document.getElementById('particles-canvas');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  let animId;
+  
+  const resize = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  };
+  
+  resize();
+  window.addEventListener('resize', resize);
+  
+  const dots = Array.from({ length: 120 }, () => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: Math.random() * 1.5 + 0.3,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.3,
+    opacity: Math.random() * 0.5 + 0.1,
+  }));
+  
+  const draw = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    dots.forEach(d => {
+      d.x += d.vx;
+      d.y += d.vy;
+      if (d.x < 0) d.x = canvas.width;
+      if (d.x > canvas.width) d.x = 0;
+      if (d.y < 0) d.y = canvas.height;
+      if (d.y > canvas.height) d.y = 0;
+      
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(100,160,255,${d.opacity})`;
+      ctx.fill();
+    });
+    
+    dots.forEach((a, i) => {
+      dots.slice(i + 1).forEach(b => {
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (dist < 130) {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = `rgba(79,110,247,${0.07 * (1 - dist / 130)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      });
+    });
+    
+    animId = requestAnimationFrame(draw);
+  };
+  
+  draw();
+}
+
+// ============================================
+// TERMINAL - Typewriter Animation
+// ============================================
+const termSequence = [
+  { type: "cmd", text: "$ laas login --sso ksrce.edu.in" },
+  { type: "output", lines: [
+    { t: "ok", s: "✓  Authenticated via KSRCE SSO" },
+    { t: "ok", s: "✓  Storage provisioned" },
+  ]},
+  { type: "cmd", text: "$ laas launch --gpu 5090 --type jupyter" },
+  { type: "output", lines: [
+    { t: "muted", s: "  Selecting node …" },
+    { t: "muted", s: "  Pulling image  laas/jupyter:cuda12" },
+    { t: "ok", s: "✓  Session live in 8s" },
+    { t: "url", s: "  → https://sess.laas.io/xk9f2a" },
+  ]},
+  { type: "cmd", text: "$ laas status" },
+  { type: "output", lines: [
+    { t: "muted", s: "  GPU   RTX 5090 32 GB   vCPU 8   RAM 16 GB" },
+    { t: "ok", s: "  Status: ● Running" },
+    { t: "url", s: "  Cost:  ₹65/hr" },
+  ]},
+];
+
+const CHAR_DELAY = 38;
+const OUTPUT_LINE_DELAY = 280;
+const LOOP_PAUSE = 2500;
+
+function initTerminal() {
+  const terminalBody = document.getElementById('terminal-body');
+  if (!terminalBody) return;
+  
+  let cancelled = false;
+  const col = {
+    cmd: "var(--fgColor-default)",
+    ok: "#22c55e",
+    muted: "var(--fgColor-muted)",
+    url: ACCENT,
+  };
+  
+  const waitSleep = (ms) => new Promise(resolve => {
+    const id = setTimeout(() => {
+      if (!cancelled) resolve();
+    }, ms);
+  });
+  
+  async function runSequence() {
+    while (!cancelled) {
+      terminalBody.innerHTML = '';
+      let lines = [];
+      let typingText = '';
+      
+      for (const step of termSequence) {
+        if (cancelled) return;
+        
+        if (step.type === "cmd") {
+          // Typewriter effect
+          for (let i = 0; i <= step.text.length; i++) {
+            if (cancelled) return;
+            typingText = step.text.slice(0, i);
+            renderTerminal(terminalBody, lines, typingText, col);
+            await waitSleep(CHAR_DELAY);
+          }
+          
+          await waitSleep(200);
+          lines.push({ t: "cmd", s: step.text });
+          typingText = '';
+          renderTerminal(terminalBody, lines, typingText, col);
+        } else {
+          // Output lines
+          for (const line of step.lines) {
+            if (cancelled) return;
+            lines.push(line);
+            renderTerminal(terminalBody, lines, typingText, col);
+            await waitSleep(OUTPUT_LINE_DELAY);
+          }
+          lines.push({ t: "", s: "" });
+          renderTerminal(terminalBody, lines, typingText, col);
+          await waitSleep(150);
+        }
+      }
+      
+      await waitSleep(LOOP_PAUSE);
+    }
+  }
+  
+  runSequence();
+}
+
+function renderTerminal(container, lines, typingText, col) {
+  container.innerHTML = lines.map(l => 
+    `<div class="terminal-line ${l.t}">${escapeHtml(l.s) || '&nbsp;'}</div>`
+  ).join('');
+  
+  if (typingText !== '') {
+    container.innerHTML += `<div class="terminal-line">${escapeHtml(typingText)}<span class="terminal-cursor">▊</span></div>`;
+  } else {
+    container.innerHTML += `<div class="terminal-line"><span class="terminal-cursor">▊</span></div>`;
+  }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ============================================
+// COUNTER - Animated Number on Scroll
+// ============================================
+function initCounters() {
+  const counters = document.querySelectorAll('.counter');
+  
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        if (el.dataset.done) return;
+        el.dataset.done = 'true';
+        
+        const end = parseInt(el.dataset.end);
+        if (isNaN(end)) return;
+        
+        const duration = 1600;
+        const step = 16;
+        const inc = end / (duration / step);
+        let cur = 0;
+        
+        const timer = setInterval(() => {
+          cur += inc;
+          if (cur >= end) {
+            el.textContent = end.toLocaleString() + (el.dataset.suffix || '');
+            clearInterval(timer);
+          } else {
+            el.textContent = Math.floor(cur).toLocaleString() + (el.dataset.suffix || '');
+          }
+        }, step);
+      }
+    });
+  }, { threshold: 0.4 });
+  
+  counters.forEach(c => observer.observe(c));
+}
+
+// ============================================
+// SCROLL REVEAL
+// ============================================
+function initScrollReveal() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('revealed');
+      }
+    });
+  }, { threshold: 0.1, rootMargin: "0px 0px -50px 0px" });
+  
+  document.querySelectorAll('.reveal-on-scroll').forEach(e => observer.observe(e));
+  
+  // Bento animations
+  const bentoObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('bento-revealed');
+      }
+    });
+  }, { threshold: 0.1, rootMargin: "0px 0px -40px 0px" });
+  
+  document.querySelectorAll('.bento-animate').forEach(el => bentoObserver.observe(el));
+}
+
+// ============================================
+// CAPABILITIES ACCORDION
+// ============================================
+const capabilityItems = [
+  {
+    num: "01",
+    title: "On-Demand GPU Infrastructure.",
+    subtitle: "Bare-metal performance. Zero hardware setup.",
+    bullets: [
+      'Instantly provision <span class="accent">fractional GPU slices</span> or an entire dedicated RTX 5090 node.',
+      'Containerized architecture guarantees <span class="accent">sub-30 second boot times</span> for your workloads.',
+      'Strict <span class="accent">resource isolation</span> ensures peak computational consistency.'
+    ]
+  },
+  {
+    num: "02",
+    title: "Persistent Stateful Storage.",
+    subtitle: "Your workspace, exactly how you left it.",
+    bullets: [
+      '<span class="accent">Up to 100GB</span> of dedicated, high-speed storage allocated per subscription.',
+      '<span class="accent">Hard-isolated volumes</span> guarantee absolute data privacy and security.',
+      'Switch flexibly between compute tiers <span class="accent">without moving a single file</span> or reinstalling environments.'
+    ]
+  },
+  {
+    num: "03",
+    title: "Seamless GUI & CLI Access.",
+    subtitle: "A full remote workstation streamed directly to your browser.",
+    bullets: [
+      'High-fidelity desktop experiences powered by <span class="accent">ultra-low latency</span> rendering.',
+      'Pre-loaded with essential toolchains like <span class="accent">MATLAB, PyTorch, Blender, and VS Code.</span>',
+      'Absolute <span class="accent">raw terminal access</span> for maximum orchestration control.'
+    ]
+  },
+  {
+    num: "04",
+    title: "Integrated Mentorship Program.",
+    subtitle: "Guided expertise from industry leaders.",
+    bullets: [
+      'Direct channels for architecture reviews and <span class="accent">model optimization</span> strategies.',
+      'Hands-on guidance to accelerate your research from <span class="accent">prototype to production.</span>',
+      'Comprehensive documentation paired with <span class="accent">premium engineering support.</span>'
+    ]
+  }
+];
+
+function initAccordion() {
+  const container = document.getElementById('accordion-container');
+  if (!container) return;
+  
+  container.innerHTML = capabilityItems.map((item, idx) => `
+    <div class="accordion-item" data-index="${idx}">
+      <button class="accordion-header">
+        <span class="accordion-num">${item.num} <span>/</span></span>
+        <span class="accordion-title">${item.title}</span>
+        <span class="accordion-icon">+</span>
+      </button>
+      <div class="accordion-body">
+        <div class="accordion-body-inner">
+          <div class="accordion-pointer">
+            <p class="accordion-subtitle">${item.subtitle}</p>
+          </div>
+          <ul class="accordion-bullets">
+            ${item.bullets.map(b => `<li class="accordion-bullet"><span>+</span><span>${b}</span></li>`).join('')}
+          </ul>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  
+  container.querySelectorAll('.accordion-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const item = header.parentElement;
+      const isOpen = item.classList.contains('open');
+      
+      // Close all others
+      container.querySelectorAll('.accordion-item').forEach(i => {
+        i.classList.remove('open');
+        i.querySelector('.accordion-icon').textContent = '+';
+      });
+      
+      if (!isOpen) {
+        item.classList.add('open');
+        item.querySelector('.accordion-icon').textContent = '−';
+        updateIsometric(parseInt(item.dataset.index));
+      } else {
+        updateIsometric(null);
+      }
+    });
+  });
+}
+
+// ============================================
+// ISOMETRIC SVG
+// ============================================
+function initIsometric() {
+  updateIsometric(null);
+}
+
+function updateIsometric(activeIndex) {
+  const container = document.getElementById('isometric-svg');
+  if (!container) return;
+  
+  const blockLabels = ["Purpose-built datacenters", "AI infrastructure", "Managed services", "Co-engineering"];
+  const sideLabels = ["AI DEVELOPERS", "ENTERPRISE", "SUPERINTELLIGENCE"];
+  
+  const CX = 200;
+  const BASE_Y = 110;
+  const DX = 160;
+  const DY = 80;
+  const DEPTH = 22;
+  const tightGap = 36;
+  const expandedGap = 100;
+  
+  const labelYs = [170, 225, 280];
+  const angleRad = Math.atan2(DY, DX);
+  const angleDeg = (angleRad * 180) / Math.PI;
+  
+  function getCy(idx) {
+    if (activeIndex === null) return BASE_Y + idx * (tightGap + 20);
+    const gapIndex = activeIndex === 0 ? 0 : activeIndex === 1 ? 1 : 2;
+    return BASE_Y + idx * tightGap + (idx > gapIndex ? expandedGap : 0);
+  }
+  
+  function isoCorners(cy) {
+    return {
+      top: { x: CX, y: cy - DY },
+      right: { x: CX + DX, y: cy },
+      bottom: { x: CX, y: cy + DY },
+      left: { x: CX - DX, y: cy },
+    };
+  }
+  
+  function drawPattern(idx, cy) {
+    const c = isoCorners(cy);
+    let html = '';
+    
+    if (idx === 0) {
+      // Grid pattern
+      for (let i = 1; i < 5; i++) {
+        const f = i / 5;
+        const x1 = c.top.x + (c.left.x - c.top.x) * f;
+        const y1 = c.top.y + (c.left.y - c.top.y) * f;
+        const x2 = c.right.x + (c.bottom.x - c.right.x) * f;
+        const y2 = c.right.y + (c.bottom.y - c.right.y) * f;
+        html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(255,255,255,0.15)" stroke-width="1" />`;
+        
+        const x3 = c.top.x + (c.right.x - c.top.x) * f;
+        const y3 = c.top.y + (c.right.y - c.top.y) * f;
+        const x4 = c.left.x + (c.bottom.x - c.left.x) * f;
+        const y4 = c.left.y + (c.bottom.y - c.left.y) * f;
+        html += `<line x1="${x3}" y1="${y3}" x2="${x4}" y2="${y4}" stroke="rgba(255,255,255,0.15)" stroke-width="1" />`;
+      }
+      for (let i = 1; i < 5; i++) {
+        for (let j = 1; j < 5; j++) {
+          const x = c.top.x + (c.right.x - c.top.x) * (j / 5) + (c.left.x - c.top.x) * (i / 5);
+          const y = c.top.y + (c.right.y - c.top.y) * (j / 5) + (c.left.y - c.top.y) * (i / 5);
+          const isCenter = i === 2 && j === 2;
+          html += `<circle cx="${x}" cy="${y}" r="2" fill="${isCenter ? '#fff' : 'rgba(255,255,255,0.6)'}" />`;
+        }
+      }
+    } else if (idx === 1) {
+      // Concentric squares
+      for (let i = 1; i <= 3; i++) {
+        const scale = i * 0.25;
+        const points = `${CX},${cy - DY * scale} ${CX + DX * scale},${cy} ${CX},${cy + DY * scale} ${CX - DX * scale},${cy}`;
+        html += `<polygon points="${points}" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1" ${i === 2 ? 'stroke-dasharray="4 4"' : ''} />`;
+      }
+      const scale = 0.15;
+      const points = `${CX},${cy - DY * scale} ${CX + DX * scale},${cy} ${CX},${cy + DY * scale} ${CX - DX * scale},${cy}`;
+      html += `<polygon points="${points}" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" />`;
+    } else if (idx === 2) {
+      html += `<ellipse cx="${CX}" cy="${cy}" rx="${DX * 0.4}" ry="${DY * 0.4}" stroke="rgba(255,255,255,0.15)" stroke-width="1" fill="none" stroke-dasharray="3 4" />`;
+      html += `<ellipse cx="${CX}" cy="${cy}" rx="${DX * 0.25}" ry="${DY * 0.25}" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" fill="none" />`;
+      html += `<ellipse cx="${CX}" cy="${cy}" rx="${DX * 0.1}" ry="${DY * 0.1}" stroke="#fff" stroke-width="2" fill="none" />`;
+    } else if (idx === 3) {
+      const rx = DX * 0.25;
+      const ry = DY * 0.25;
+      const offset = DX * 0.15;
+      html += `<ellipse cx="${CX - offset}" cy="${cy}" rx="${rx}" ry="${ry}" stroke="#4f8ef7" stroke-width="1.5" fill="rgba(79,142,247,0.05)" />`;
+      html += `<ellipse cx="${CX + offset}" cy="${cy}" rx="${rx}" ry="${ry}" stroke="#fff" stroke-width="1.5" fill="rgba(255,255,255,0.05)" stroke-dasharray="4 4" />`;
+      html += `<circle cx="${CX}" cy="${cy - ry * 0.6}" r="3" fill="#3bff3b" />`;
+      html += `<circle cx="${CX}" cy="${cy + ry * 0.6}" r="3" fill="#ff3b3b" />`;
+      html += `<circle cx="${CX}" cy="${cy}" r="1" fill="#fff" />`;
+      html += `<circle cx="${CX - 8}" cy="${cy}" r="1" fill="#fff" />`;
+      html += `<circle cx="${CX + 8}" cy="${cy}" r="1" fill="#fff" />`;
+      html += `<circle cx="${CX}" cy="${cy - 8}" r="1" fill="#fff" />`;
+      html += `<circle cx="${CX}" cy="${cy + 8}" r="1" fill="#fff" />`;
+    }
+    
+    return html;
+  }
+  
+  let svg = `
+    <svg viewBox="0 0 500 500">
+      <defs>
+        <linearGradient id="activeBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ff3366" />
+          <stop offset="50%" stop-color="#4f8ef7" />
+          <stop offset="100%" stop-color="#00f3ff" />
+        </linearGradient>
+      </defs>
+  `;
+  
+  // Connections
+  if (activeIndex !== null) {
+    const activeCy = getCy(activeIndex);
+    const ac = isoCorners(activeCy);
+    const p1 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.65, y: ac.top.y + (ac.right.y - ac.top.y) * 0.65 };
+    const p2 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.75, y: ac.top.y + (ac.right.y - ac.top.y) * 0.75 };
+    const p3 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.85, y: ac.top.y + (ac.right.y - ac.top.y) * 0.85 };
+    const origins = [p1, p2, p3];
+    
+    origins.forEach((origin, i) => {
+      svg += `<path d="M ${origin.x} ${origin.y} L ${origin.x} ${labelYs[i]} L ${CX + DX + 6} ${labelYs[i]}" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" stroke-dasharray="2 4" />`;
+    });
+  }
+  
+  // Right labels
+  sideLabels.forEach((label, i) => {
+    const opacity = activeIndex !== null ? '0.7' : '0.15';
+    svg += `<text x="${CX + DX + 10}" y="${labelYs[i] + 4}" fill="rgba(255,255,255,${opacity})" font-family="var(--font-mono), monospace" font-size="8" font-weight="600" letter-spacing="0.1em">${label}</text>`;
+  });
+  
+  // Layers
+  [3, 2, 1, 0].forEach(idx => {
+    const cy = getCy(idx);
+    const isActive = activeIndex === idx;
+    const c = isoCorners(cy);
+    
+    const topFill = isActive ? "rgba(10, 10, 15, 0.95)" : "rgba(5, 5, 8, 0.8)";
+    const leftFill = "rgba(15, 15, 20, 0.95)";
+    const rightFill = "rgba(8, 8, 12, 0.95)";
+    const strokeBase = isActive ? "url(#activeBorder)" : "rgba(255,255,255,0.15)";
+    const strokeWidth = isActive ? "2" : "1";
+    
+    // Depth faces
+    svg += `<polygon points="${c.left.x},${c.left.y} ${c.bottom.x},${c.bottom.y} ${c.bottom.x},${c.bottom.y + DEPTH} ${c.left.x},${c.left.y + DEPTH}" fill="${leftFill}" stroke="${strokeBase}" stroke-width="${strokeWidth}" style="transition:all 0.6s ease" />`;
+    svg += `<polygon points="${c.bottom.x},${c.bottom.y} ${c.right.x},${c.right.y} ${c.right.x},${c.right.y + DEPTH} ${c.bottom.x},${c.bottom.y + DEPTH}" fill="${rightFill}" stroke="${strokeBase}" stroke-width="${strokeWidth}" style="transition:all 0.6s ease" />`;
+    
+    // Top face
+    svg += `<polygon points="${c.top.x},${c.top.y} ${c.right.x},${c.right.y} ${c.bottom.x},${c.bottom.y} ${c.left.x},${c.left.y}" fill="${topFill}" stroke="${strokeBase}" stroke-width="${strokeWidth}" style="transition:all 0.6s ease" />`;
+    
+    // Highlight edges for active
+    if (isActive) {
+      svg += `<line x1="${c.left.x}" y1="${c.left.y}" x2="${c.bottom.x}" y2="${c.bottom.y}" stroke="#00f3ff" stroke-width="1" />`;
+      svg += `<line x1="${c.bottom.x}" y1="${c.bottom.y}" x2="${c.right.x}" y2="${c.right.y}" stroke="#ff3366" stroke-width="1" />`;
+    }
+    
+    // Patterns
+    if (isActive) {
+      svg += `<g style="opacity:0;animation:fadeIn 0.5s forwards 0.3s">${drawPattern(idx, cy)}</g>`;
+    }
+    
+    // Corner accents
+    if (isActive) {
+      svg += `<circle cx="${c.top.x}" cy="${c.top.y}" r="2.5" fill="#fff" />`;
+      svg += `<circle cx="${c.left.x}" cy="${c.left.y}" r="2.5" fill="#00f3ff" />`;
+      svg += `<circle cx="${c.right.x}" cy="${c.right.y}" r="2.5" fill="#ff3366" />`;
+      svg += `<circle cx="${c.bottom.x}" cy="${c.bottom.y}" r="2.5" fill="#3bff3b" />`;
+    }
+    
+    // Text on left face
+    const textX = (c.left.x + c.bottom.x) / 2;
+    const textY = (c.left.y + c.bottom.y) / 2 + DEPTH / 2 + 1.3;
+    const textFill = isActive ? "#fff" : "rgba(255,255,255,0.45)";
+    svg += `<text x="0" y="0" fill="${textFill}" font-family="var(--font-mono), monospace" font-size="9.2" font-weight="700" letter-spacing="0.05em" dominant-baseline="middle" text-anchor="middle" transform="translate(${textX}, ${textY}) skewY(${angleDeg})" style="transition:fill 0.4s ease;pointer-events:none">${blockLabels[idx]}</text>`;
+  });
+  
+  svg += '</svg>';
+  container.innerHTML = svg;
+}
+
+// ============================================
+// INTERACTIVE GRID
+// ============================================
+function initInteractiveGrid() {
+  const container = document.getElementById('interactive-grid');
+  if (!container) return;
+  
+  let lastRippleTime = 0;
+  
+  // Auto waves
+  const fireAutoWave = () => {
+    const rect = container.getBoundingClientRect();
+    
+    const wave = document.createElement('div');
+    wave.className = 'auto-wave';
+    
+    const rx = (Math.random() * 0.8 + 0.1) * rect.width;
+    const ry = (Math.random() * 0.8 + 0.1) * rect.height;
+    wave.style.left = rx + 'px';
+    wave.style.top = ry + 'px';
+    
+    const palettes = [
+      "radial-gradient(ellipse at 40% 50%, rgba(79,130,247,1) 0%, rgba(139,92,246,0.6) 45%, transparent 70%)",
+      "radial-gradient(ellipse at 60% 40%, rgba(16,245,164,1) 0%, rgba(79,130,247,0.6) 45%, transparent 70%)",
+      "radial-gradient(ellipse at 50% 60%, rgba(139,92,246,1) 0%, rgba(249,115,22,0.6) 45%, transparent 70%)",
+    ];
+    wave.style.background = palettes[Math.floor(Math.random() * palettes.length)];
+    
+    container.appendChild(wave);
+    setTimeout(() => wave.remove(), 8000);
+    
+    setTimeout(fireAutoWave, 3000 + Math.random() * 1500);
+  };
+  
+  fireAutoWave();
+  
+  // Mouse ripples
+  const handleMouseMove = (e) => {
+    const rect = container.getBoundingClientRect();
+    
+    if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
+    
+    const now = Date.now();
+    if (now - lastRippleTime < 60) return;
+    lastRippleTime = now;
+    
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const ripple = document.createElement('div');
+    ripple.className = 'grid-ripple';
+    ripple.style.left = x + 'px';
+    ripple.style.top = y + 'px';
+    
+    container.appendChild(ripple);
+    
+    setTimeout(() => ripple.remove(), 1500);
+  };
+  
+  window.addEventListener('mousemove', handleMouseMove);
+}
+
+// ============================================
+// BENTO STEP CARDS
+// ============================================
+const steps = [
+  {
+    num: "01", title: "Choose Template",
+    desc: "Pick a pre-configured framework and pair it with the right GPU tier for your ML workload.",
+    color: "#4f8ef7", border: "rgba(79,142,247,0.25)",
+    items: ["Jupyter", "VS Code", "Stateful GUI", "Custom CLI"]
+  },
+  {
+    num: "02", title: "Configure Resources",
+    desc: "Select GPU type, vCPUs, and memory. Scale from a fractional slice to a multi-GPU cluster instantly.",
+    color: "#8b5cf6", border: "rgba(139,92,246,0.25)",
+    items: ["RTX 5090", "H100 (Soon)", "Up to 32GB VRAM", "Persistent Storage"]
+  },
+  {
+    num: "03", title: "Launch Instance",
+    desc: "One click and your fully configured environment is live and ready for training in under 30 seconds.",
+    color: "#00d4ff", border: "rgba(0,212,255,0.22)",
+    items: ["One-click launch", "SSO injected", "Storage mounted"]
+  },
+  {
+    num: "04", title: "Development Tools",
+    desc: "Multiple access methods to work your way. Full terminal privileges and seamless UI.",
+    color: "#10f5a4", border: "rgba(16,245,164,0.22)",
+    items: ["Full SSH Access", "JupyterLab", "File Transfer", "Live Logs"]
+  },
+  {
+    num: "05", title: "Manage & Monitor",
+    desc: "Control your compute lifecycle. Pause instances to save credits, track real-time spend, and monitor session usage.",
+    color: "#f97316", border: "rgba(249,115,22,0.22)",
+    items: ["Pause/Resume", "Real-time Metrics", "Quota Warnings", "Detailed Logs"]
+  },
+];
+
+function initBentoCards() {
+  const grid = document.getElementById('bento-grid');
+  if (!grid) return;
+  
+  const icons = {
+    template: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /></svg>',
+    config: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>',
+    launch: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>',
+    tools: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>',
+    deploy: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>',
+  };
+  
+  const cardClasses = ['bento-card-01', 'bento-card-02', 'bento-card-03', 'bento-card-04', 'bento-card-05'];
+  const iconKeys = ['template', 'config', 'launch', 'tools', 'deploy'];
+  
+  grid.innerHTML = steps.map((step, i) => `
+    <div class="reveal-on-scroll ${cardClasses[i]}" style="transition-delay: ${(i + 1) * 0.05 + 0.1}s">
+      <div class="bento-step-card" style="--card-color: ${step.color}; --card-border: ${step.border}">
+        <div class="watermark" style="color: ${step.color}">${step.num}</div>
+        <div class="bento-step-card-inner">
+          <div class="bento-step-icon-box" style="color: ${step.color}">
+            ${icons[iconKeys[i]]}
+          </div>
+          <h3 class="bento-step-title">${step.title}</h3>
+          <p class="bento-step-desc">${step.desc}</p>
+          <div class="bento-step-pills">
+            ${step.items.map(item => `<span class="bento-step-pill" style="color: ${step.color}">${item}</span>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================
+// FEATURE COMPARISON GRID
+// ============================================
+function initFeatureGrid() {
+  const grid = document.getElementById('feature-grid');
+  if (!grid) return;
+  
+  const features = [
+    {
+      tag: "Storage", tagColor: "rgba(79,142,247,0.12)", tagTextColor: "#4f8ef7", tagBorder: "rgba(79,142,247,0.25)",
+      title: "Your data outlives every session",
+      desc: "No more re-uploading gigabytes of datasets before every run. Your persistent ZFS volume mounts automatically every time.",
+      us: "Up to 100 GB Zero-setup ZFS — always mounted",
+      them: "Manual cloud volumes — re-attach each session",
+      big: true, bigNum: "100", bigUnit: "GB", bigLabel: "per user, always-on"
+    },
+    {
+      tag: "Egress", tagColor: "rgba(0,212,255,0.08)", tagTextColor: "#00d4ff", tagBorder: "rgba(0,212,255,0.2)",
+      title: "No bandwidth tax on your models",
+      desc: "Move massive checkpoints on our high-speed local network. AWS charges per-GB — we don't.",
+      big: false, bigNum: "$0", bigUnit: "egress fees, ever"
+    },
+    {
+      tag: "Auth", tagColor: "rgba(16,245,164,0.08)", tagTextColor: "#10f5a4", tagBorder: "rgba(16,245,164,0.2)",
+      title: "Sign in with your university ID",
+      desc: "KSRCE SSO — no new passwords, no separate signup. One credential for everything.",
+      sso: true
+    },
+    {
+      tag: "GUI Desktop", tagColor: "rgba(139,92,246,0.1)", tagTextColor: "#8b5cf6", tagBorder: "rgba(139,92,246,0.25)",
+      title: "Full KDE desktop in your browser",
+      desc: "PyTorch, HuggingFace, CUDA — pre-installed. No setup, no config files, no env hell.",
+      us: "KDE Plasma + CUDA 12.2", them: "CLI-only cloud defaults"
+    },
+    {
+      tag: "Consistency", tagColor: "rgba(249,115,22,0.1)", tagTextColor: "#f97316", tagBorder: "rgba(249,115,22,0.25)",
+      title: "Same env on CPU and RTX 5090— guaranteed",
+      desc: "Code on Epi-CPU, scale to RTX 5090 without touching a single config. Environment drift is a cloud problem, not yours.",
+      tiers: true
+    },
+    {
+      tag: "Bare-metal", tagColor: "rgba(239,68,68,0.1)", tagTextColor: "#f87171", tagBorder: "rgba(239,68,68,0.25)",
+      title: "Raw hardware. No noisy neighbours.",
+      desc: "AMD Ryzen 9 + NVMe, not throttled virtual vCPUs sharing a hypervisor with 40 other tenants.",
+      chart: true, fullWidth: true
+    }
+  ];
+  
+  const tagIcons = {
+    Storage: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>',
+    Egress: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>',
+    Auth: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>',
+    "GUI Desktop": '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>',
+    Consistency: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="9" x2="19" y2="9" /><line x1="5" y1="15" x2="19" y2="15" /></svg>',
+    "Bare-metal": '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" /></svg>'
+  };
+  
+  // Mouse spotlight
+  grid.addEventListener('mousemove', (e) => {
+    const cards = grid.querySelectorAll('.bento-card');
+    cards.forEach(card => {
+      const rect = card.getBoundingClientRect();
+      card.style.setProperty('--mx', (e.clientX - rect.left) + 'px');
+      card.style.setProperty('--my', (e.clientY - rect.top) + 'px');
+    });
+  });
+  
+  // Build cards
+  let html = '';
+  
+  // Card 1: Storage - spans 2 cols
+  html += `
+    <div class="bento-card bento-animate" style="grid-column: span 2; padding: 32px 36px; display: flex; gap: 40px; align-items: center; transition-delay: 0s">
+      <div style="flex: 1">
+        <div class="bento-tag" style="background: ${features[0].tagColor}; color: ${features[0].tagTextColor}; border: 1px solid ${features[0].tagBorder}">
+          ${tagIcons.Storage}
+          Persistent Storage
+        </div>
+        <div style="font-family: var(--font-sans); font-size: 1.3rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 10px; line-height: 1.25">Your data outlives every session</div>
+        <p style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-muted); line-height: 1.7; margin-bottom: 20px">No more re-uploading gigabytes of datasets before every run. Your persistent ZFS volume mounts automatically every time.</p>
+        <div class="vs-row"><span style="color: #22c55e">✓</span><span style="color: var(--fgColor-default); font-weight: 600">Up to 100 GB Zero-setup ZFS — always mounted</span></div>
+        <div class="vs-row"><span style="color: #ef4444; font-size: 0.7rem; font-weight: 800">✕</span><span style="color: var(--fgColor-muted); text-decoration: line-through; opacity: 0.6">Manual cloud volumes — re-attach each session</span></div>
+      </div>
+      <div style="text-align: center; flex-shrink: 0">
+        <div style="font-family: var(--font-sans); font-size: 4.5rem; font-weight: 800; line-height: 1; letter-spacing: -0.04em; background: linear-gradient(135deg, #4f8ef7, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent">100</div>
+        <div style="font-family: var(--font-sans); font-size: 1rem; font-weight: 700; color: var(--fgColor-muted); letter-spacing: 0.06em; text-transform: uppercase">GB</div>
+        <div style="font-family: var(--font-sans); font-size: 0.72rem; color: var(--fgColor-muted); margin-top: 4px">per user, always-on</div>
+      </div>
+    </div>
+  `;
+  
+  // Card 2: Zero Egress
+  html += `
+    <div class="bento-card bento-animate" style="padding: 28px 26px; transition-delay: 0.1s">
+      <div class="bento-tag" style="background: ${features[1].tagColor}; color: ${features[1].tagTextColor}; border: 1px solid ${features[1].tagBorder}">
+        ${tagIcons.Egress}
+        Zero Egress
+      </div>
+      <div style="font-family: var(--font-sans); font-size: 1.1rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px; line-height: 1.25">No bandwidth tax on your models</div>
+      <p style="font-family: var(--font-sans); font-size: 0.85rem; color: var(--fgColor-muted); line-height: 1.7; margin-bottom: 16px">Move massive checkpoints on our high-speed local network. AWS charges per-GB — we don't.</p>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: rgba(0,212,255,0.06); border-radius: 10px; border: 1px solid rgba(0,212,255,0.15)">
+        <span style="font-family: var(--font-sans); font-size: 1.6rem; font-weight: 800; color: #00d4ff">$0</span>
+        <span style="font-family: var(--font-sans); font-size: 0.78rem; color: var(--fgColor-muted); line-height: 1.4">egress fees,<br />ever</span>
+      </div>
+    </div>
+  `;
+  
+  // Card 3: SSO
+  html += `
+    <div class="bento-card bento-animate" style="padding: 28px 26px; transition-delay: 0.15s">
+      <div class="bento-tag" style="background: ${features[2].tagColor}; color: ${features[2].tagTextColor}; border: 1px solid ${features[2].tagBorder}">
+        ${tagIcons.Auth}
+        Auth
+      </div>
+      <div style="font-family: var(--font-sans); font-size: 1.1rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px; line-height: 1.25">Sign in with your university ID</div>
+      <p style="font-family: var(--font-sans); font-size: 0.85rem; color: var(--fgColor-muted); line-height: 1.7; margin-bottom: 18px">KSRCE SSO — no new passwords, no separate signup. One credential for everything.</p>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bgColor-muted); border-radius: 10px; border: 1px solid var(--borderColor-default)">
+        <div style="width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #10f5a4, #4f8ef7); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 800; color: #fff">KS</div>
+        <div>
+          <div style="font-family: var(--font-sans); font-size: 0.78rem; font-weight: 600; color: var(--fgColor-default)">student@ksrce.edu.in</div>
+          <div style="font-family: var(--font-sans); font-size: 0.68rem; color: #10f5a4">✓ SSO Verified</div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Card 4: GUI Desktop
+  html += `
+    <div class="bento-card bento-animate" style="padding: 28px 26px; transition-delay: 0.22s">
+      <div class="bento-tag" style="background: ${features[3].tagColor}; color: ${features[3].tagTextColor}; border: 1px solid ${features[3].tagBorder}">
+        ${tagIcons["GUI Desktop"]}
+        GUI Desktop
+      </div>
+      <div style="font-family: var(--font-sans); font-size: 1.1rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px; line-height: 1.25">Full KDE desktop in your browser</div>
+      <p style="font-family: var(--font-sans); font-size: 0.85rem; color: var(--fgColor-muted); line-height: 1.7; margin-bottom: 16px">PyTorch, HuggingFace, CUDA — pre-installed. No setup, no config files, no env hell.</p>
+      <div class="vs-row"><span style="color: #22c55e">✓</span><span style="color: var(--fgColor-default); font-weight: 600">KDE Plasma + CUDA 12.2</span></div>
+      <div class="vs-row"><span style="color: #ef4444; font-size: 0.7rem; font-weight: 800">✕</span><span style="color: var(--fgColor-muted); text-decoration: line-through; opacity: 0.6">CLI-only cloud defaults</span></div>
+    </div>
+  `;
+  
+  // Demo Video
+  html += `
+    <video src="assets/hf_20260322_011532_86f9b93a-2ffc-42fd-8735-12a4c55ab536.mp4" autoplay muted loop playsinline class="bento-animate" style="grid-row: span 2; width: 100%; height: 100%; min-height: 400px; object-fit: cover; border-radius: 16px; transition-delay: 0.25s"></video>
+  `;
+  
+  // Card 5: Predictable Envs
+  html += `
+    <div class="bento-card bento-animate" style="grid-column: span 2; padding: 28px 32px; display: flex; gap: 32px; align-items: center; transition-delay: 0.3s">
+      <div style="flex: 1">
+        <div class="bento-tag" style="background: ${features[4].tagColor}; color: ${features[4].tagTextColor}; border: 1px solid ${features[4].tagBorder}">
+          ${tagIcons.Consistency}
+          Consistency
+        </div>
+        <div style="font-family: var(--font-sans); font-size: 1.2rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px; line-height: 1.25">Same env on CPU and RTX 5090— guaranteed</div>
+        <p style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-muted); line-height: 1.7">Code on Epi-CPU, scale to RTX 5090 without touching a single config. Environment drift is a cloud problem, not yours.</p>
+      </div>
+      <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 8px">
+        ${[["Epi-CPU", "#888"], ["GPU-S", "#8b5cf6"], ["RTX 5090", "#4f8ef7"]].map(([label, color]) => `
+          <div style="display: flex; align-items: center; gap: 8px">
+            <div style="width: 80px; height: 28px; border-radius: 7px; background: ${color}22; border: 1px solid ${color}44; display: flex; align-items: center; justify-content: center">
+              <span style="font-family: var(--font-mono), monospace; font-size: 0.68rem; color: ${color}; font-weight: 700">${label}</span>
+            </div>
+            <span style="font-family: var(--font-mono), monospace; font-size: 0.65rem; color: var(--fgColor-muted)">pytorch==2.3 cuda==12.2</span>
+            <span style="color: #22c55e; font-size: 0.75rem">✓</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  
+  // Card 6: Bare-metal
+  html += `
+    <div class="bento-card bento-animate" style="grid-column: span 3; padding: 28px 36px; display: flex; align-items: center; gap: 48px; transition-delay: 0.38s">
+      <div style="flex: 1">
+        <div class="bento-tag" style="background: ${features[5].tagColor}; color: ${features[5].tagTextColor}; border: 1px solid ${features[5].tagBorder}">
+          ${tagIcons["Bare-metal"]}
+          Bare-metal
+        </div>
+        <div style="font-family: var(--font-sans); font-size: 1.2rem; font-weight: 800; color: var(--fgColor-default); margin-bottom: 8px">Raw hardware. No noisy neighbours.</div>
+        <p style="font-family: var(--font-sans); font-size: 0.88rem; color: var(--fgColor-muted); line-height: 1.7">AMD Ryzen 9 + NVMe, not throttled virtual vCPUs sharing a hypervisor with 40 other tenants.</p>
+      </div>
+      <div style="flex-shrink: 0; width: 280px">
+        ${[
+          { label: "LaaS (bare-metal)", pct: 94, color: "#4f8ef7" },
+          { label: "AWS EC2 (vCPU)", pct: 58, color: "#ef4444" },
+          { label: "GCP Compute", pct: 54, color: "#ef4444" },
+        ].map(({ label, pct, color }) => `
+          <div style="margin-bottom: 10px">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px">
+              <span style="font-family: var(--font-sans); font-size: 0.75rem; color: var(--fgColor-muted)">${label}</span>
+              <span style="font-family: var(--font-mono), monospace; font-size: 0.72rem; color: ${color}; font-weight: 700">${pct}%</span>
+            </div>
+            <div style="height: 5px; background: var(--bgColor-muted); border-radius: 4px; overflow: hidden">
+              <div style="height: 100%; width: ${pct}%; background: ${color}; border-radius: 4px; opacity: 0.85"></div>
+            </div>
+          </div>
+        `).join('')}
+        <div style="font-family: var(--font-sans); font-size: 0.65rem; color: var(--fgColor-muted); margin-top: 6px; opacity: 0.6">CPU benchmark score (relative)</div>
+      </div>
+    </div>
+  `;
+  
+  grid.innerHTML = html;
+  
+  // Reveal animation
+  const bentoObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('bento-revealed');
+      }
+    });
+  }, { threshold: 0.1, rootMargin: "0px 0px -40px 0px" });
+  
+  grid.querySelectorAll('.bento-animate').forEach(el => bentoObserver.observe(el));
+}
+
+// ============================================
+// PRICING TABLE
+// ============================================
+const pricingData = [
+  { title: "Spark", price: "₹35", vcpu: 2, memory: "4 GB", vram: "2 GB", hami: "8%", bestFor: "Small PyTorch inference, Jupyter notebooks, educational projects", badge: undefined, highlight: false },
+  { title: "Blaze", price: "₹65", vcpu: 4, memory: "8 GB", vram: "4 GB", hami: "17%", bestFor: "Model fine-tuning, GPU-accelerated rendering, professional development", badge: "Popular", highlight: true },
+  { title: "Inferno", price: "₹105", vcpu: 8, memory: "16 GB", vram: "8 GB", hami: "33%", bestFor: "Large model training, complex 3D rendering, GPU-intensive simulations", badge: undefined, highlight: false },
+  { title: "Supernova", price: "₹155", vcpu: 12, memory: "32 GB", vram: "16 GB", hami: "67%", bestFor: "Large-scale deep learning, exclusive research sessions, production inference", badge: "Exclusive", highlight: false },
+];
+
+function initPricing() {
+  const tbody = document.getElementById('pricing-tbody');
+  if (!tbody) return;
+  
+  tbody.innerHTML = pricingData.map(row => `
+    <tr class="pricing-row ${row.highlight ? 'featured' : ''}">
+      <td>
+        <div style="display: flex; align-items: center; gap: 10px">
+          <span style="font-weight: 800; font-size: 0.97rem">${row.title}</span>
+          ${row.badge ? `<span style="font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; background: var(--accent); color: #fff; border-radius: 4px; padding: 2px 7px">${row.badge}</span>` : ''}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--fgColor-muted); margin-top: 5px; font-weight: 400; white-space: normal">${row.bestFor}</div>
+      </td>
+      <td style="font-family: var(--font-mono), monospace; font-weight: 600">${row.vcpu}</td>
+      <td style="font-family: var(--font-mono), monospace; font-weight: 600">${row.memory}</td>
+      <td style="font-family: var(--font-mono), monospace; font-weight: 800; color: #a855f7">${row.vram}</td>
+      <td style="font-family: var(--font-mono), monospace; font-weight: 600">${row.hami}</td>
+      <td>
+        <span style="font-family: var(--font-mono), monospace; font-size: 1.05rem; font-weight: 800; color: ${row.highlight ? 'var(--accent)' : 'var(--fgColor-default)'}">${row.price}</span>
+        <span style="font-family: var(--font-sans); font-size: 0.72rem; color: var(--fgColor-muted); margin-left: 3px">/hr</span>
+      </td>
+    </tr>
+  `).join('');
+  
+  // All plans include
+  const allPlansGrid = document.getElementById('all-plans-grid');
+  if (allPlansGrid) {
+    const planFeatures = [
+      { title: "Persistent ZFS Storage", desc: "Datasets outlive sessions with high-speed local mounts." },
+      { title: "Pre-built ML Images", desc: "CUDA, PyTorch, and TensorFlow environments pre-configured." },
+      { title: "Full Terminal Control", desc: "Root-level SSH and browser-based file management." },
+      { title: "University SSO Integration", desc: "Instant secure access via KSRCE institutional identity." },
+      { title: "Real-time Billing", desc: "Live spend tracking, limit controls, and session pausing." },
+      { title: "Priority Support", desc: "Premium email support from our engineering team." },
+    ];
+    
+    allPlansGrid.innerHTML = planFeatures.map(f => `
+      <div class="all-plans-item">
+        <div style="margin-top: 2px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        </div>
+        <div>
+          <div class="all-plans-item-title">${f.title}</div>
+          <div class="all-plans-item-desc">${f.desc}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+// ============================================
+// FAQ
+// ============================================
+const faqs = [
+  { q: "How do I launch my first session on LaaS?", a: "Sign up with your university email or Google account, top up your wallet, pick a compute tier that fits your workload, and click Launch. Within seconds a fully configured desktop or notebook environment is live in your browser — no drivers, no local installation required." },
+  { q: "How does GPU sharing work — can I really get my own VRAM slice?", a: "Yes. Each session is allocated a guaranteed, isolated slice of GPU memory. Your workload — whether PyTorch, TensorFlow, or any GPU-accelerated application — sees only the VRAM assigned to you and operates completely independently from other users on the same node." },
+  { q: "What is a Stateful Desktop session?", a: "A Stateful Desktop is a full-featured remote Linux desktop streamed directly to your browser — no downloads or plugins needed. All your files, installed packages, and project work are automatically saved to your personal storage and restored on every future session, just like picking up where you left off on your own machine." },
+  { q: "What is an Ephemeral session and who should use it?", a: "Ephemeral sessions provide a lightweight, browser-based compute environment (Jupyter Notebook, VS Code, or SSH) for temporary workloads. Compute data is cleared when the session ends, but your saved files remain intact. This mode is ideal for quick experiments, inference jobs, or users accessing the platform without university affiliation." },
+  { q: "How is my data isolated from other users?", a: "Your personal storage is provisioned with a hard quota and is inaccessible to any other user. Each session runs inside a fully isolated compute environment — GPU memory, CPU, RAM, and storage are all enforced at a system level to guarantee complete separation between concurrent users." },
+  { q: "Can I use MATLAB, Blender, or PyTorch without any setup?", a: "It depends on the template you select. If a pre-configured template with these tools is available, you're ready to go instantly. Alternatively, you can launch a fresh instance and fully customize it with any software you need, no restrictions." },
+  { q: "How does billing work?", a: "LaaS uses a wallet-based credit system with per-hour billing charge cycles. Active sessions burn credits at the configured compute rate. Paused sessions only incur minimal storage fees. You can set spend limits and view a real-time daily spend chart on your dashboard." },
+  { q: "What happens when a session is idle?", a: "Sessions that exceed a configurable idle threshold are automatically terminated to conserve resources. Files saved to your persistent storage are always preserved regardless of session termination status." },
+  { q: "What happens when I end or delete a session?", a: "When a session ends, the temporary compute environment is permanently torn down — any in-session system changes are discarded. However, all files in your personal storage are always preserved. Compute charges stop immediately; any applicable storage fees continue based on your subscription." },
+  { q: "What happens if my browser disconnects mid-session?", a: "Your session keeps running on the platform until the booked time expires. Simply reopen the LaaS portal and reconnect — your desktop or notebook resumes exactly where you left off. You will also receive advance warnings before any scheduled session expiry." },
+  { q: "What is the refund policy?", a: "Credits consumed by active sessions are non-refundable. If you believe a deduction occurred due to a platform-side issue, contact us at project@gktech.ai with your session details and we will review it within 2 business days. Unused wallet balance refund requests from institutions are considered on a case-by-case basis." },
+];
+
+function initFAQ() {
+  const leftGrid = document.getElementById('faq-grid-left');
+  const rightGrid = document.getElementById('faq-grid-right');
+  if (!leftGrid || !rightGrid) return;
+  
+  leftGrid.innerHTML = faqs.slice(0, 5).map((faq, i) => `
+    <div class="faq-item">
+      <button class="faq-question">
+        <span>${faq.q}</span>
+        <span class="faq-icon">+</span>
+      </button>
+      <div class="faq-answer">
+        <p>${faq.a}</p>
+      </div>
+    </div>
+  `).join('');
+  
+  rightGrid.innerHTML = faqs.slice(5).map((faq, i) => `
+    <div class="faq-item">
+      <button class="faq-question">
+        <span>${faq.q}</span>
+        <span class="faq-icon">+</span>
+      </button>
+      <div class="faq-answer">
+        <p>${faq.a}</p>
+      </div>
+    </div>
+  `).join('');
+  
+  // Toggle handlers
+  document.querySelectorAll('.faq-question').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = btn.parentElement;
+      const isOpen = item.classList.contains('open');
+      
+      // Close all
+      document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+      
+      if (!isOpen) {
+        item.classList.add('open');
+      }
+    });
+  });
+}
+
+// ============================================
+// ZOOM SCALING
+// ============================================
+function initZoom() {
+  const setZoomValue = () => {
+    const zoomValue = window.innerWidth / 1280;
+    document.documentElement.style.zoom = String(zoomValue);
+  };
+  
+  setZoomValue();
+  window.addEventListener('resize', setZoomValue);
+}
+
+// ============================================
+// INITIALIZE ALL
+// ============================================
+document.addEventListener('DOMContentLoaded', () => {
+  initZoom();
+  initNav();
+  initParticles();
+  initTerminal();
+  initCounters();
+  initScrollReveal();
+  initAccordion();
+  initIsometric();
+  initInteractiveGrid();
+  initBentoCards();
+  initFeatureGrid();
+  initPricing();
+  initFAQ();
+});
+  </script>
+</body>
+</html>

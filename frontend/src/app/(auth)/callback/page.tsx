@@ -59,16 +59,23 @@ export default function OAuthCallbackPage() {
           throw new Error(msg || "Authentication failed");
         }
 
-        const tokens = await res.json();
+        const responseData = await res.json();
         
         // Clear referral cookie after successful authentication
         if (referralCode) {
           clearCookie("laas_ref_code");
         }
         
-        saveTokens(tokens);
+        saveTokens(responseData);
         toast.success("Signed in successfully");
-        router.replace("/home");
+        
+        // Check if onboarding is complete and redirect accordingly
+        const isOnboardingComplete = responseData.isOnboardingComplete ?? true;
+        if (isOnboardingComplete) {
+          router.replace("/home");
+        } else {
+          router.replace("/signup/onboarding");
+        }
       } catch (e) {
         toast.error(
           e instanceof Error ? e.message : "Authentication failed",

@@ -792,7 +792,7 @@ function BentoStepCard({ num, icon, title, desc, items, color, glow2, border }: 
           marginBottom: 16,
           transition: "all 0.3s",
         }}>
-          {React.cloneElement(icon as React.ReactElement, { size: 20 })}
+          {React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 20 })}
         </div>
 
         {/* Title */}
@@ -952,7 +952,7 @@ const termSequence: TermStep[] = [
     type: "output", lines: [
       { t: "muted", s: "  GPU   RTX 5090 32 GB   vCPU 8   RAM 16 GB" },
       { t: "ok", s: "  Status: ● Running" },
-      { t: "url", s: "  Cost:  ₹65/hr" },
+      { t: "url", s: "  Cost:  ₹210/hr" },
     ]
   },
 ];
@@ -1601,8 +1601,8 @@ const capabilityItems = [
 
 // ─── Isometric Stack Asset ──────────────────────────────────────────────────────
 function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
-  const blockLabels = ["Purpose-built datacenters", "AI infrastructure", "Managed services", "Co-engineering"];
-  const sideLabels = ["AI DEVELOPERS", "ENTERPRISE", "SUPERINTELLIGENCE"];
+  const blockLabels = ["GPU compute layer", "Persistent storage", "Access & interface", "Expert support"];
+  const sideLabels = ["LEARNERS", "BUILDERS", "INNOVATORS"];
 
   const CX = 200;
   const BASE_Y = 110;
@@ -1613,16 +1613,40 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   const tightGap = 36;
   const expandedGap = 100;
 
-  // Calculate gap index
-  const gapIndex = activeIndex === 0 ? 0 : activeIndex === 1 ? 1 : 2;
-
-  // The Y position for the right-side labels (fixed positions)
-  const labelYs = [170, 225, 280];
-
-  const getCy = (idx: number) => {
+  function getCy(idx: number) {
     if (activeIndex === null) return BASE_Y + idx * (tightGap + 20);
-    return BASE_Y + idx * tightGap + (idx > gapIndex ? expandedGap : 0);
-  };
+    // For first item (index 0): no expansion gap, just highlight — keep default spacing
+    if (activeIndex === 0) return BASE_Y + idx * (tightGap + 20);
+    // For items 1-3: gap opens ABOVE the active slab
+    return BASE_Y + idx * tightGap + (idx >= activeIndex ? expandedGap : 0);
+  }
+
+  // Bracket definitions: ALL start from slab 0, each extends to a different depth
+  // Like the reference: all originate at the top slab, progressively deeper
+  const brackets = [
+    { topIdx: 0, botIdx: 1 },  // LEARNERS: slab 0 → bottom of slab 1
+    { topIdx: 0, botIdx: 2 },  // BUILDERS: slab 0 → bottom of slab 2
+    { topIdx: 0, botIdx: 3 },  // INNOVATORS: slab 0 → below slab 3
+  ];
+
+  // Bracket X positions: longest (all slabs) leftmost, shortest rightmost
+  const bracketXs = [CX + DX * 0.88, CX + DX * 0.74, CX + DX * 0.58];
+
+  // Top/bottom Y follow the isometric slope of the right face edges
+  // Right face top edge: (CX, cy+DY) → (CX+DX, cy). At fraction f: y = cy + DY*(1-f)
+  // Right face bottom edge: (CX, cy+DY+DEPTH) → (CX+DX, cy+DEPTH). Same slope offset by DEPTH
+  const bracketYs = brackets.map((b, i) => {
+    const f = (bracketXs[i] - CX) / DX;
+    const slopeOffset = DY * (1 - f);
+    // Top: on slab 0's right face top edge, nudged slightly inward (-4)
+    const topY = getCy(0) + slopeOffset - 4;
+    // Bottom: on closing slab's right face bottom edge, nudged slightly below (+6)
+    const botY = getCy(b.botIdx) + DEPTH + slopeOffset + 6;
+    return { topY, botY };
+  });
+
+  // Label Y = at the bottom turn of each bracket (not midpoint)
+  const labelYs = bracketYs.map(b => b.botY);
 
   const isoCorners = (cy: number) => ({
     top: { x: CX, y: cy - DY },
@@ -1773,50 +1797,71 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
         )}
 
         {/* Slanted Text on Left Face */}
-        <text
-          x={0}
-          y={0}
-          fill={isActive ? "#fff" : "rgba(255,255,255,0.45)"}
-          fontFamily="var(--font-mono), monospace"
-          fontSize="9.2"
-          fontWeight="700"
-          letterSpacing="0.05em"
-          dominantBaseline="middle"
-          textAnchor="middle"
-          transform={`translate(${(c.left.x + c.bottom.x) / 2}, ${(c.left.y + c.bottom.y) / 2 + DEPTH / 2 + 1.3}) skewY(${angleDeg})`}
-          style={{ transition: "fill 0.4s ease", pointerEvents: "none" }}
-        >
-          {blockLabels[idx]}
-        </text>
+        {(() => {
+          const label = blockLabels[idx];
+          // Face diagonal length for auto-fit
+          const faceLen = Math.sqrt(Math.pow(c.bottom.x - c.left.x, 2) + Math.pow(c.bottom.y - c.left.y, 2));
+          const baseFontSize = 10;
+          const charWidth = 6; // approximate monospace char width at baseFontSize
+          const estimatedWidth = label.length * charWidth;
+          const usable = faceLen * 0.85; // 85% of face length for padding
+          const fontSize = estimatedWidth > usable ? baseFontSize * (usable / estimatedWidth) : baseFontSize;
+          return (
+            <text
+              x={0}
+              y={0}
+              fill="rgba(255,255,255,0.9)"
+              fontFamily="var(--font-mono), monospace"
+              fontSize={fontSize}
+              fontWeight="700"
+              letterSpacing="0.05em"
+              dominantBaseline="middle"
+              textAnchor="middle"
+              transform={`translate(${(c.left.x + c.bottom.x) / 2}, ${(c.left.y + c.bottom.y) / 2 + DEPTH / 2 + 1.3}) skewY(${angleDeg})`}
+              style={{ pointerEvents: "none" }}
+            >
+              {label}
+            </text>
+          );
+        })()}
       </g>
     );
   };
 
   const drawConnections = () => {
-    if (activeIndex === null) return null;
-
-    const activeCy = getCy(activeIndex);
-    const ac = isoCorners(activeCy);
-
-    // 3 connector origin points on the top-right back edge
-    const p1 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.65, y: ac.top.y + (ac.right.y - ac.top.y) * 0.65 };
-    const p2 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.75, y: ac.top.y + (ac.right.y - ac.top.y) * 0.75 };
-    const p3 = { x: ac.top.x + (ac.right.x - ac.top.x) * 0.85, y: ac.top.y + (ac.right.y - ac.top.y) * 0.85 };
-
-    const origins = [p1, p2, p3];
+    // Bracket ⎤ connectors overlaying the south-east (right) face.
+    const stubLen = 8;
+    const opacity = 0.4;
+    const stroke = `rgba(255,255,255,${opacity})`;
+    const transition = "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)";
 
     return (
-      <g style={{ opacity: 0, animation: "fadeIn 0.5s forwards 0.3s" }}>
-        {origins.map((origin, i) => (
-          <path
-            key={i}
-            d={`M ${origin.x} ${origin.y} L ${origin.x} ${labelYs[i]} L ${CX + DX + 6} ${labelYs[i]}`}
-            fill="none"
-            stroke="rgba(255,255,255,0.25)"
-            strokeWidth="1.5"
-            strokeDasharray="2 4"
-          />
-        ))}
+      <g>
+        {bracketYs.map((b, i) => {
+          const x = bracketXs[i];
+          return (
+            <g key={i}>
+              {/* Top horizontal stub ── */}
+              <line
+                x1={x - stubLen} y1={b.topY} x2={x} y2={b.topY}
+                stroke={stroke} strokeWidth="1.2" strokeDasharray="2 3"
+                style={{ transition }}
+              />
+              {/* Vertical line | */}
+              <line
+                x1={x} y1={b.topY} x2={x} y2={b.botY}
+                stroke={stroke} strokeWidth="1.2" strokeDasharray="2 3"
+                style={{ transition }}
+              />
+              {/* Bottom horizontal stub ── */}
+              <line
+                x1={x - stubLen} y1={b.botY} x2={x} y2={b.botY}
+                stroke={stroke} strokeWidth="1.2" strokeDasharray="2 3"
+                style={{ transition }}
+              />
+            </g>
+          );
+        })}
       </g>
     );
   };
@@ -1825,14 +1870,15 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
     return sideLabels.map((label, i) => (
       <text
         key={i}
-        x={CX + DX + 10}
-        y={labelYs[i] + 4}
-        fill={activeIndex !== null ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.15)"}
+        x={bracketXs[i] + 6}
+        y={labelYs[i]}
+        fill="rgba(255,255,255,0.75)"
         fontFamily="var(--font-mono), monospace"
-        fontSize="8"
-        fontWeight="600"
-        letterSpacing="0.1em"
-        style={{ transition: "fill 0.4s ease" }}
+        fontSize="10"
+        fontWeight="700"
+        letterSpacing="0.14em"
+        dominantBaseline="middle"
+        style={{ transition: "all 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}
       >
         {label}
       </text>
@@ -1841,7 +1887,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", overflow: "hidden" }}>
-      <svg viewBox="0 0 500 500" style={{ width: "115%", height: "115%", overflow: "visible", transform: "translateX(2%)" }}>
+      <svg viewBox="0 0 500 500" style={{ width: "108%", height: "108%", overflow: "visible" }}>
         <defs>
           <linearGradient id="activeBorder" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#ff3366" />
@@ -1856,10 +1902,11 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
           `}</style>
         </defs>
 
-        {drawConnections()}
-        {drawRightLabels()}
         {/* Draw layers from bottom to top for correct z-indexing */}
         {[3, 2, 1, 0].map(idx => drawLayer(idx))}
+        {/* Connectors and labels render AFTER slabs so they overlay the right face */}
+        {drawConnections()}
+        {drawRightLabels()}
       </svg>
     </div>
   );
@@ -1881,8 +1928,8 @@ function CapabilitiesSection() {
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.65rem, 3.1vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
             You bring the ideas. We provide the <span style={{ color: ACCENT }}>compute</span>.
           </h2>
-          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.6 }}>
-            <span style={{ display: "block", textAlign: "center", marginBottom: "0.5rem" }}>No more fighting hardware limits or expensive cloud bills.</span>
+          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.6, textAlign: "center" }}>
+            <span style={{ display: "block", marginBottom: "0.5rem", color: "#FFD700", fontFamily: "'Courier New', 'Lucida Console', monospace", fontWeight: 700, letterSpacing: "0.04em", fontSize: "1.1rem" }}>No more fighting hardware limits or expensive cloud bills.</span>
             LaaS gives students, researchers, and fast-moving teams instant, pay-as-you-go access to top-tier AI supercomputing.
           </p>
         </div>
@@ -1902,7 +1949,7 @@ function CapabilitiesSection() {
 
                     {/* Numbering */}
                     <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "1.15rem", fontWeight: 600, color: isOpen ? ACCENT : "var(--fgColor-muted)", transition: "color 0.2s" }}>
-                      {item.num} <span style={{ color: "var(--fgColor-muted)" }}>/</span>
+                      {item.num} <span style={{ color: isOpen ? "var(--fgColor-muted)" : "#4f6ef7", transition: "color 0.2s" }}>/</span>
                     </span>
 
                     {/* Title */}
@@ -1919,13 +1966,13 @@ function CapabilitiesSection() {
                   </button>
 
                   {/* Expanded Content */}
-                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)" /* padding removed so we start flush left with numeric */ }}>
-                    <div style={{ paddingBottom: 30, paddingLeft: 12 /* Centers the vertical line cleanly under the numeric '0' */ }}>
+                  <div style={{ maxHeight: isOpen ? 500 : 0, overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.1, 0.8, 0.3, 1)", marginTop: isOpen ? -30 : 0, paddingTop: isOpen ? 30 : 0 }}>
+                    <div style={{ paddingBottom: 30, paddingLeft: 12 }}>
 
                       {/* Bent Pointer & Subtitle */}
-                      <div style={{ position: "relative", marginBottom: 24, paddingLeft: 53 /* 53 + 12 offset = 65 total offset, perfectly aligning text with the title string above */ }}>
+                      <div style={{ position: "relative", marginBottom: 24, paddingLeft: 53 }}>
                         {/* CSS Drawing of the Bent Pointer */}
-                        <div style={{ position: "absolute", top: -30, left: 0, width: 35 /* 53 padding - 35 width = 18px gap before text */, height: 35, borderLeft: "1.5px solid rgba(255,255,255,0.7)", borderBottom: "1.5px solid rgba(255,255,255,0.7)" }} />
+                        <div style={{ position: "absolute", top: -30, left: 0, width: 35, height: 35, borderLeft: "1.5px solid rgba(255,255,255,0.7)", borderBottom: "1.5px solid rgba(255,255,255,0.7)" }} />
                         <p style={{ margin: 0, padding: 0, fontFamily: "var(--font-mono), monospace", fontSize: "0.82rem", color: "var(--fgColor-muted)", lineHeight: 1.6 }}>
                           {item.subtitle}
                         </p>
@@ -1949,7 +1996,7 @@ function CapabilitiesSection() {
           </div>
 
           {/* Right: Isometric Stack Asset */}
-          <div style={{ flex: "1 1 400px", minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", alignSelf: "flex-start" }}>
+          <div style={{ flex: "1 1 400px", minHeight: 460, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", alignSelf: "flex-start" }}>
             <IsometricStackAsset activeIndex={openIndex} />
           </div>
 
@@ -2162,50 +2209,6 @@ export function LandingPage() {
       {/* ── CAPABILITIES ── */}
       <CapabilitiesSection />
 
-      {/* ── HOW IT WORKS ── */}
-
-      <section id="how-it-works" style={{ position: "relative" }}>
-        <InteractiveGrid />
-        <div className="land-section reveal-on-scroll" style={{ position: "relative", zIndex: 1, paddingTop: 40, paddingBottom: 40 }}>
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 12 }}>How It Works</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 4vw, 2.6rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Launch AI Workspaces<br />in Minutes</h2>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
-          </div>
-
-          <style>{`
-            .bento-asymmetric-grid {
-               display: grid;
-               grid-template-columns: repeat(12, 1fr);
-               gap: 16px;
-               max-width: 1040px;
-               margin: 0 auto;
-               padding: 0 20px;
-            }
-            .bento-card-01 { grid-column: span 7; }
-            .bento-card-02 { grid-column: span 5; }
-            .bento-card-03 { grid-column: span 5; }
-            .bento-card-04 { grid-column: span 7; }
-            .bento-card-05 { grid-column: span 12; }
-            
-            @media (max-width: 960px) {
-               .bento-card-01, .bento-card-02, .bento-card-03, .bento-card-04, .bento-card-05 {
-                  grid-column: span 12;
-               }
-            }
-          `}</style>
-          <div className="bento-asymmetric-grid">
-            <div className="reveal-on-scroll bento-card-01" style={{ transitionDelay: "0.1s" }}><BentoStepCard {...steps[0]} /></div>
-            <div className="reveal-on-scroll bento-card-02" style={{ transitionDelay: "0.15s" }}><BentoStepCard {...steps[1]} /></div>
-
-            <div className="reveal-on-scroll bento-card-03" style={{ transitionDelay: "0.2s" }}><BentoStepCard {...steps[2]} /></div>
-            <div className="reveal-on-scroll bento-card-04" style={{ transitionDelay: "0.25s" }}><BentoStepCard {...steps[3]} /></div>
-
-            <div className="reveal-on-scroll bento-card-05" style={{ transitionDelay: "0.3s" }}><BentoStepCard {...steps[4]} /></div>
-          </div>
-        </div>
-      </section>
-
       {/* ── YOUR GPU, YOUR TERMINAL ── */}
       <section className="reveal-on-scroll" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
         <div className="land-section hero-split" style={{ display: "flex", gap: 56, alignItems: "center" }}>
@@ -2259,6 +2262,50 @@ export function LandingPage() {
                 Start Free →
               </Link>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ── */}
+
+      <section id="how-it-works" style={{ position: "relative" }}>
+        <InteractiveGrid />
+        <div className="land-section reveal-on-scroll" style={{ position: "relative", zIndex: 1, paddingTop: 40, paddingBottom: 40 }}>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 12 }}>How It Works</div>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 4vw, 2.6rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Launch AI Workspaces<br />in Minutes</h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
+          </div>
+
+          <style>{`
+            .bento-asymmetric-grid {
+               display: grid;
+               grid-template-columns: repeat(12, 1fr);
+               gap: 16px;
+               max-width: 1040px;
+               margin: 0 auto;
+               padding: 0 20px;
+            }
+            .bento-card-01 { grid-column: span 7; }
+            .bento-card-02 { grid-column: span 5; }
+            .bento-card-03 { grid-column: span 5; }
+            .bento-card-04 { grid-column: span 7; }
+            .bento-card-05 { grid-column: span 12; }
+            
+            @media (max-width: 960px) {
+               .bento-card-01, .bento-card-02, .bento-card-03, .bento-card-04, .bento-card-05 {
+                  grid-column: span 12;
+               }
+            }
+          `}</style>
+          <div className="bento-asymmetric-grid">
+            <div className="reveal-on-scroll bento-card-01" style={{ transitionDelay: "0.1s" }}><BentoStepCard {...steps[0]} /></div>
+            <div className="reveal-on-scroll bento-card-02" style={{ transitionDelay: "0.15s" }}><BentoStepCard {...steps[1]} /></div>
+
+            <div className="reveal-on-scroll bento-card-03" style={{ transitionDelay: "0.2s" }}><BentoStepCard {...steps[2]} /></div>
+            <div className="reveal-on-scroll bento-card-04" style={{ transitionDelay: "0.25s" }}><BentoStepCard {...steps[3]} /></div>
+
+            <div className="reveal-on-scroll bento-card-05" style={{ transitionDelay: "0.3s" }}><BentoStepCard {...steps[4]} /></div>
           </div>
         </div>
       </section>

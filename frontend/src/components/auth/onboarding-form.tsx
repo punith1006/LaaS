@@ -151,7 +151,7 @@ const ACADEMIC_YEAR_OPTIONS = [
 
 export function OnboardingForm() {
   const router = useRouter();
-  const { onboardingData, setOnboardingData, hasEmail, reset, institution } = useSignupStore();
+  const { onboardingData, setOnboardingData, reset, institution } = useSignupStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -226,11 +226,9 @@ export function OnboardingForm() {
     setSelectedTools(prev => prev.filter(tool => availableTools.includes(tool)));
   }, [availableTools]);
 
-  useEffect(() => {
-    if (!hasEmail()) {
-      router.replace("/signup");
-    }
-  }, [hasEmail, router]);
+  // Note: OAuth users arrive here with a valid JWT but no signup-store state.
+  // Local signup users have signup-store state from the email/password flow.
+  // Both are valid - we just need a valid JWT to save the onboarding profile.
 
   // Pre-fill form for institution students
   useEffect(() => {

@@ -438,7 +438,18 @@ export class AuthService {
       // Don't let audit logging failures break the login flow
     }
 
-    return this.issueTokens(user);
+    const tokens = await this.issueTokens(user);
+
+    // Get onboarding status from UserProfile
+    const userProfile = await this.prisma.userProfile.findUnique({
+      where: { userId: user.id },
+      select: { isOnboardingComplete: true },
+    });
+
+    return {
+      ...tokens,
+      isOnboardingComplete: userProfile?.isOnboardingComplete ?? false,
+    };
   }
 
   async refreshTokens(refreshToken: string) {
@@ -541,6 +552,9 @@ export class AuthService {
       }
     }
 
+    // Track if this is a new user being created
+    const isNewUser = !user;
+
     if (user) {
       // Always update name fields from Keycloak if available
       const firstName = userInfo.given_name || userInfo.name?.split(' ')[0] || user.firstName;
@@ -613,6 +627,14 @@ export class AuthService {
           storageUid,
           storageProvisioningStatus: isInstitution ? 'pending' : null,
           isActive: true,
+        },
+      });
+
+      // Create UserProfile for new OAuth users with onboarding incomplete
+      await this.prisma.userProfile.create({
+        data: {
+          userId: user.id,
+          isOnboardingComplete: false,
         },
       });
 
@@ -731,9 +753,18 @@ export class AuthService {
     }
 
     const tokens = await this.issueTokens(user);
+
+    // Get onboarding status from UserProfile
+    const userProfile = await this.prisma.userProfile.findUnique({
+      where: { userId: user.id },
+      select: { isOnboardingComplete: true },
+    });
+
     return {
       ...tokens,
       idToken, // Include ID token for Keycloak logout
+      isOnboardingComplete: userProfile?.isOnboardingComplete ?? false,
+      isNewUser,
     };
   }
 

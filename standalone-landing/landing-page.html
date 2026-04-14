@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaaS - Your Remote AI Workstation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="landing-page">
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+      <a href="#" class="nav-logo">LaaS</a>
+      <div class="nav-links">
+        <a href="#features" class="nav-link">Features</a>
+        <a href="#how-it-works" class="nav-link">How It Works</a>
+        <a href="#pricing" class="nav-link">Pricing</a>
+        <a href="#faq" class="nav-link">FAQ</a>
+      </div>
+      <div class="nav-buttons">
+        <a href="/signin" class="btn-signin">Sign In</a>
+        <a href="/signup" class="btn-signup">Get Started →</a>
+      </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+      <canvas id="particles-canvas"></canvas>
+      <div class="hero-radial"></div>
+      
+      <div class="hero-split">
+        <div class="hero-left">
+          <div class="hero-badge">
+            <span class="hero-badge-dot"></span>
+            <span class="hero-badge-text">KSRCE AI Lab Infrastructure</span>
+          </div>
+          <h1 class="hero-title">Your Remote AI Workstation.</h1>
+          <h2 class="hero-title-accent">Work Anywhere. Create Everywhere.</h2>
+          <p class="hero-desc">LaaS gives KSRCE students and researchers instant access to NVIDIA RTX 5090 GPUs across a 4-node cluster with 32 GB VRAM per GPU, up to 100 GB persistent storage, and Jupyter notebooks — secured by university SSO.</p>
+          <div class="hero-buttons">
+            <a href="/signup" class="btn-primary">Launch a GPU →</a>
+            <a href="#how-it-works" class="btn-secondary">See How It Works</a>
+          </div>
+        </div>
+        <div class="hero-right">
+          <div class="terminal">
+            <div class="terminal-header">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+              <span class="terminal-title">laas — bash</span>
+            </div>
+            <div class="terminal-body" id="terminal-body"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar reveal-on-scroll">
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-value"><span class="counter" data-end="500" data-suffix="+">0</span></div>
+          <div class="stat-label">Active Students</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value"><span class="counter" data-end="128" data-suffix=" GB">0</span></div>
+          <div class="stat-label">Cluster GPU VRAM</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">Upto 100<span class="counter" data-end="" data-suffix="GB"></span></div>
+          <div class="stat-label">Storage / User</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value"><span class="counter" data-end="99" data-suffix="%">0</span></div>
+          <div class="stat-label">Uptime SLA</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trusted By -->
+    <div class="trusted-bar reveal-on-scroll">
+      <div class="trusted-title">Powering institutions that push boundaries</div>
+      <div class="trusted-list">
+        <span class="trusted-item">KSRCE</span>
+        <span class="trusted-item">Partner Colleges</span>
+        <span class="trusted-item">Research Groups</span>
+        <span class="trusted-item">Industry Labs</span>
+        <span class="trusted-item">Institutional. R&D Units</span>
+      </div>
+    </div>
+
+    <!-- Capabilities Section -->
+    <section class="capabilities reveal-on-scroll">
+      <div class="capabilities-inner">
+        <div class="capabilities-header">
+          <div class="capabilities-header-row">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h7" /></svg>
+            <span class="capabilities-title">Capabilities</span>
+          </div>
+          <h2 class="capabilities-heading">You bring the ideas. We provide the <span>compute</span>.</h2>
+          <p class="capabilities-subtitle">
+            <span>No more fighting hardware limits or expensive cloud bills.</span>
+            LaaS gives students, researchers, and fast-moving teams instant, pay-as-you-go access to top-tier AI supercomputing.
+          </p>
+        </div>
+        <div class="capabilities-content">
+          <div class="capabilities-accordion" id="accordion-container"></div>
+          <div class="isometric-container">
+            <div class="isometric-svg" id="isometric-svg"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how-it-works" class="how-it-works">
+      <div class="interactive-grid" id="interactive-grid">
+        <div class="dot-matrix"><div class="dot-matrix-base"></div></div>
+      </div>
+      <div class="land-section how-it-works-inner">
+        <div class="how-it-works-header">
+          <div class="section-label">How It Works</div>
+          <h2 class="section-title">Launch AI Workspaces<br />in Minutes</h2>
+          <p class="section-desc">From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
+        </div>
+        <div class="bento-asymmetric-grid" id="bento-grid"></div>
+      </div>
+    </section>
+
+    <!-- Your GPU Section -->
+    <section class="gpu-section reveal-on-scroll">
+      <div class="land-section hero-split gpu-split">
+        <div class="gpu-terminal">
+          <div class="terminal">
+            <div class="terminal-header">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+              <span class="terminal-title">ssh student@sess.laas.io</span>
+            </div>
+            <div class="terminal-body">
+              <div class="terminal-line muted">Welcome to LaaS — 4-Node GPU Cluster</div>
+              <div class="terminal-line muted">NVIDIA RTX 5090 · 32 GB VRAM · CUDA 12.x · Ubuntu 22.04</div>
+              <div style="height: 12px"></div>
+              <div class="terminal-line">$ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader</div>
+              <div class="terminal-line ok">NVIDIA GeForce RTX 5090, 32768 MiB</div>
+              <div style="height: 8px"></div>
+              <div class="terminal-line">$ du -sh ~/data/</div>
+              <div class="terminal-line muted">3.2G    /home/student/data/</div>
+              <div style="height: 8px"></div>
+              <div class="terminal-line">$ python train.py --epochs 50 --model resnet50</div>
+              <div class="terminal-line ok">Epoch  1/50  loss: 2.4132  acc: 0.312 ✓</div>
+              <div class="terminal-line ok">Epoch  2/50  loss: 1.9820  acc: 0.418 ✓</div>
+              <div class="terminal-cursor">▊</div>
+            </div>
+          </div>
+        </div>
+        <div class="gpu-content">
+          <div class="section-label">Full Linux Access</div>
+          <h2 class="section-title" style="text-align:left;color:var(--fgColor-default)">Your GPU,<br />Your Terminal</h2>
+          <p style="font-family:var(--font-sans);font-size:0.95rem;line-height:1.75;color:var(--fgColor-muted);margin-bottom:28px">Get root-level SSH access to your GPU node. Run any workload — training, inference, data processing — with no restrictions. Your home directory persists across all sessions.</p>
+          <div class="gpu-checklist">
+            <div class="gpu-check-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>Instance & session management from dashboard</span>
+            </div>
+            <div class="gpu-check-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>Managed background runs with log tailing</span>
+            </div>
+            <div class="gpu-check-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>File transfer via SCP, SFTP or browser UI</span>
+            </div>
+            <div class="gpu-check-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>Agent-native API for CI/CD automation</span>
+            </div>
+          </div>
+          <a href="/signup" class="btn-primary" style="margin-top:32px;display:inline-flex">Start Free →</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why Choose Us -->
+    <section id="features" class="features-section">
+      <div class="land-section" style="background:var(--bgColor-default)">
+        <div class="features-header">
+          <div class="section-label">Why Choose Us</div>
+          <h2 class="features-heading">Built for Academia, Better than Cloud</h2>
+          <p class="features-subtitle">LaaS eliminates the hidden costs and complexity of AWS/GCP, offering zero-setup persistent storage and tailored institutional integration.</p>
+        </div>
+        <div class="bento-feature-grid reveal-on-scroll" id="feature-grid"></div>
+      </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="pricing-section">
+      <div class="pricing-inner">
+        <div class="pricing-header reveal-on-scroll">
+          <div class="pricing-header-left">
+            <div class="section-label">Pricing</div>
+            <h2 class="section-title" style="text-align:left">Pay as you go</h2>
+            <p style="font-family:var(--font-sans);font-size:1rem;color:var(--fgColor-muted);max-width:100%;line-height:1.7;margin-bottom:32px">Our pricing model lets you pay only for what you use. No minimum commitments. Paused instances only incur storage fees. <span style="color:var(--accent);font-weight:700">Zero Lock-in!</span></p>
+            <div class="pricing-checklist">
+              <div class="pricing-check">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Pay-as-you-go wallet with real-time billing</span>
+              </div>
+              <div class="pricing-check">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Fractional to Dedicated RTX 5090 GPUs</span>
+              </div>
+              <div class="pricing-check">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Pre-built stacks: Jupyter, VS Code & KDE Desktop</span>
+              </div>
+              <div class="pricing-check">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Containerized workspaces via WebRTC in seconds</span>
+              </div>
+            </div>
+            <a href="/signup" class="btn-deploy">
+              Deploy Your AI Workspace
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            </a>
+          </div>
+          <div class="pricing-header-right">
+            <div class="pricing-table-wrapper">
+              <table class="pricing-table">
+                <thead>
+                  <tr>
+                    <th>Tier</th>
+                    <th>vCPUs</th>
+                    <th>RAM</th>
+                    <th>GPU VRAM</th>
+                    <th>HAMI %</th>
+                    <th>₹/hour</th>
+                  </tr>
+                </thead>
+                <tbody id="pricing-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="all-plans-wrapper reveal-on-scroll">
+          <div class="all-plans-border-wrap">
+            <div class="all-plans-inner">
+              <div class="all-plans-title">All plans include</div>
+              <div class="all-plans-grid" id="all-plans-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="faq-section">
+      <div class="land-section">
+        <div class="faq-header">
+          <div class="section-label">FAQ</div>
+          <h2 class="section-title">Frequently Asked Questions</h2>
+          <p class="faq-contact">
+            Can't find what you're looking for? Reach us at <a href="mailto:project@gktech.ai">project@gktech.ai</a>.
+          </p>
+        </div>
+        <div class="faq-grid" id="faq-grid-left"></div>
+        <div class="faq-grid" id="faq-grid-right" style="margin-top:0"></div>
+      </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+      <video class="cta-video" autoplay muted loop playsinline preload="auto">
+        <source src="assets/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31.mp4" type="video/mp4">
+      </video>
+      <div class="cta-overlay"></div>
+      <div class="cta-content">
+        <h2 class="cta-title">Ready to launch your first GPU session?</h2>
+        <p class="cta-desc">Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 60 seconds.</p>
+        <div class="cta-buttons">
+          <a href="/signup" class="btn-create">Create Account →</a>
+          <a href="/signin" class="btn-signin-cta">Sign In</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <span class="footer-logo">LaaS</span>
+      <span class="footer-text">KSRCE AI Lab — Lab as a Service Platform · © 2025</span>
+      <div class="footer-links">
+        <a href="#" class="footer-link">Privacy</a>
+        <a href="#" class="footer-link">Terms</a>
+        <a href="#" class="footer-link">Docs</a>
+        <a href="#" class="footer-link">Pricing</a>
+      </div>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
