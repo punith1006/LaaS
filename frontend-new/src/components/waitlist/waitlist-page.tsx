@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "@/types/auth";
-import { submitWaitlist, getMe, type WaitlistFormData, analyzeWaitlistWorkload, checkWaitlistStatus, type WaitlistEntry } from "@/lib/api";
+import { submitWaitlist, getMe, type WaitlistFormData, analyzeWaitlistWorkload, checkWaitlistStatus, type WaitlistEntry, getWaitlistCount } from "@/lib/api";
 import { getAccessToken } from "@/lib/token";
 import { PolicyCheckbox } from "@/components/auth/policy-checkbox";
 import { PolicyModal } from "@/components/auth/policy-modal";
@@ -402,11 +402,22 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
           status: responseData.status,
           createdAt: responseData.createdAt,
         };
+        let pos: number | null = null;
+        let total: number | null = null;
+        try {
+          const count = await getWaitlistCount();
+          if (count) {
+            pos = count;   // user just submitted — they're last in line
+            total = count;
+          }
+        } catch {
+          // ignore — position will just be null (graceful degradation)
+        }
         try {
           sessionStorage.setItem('waitlist_just_submitted', JSON.stringify({
             entry: entrySnapshot,
-            position: null,
-            totalCount: null,
+            position: pos,
+            totalCount: total,
           }));
         } catch {
           // sessionStorage unavailable — not critical
