@@ -1550,6 +1550,21 @@ export interface WaitlistStatusResponse {
   enrolled: boolean;
   entry?: WaitlistEntry;
   position?: number;
+  totalCount?: number;
+}
+
+// Get public waitlist count (no auth required)
+export async function getWaitlistCount(): Promise<number> {
+  if (API_BASE) {
+    try {
+      const res = await fetch(`${API_BASE}/api/waitlist/count`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.count ?? 0;
+      }
+    } catch {}
+  }
+  return 0;
 }
 
 // Check if the current user is already enrolled in the waitlist

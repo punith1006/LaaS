@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { User } from "@/types/auth";
 import { submitWaitlist, getMe, type WaitlistFormData, analyzeWaitlistWorkload, checkWaitlistStatus, type WaitlistEntry } from "@/lib/api";
 import { getAccessToken } from "@/lib/token";
@@ -123,6 +124,7 @@ const WORKLOAD_OPTIONS = [
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export function WaitlistPage({ user }: WaitlistPageProps) {
+  const router = useRouter();
   const [authenticatedUser, setAuthenticatedUser] = useState<User | null>(user);
   const [formStep, setFormStep] = useState<1 | 2>(1);
 
@@ -198,7 +200,8 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
   const [waitlistEntry, setWaitlistEntry] = useState<WaitlistEntry | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
-
+  const [loadingStatus, setLoadingStatus] = useState(false);
+  
   // AI Analysis state
   const [analysisState, setAnalysisState] = useState<'idle' | 'analyzing' | 'success' | 'failure'>('idle');
   const [analysisData, setAnalysisData] = useState<any>(null);
@@ -311,7 +314,6 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
   const isValid =
     formData.currentStatus &&
     formData.computeNeeds &&
-    formData.expectations.length > 0 &&
     formData.primaryWorkload &&
     formData.agreedToPolicy &&
     // For unauthenticated users, firstName + valid email are required
@@ -368,9 +370,35 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
     if (checked) setPolicyError(null);
   };
 
+  // Handle "View Your Status" click from success screen
+  const handleViewStatus = async () => {
+    if (authenticatedUser) {
+      setLoadingStatus(true);
+      try {
+        const status = await checkWaitlistStatus();
+        if (status.enrolled && status.entry) {
+          setWaitlistEntry(status.entry);
+          setWaitlistPosition(status.position ?? null);
+          setAlreadyEnrolled(true);
+          setSubmitted(false);
+        } else {
+          // Not enrolled (shouldn't happen after submission, but handle gracefully)
+          router.push('/waitlist');
+        }
+      } catch {
+        // On error, go to waitlist
+        router.push('/waitlist');
+      } finally {
+        setLoadingStatus(false);
+      }
+    } else {
+      // Unauthenticated user — reload waitlist page (router.push is a no-op on same route)
+      window.location.href = '/waitlist';
+    }
+  };
+  
   // Success view
   if (submitted) {
-    const displayName = authenticatedUser?.firstName || manualFirstName || "there";
     return (
       <div style={{ minHeight: "100vh", background: "var(--bgColor-default)", display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 24px" }}>
         <style>{`
@@ -401,29 +429,51 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
             </svg>
           </div>
           <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "2.2rem", fontWeight: 800, color: "var(--fgColor-default)", marginBottom: 16, letterSpacing: "-0.02em" }}>
-            You&apos;re on the list!
+            Spot Secured!
           </h1>
           <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.1rem", color: "var(--fgColor-muted)", marginBottom: 32, lineHeight: 1.6 }}>
-            Thanks for your interest, {displayName}! We&apos;re reviewing applications and will reach out when your access is ready.
+            Your application has been received. We&apos;re excited to have you on board.
           </p>
-          <Link href="/" style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "14px 28px",
-            background: ACCENT,
-            color: "#fff",
-            fontFamily: "var(--font-sans)",
-            fontSize: "1rem",
-            fontWeight: 600,
-            borderRadius: 10,
-            textDecoration: "none",
-            transition: "all 0.2s",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
-            Back to Home
-          </Link>
+          <button
+            onClick={handleViewStatus}
+            disabled={loadingStatus}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "14px 28px",
+              background: loadingStatus ? ACCENT_DARK : ACCENT,
+              color: "#fff",
+              fontFamily: "var(--font-sans)",
+              fontSize: "1rem",
+              fontWeight: 600,
+              borderRadius: 10,
+              border: "none",
+              cursor: loadingStatus ? "wait" : "pointer",
+              transition: "all 0.2s",
+              opacity: loadingStatus ? 0.8 : 1,
+            }}
+            onMouseEnter={(e) => { if (!loadingStatus) { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; } }}
+            onMouseLeave={(e) => { if (!loadingStatus) { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; } }}
+          >
+            {loadingStatus ? (
+              <>
+                <svg style={{ animation: "spin 1s linear infinite", width: 18, height: 18 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                </svg>
+                Loading...
+              </>
+            ) : (
+              <>
+                View Your Status
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </>
+            )}
+          </button>
         </div>
       </div>
     );
@@ -774,6 +824,44 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                   >
                     ksrcsupport@gktech.ai
                   </a>
+                </div>
+
+                {/* Go to Home button */}
+                <div style={{ marginTop: 40 }}>
+                  <Link
+                    href="/"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "12px 24px",
+                      background: "transparent",
+                      color: "rgba(255, 255, 255, 0.95)",
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "1rem",
+                      fontWeight: 600,
+                      borderRadius: 8,
+                      border: "1px solid rgba(255, 255, 255, 0.3)",
+                      textDecoration: "none",
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
+                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.25)";
+                      e.currentTarget.style.color = "#fff";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.3)";
+                      e.currentTarget.style.color = "rgba(255, 255, 255, 0.95)";
+                    }}
+                  >
+                    Back to Home
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14" />
+                      <path d="m12 5 7 7-7 7" />
+                    </svg>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -1585,38 +1673,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                 </div>
               </div>
 
-              {/* What excites you most */}
-              <div style={{ marginBottom: 48 }}>
-                <label style={{ display: "block", fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 500, color: "var(--fgColor-default)", marginBottom: 16 }}>
-                  What excites you most about LaaS? <span style={{ color: "#ef4444" }}>* (select at least 1)</span>
-                </label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  {EXPECTATION_OPTIONS.map((opt) => {
-                    const isSelected = formData.expectations.includes(opt);
-                    return (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => toggleExpectation(opt)}
-                        style={{
-                          background: isSelected ? ACCENT : "var(--bgColor-muted)",
-                          border: isSelected ? `1px solid ${ACCENT}` : "1px solid var(--borderColor-default)",
-                          borderRadius: 9999,
-                          padding: "8px 18px",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          fontFamily: "var(--font-sans)",
-                          fontSize: "0.85rem",
-                          fontWeight: isSelected ? 600 : 500,
-                          color: isSelected ? "#fff" : "var(--fgColor-default)",
-                        }}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              
 
               {/* Policy & Disclaimer */}
               <div style={{
@@ -1711,7 +1768,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                   </>
                 ) : (
                   <>
-                    Join the Waitlist
+                    Secure Your Spot
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M5 12h14M12 5l7 7-7 7" />
                     </svg>

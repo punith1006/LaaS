@@ -668,7 +668,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 import Link from "next/link";
-import { getMe } from "@/lib/api";
+import { getMe, checkWaitlistStatus, getWaitlistCount } from "@/lib/api";
+import type { WaitlistStatusResponse } from "@/lib/api";
 import { getIdToken } from "@/lib/token";
 import { SignOutModal } from "@/components/sign-out-modal";
 import type { User } from "@/types/auth";
@@ -877,7 +878,7 @@ function useScrollReveal() {
 }
 
 // ─── Nav ──────────────────────────────────────────────────────────────────────
-function Nav({ isDark, onToggle, isAuthenticated, userName }: { isDark: boolean; onToggle: () => void; isAuthenticated?: boolean; userName?: string | null }) {
+function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, waitlistCount }: { isDark: boolean; onToggle: () => void; isAuthenticated?: boolean; userName?: string | null; waitlistStatus?: WaitlistStatusResponse | null; waitlistCount?: number }) {
   const [scrolled, setScrolled] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
@@ -948,8 +949,65 @@ function Nav({ isDark, onToggle, isAuthenticated, userName }: { isDark: boolean;
         ))}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* Demand badge for non-enrolled users */}
+        {!(isAuthenticated && waitlistStatus?.enrolled) && (waitlistCount ?? 0) > 0 && (
+          <span style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 10px",
+            background: "rgba(251,146,60,0.10)",
+            border: "1px solid rgba(251,146,60,0.25)",
+            borderRadius: 6,
+          }}>
+            <span style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "#fb923c",
+              flexShrink: 0,
+            }} />
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.72rem", fontWeight: 600, color: "#fb923c", whiteSpace: "nowrap" }}>
+              {waitlistCount}+ on the waitlist
+            </span>
+          </span>
+        )}
         {isAuthenticated ? (
-          <div ref={dropdownRef} style={{ position: "relative" }}>
+          <>
+            {/* Waitlist status indicator for enrolled users */}
+            {waitlistStatus?.enrolled && (
+              <Link
+                href="/waitlist"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 12px",
+                  background: isDark ? "rgba(79,110,247,0.12)" : "rgba(79,110,247,0.08)",
+                  border: "1px solid rgba(79,110,247,0.3)",
+                  borderRadius: 6,
+                  textDecoration: "none",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = isDark ? "rgba(79,110,247,0.2)" : "rgba(79,110,247,0.15)")}
+                onMouseLeave={e => (e.currentTarget.style.background = isDark ? "rgba(79,110,247,0.12)" : "rgba(79,110,247,0.08)")}
+              >
+                <span style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "#22c55e",
+                  flexShrink: 0,
+                }} />
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, color: "var(--fgColor-default)" }}>
+                  #{waitlistStatus.position}
+                </span>
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", color: "var(--fgColor-muted)" }}>
+                  of {waitlistStatus.totalCount} in waitlist
+                </span>
+              </Link>
+            )}
+            <div ref={dropdownRef} style={{ position: "relative" }}>
             <button
               onClick={() => setShowDropdown(!showDropdown)}
               style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", padding: "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", cursor: "pointer", transition: "all 0.15s" }}
@@ -976,6 +1034,7 @@ function Nav({ isDark, onToggle, isAuthenticated, userName }: { isDark: boolean;
               </div>
             )}
           </div>
+          </>
         ) : (
           <Link href="/signin"
             style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", textDecoration: "none", padding: "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, transition: "all 0.15s" }}
@@ -984,12 +1043,15 @@ function Nav({ isDark, onToggle, isAuthenticated, userName }: { isDark: boolean;
             Sign In
           </Link>
         )}
-        <Link href={isAuthenticated ? "/waitlist" : "/signup"}
+        {/* Hide "Get Started" button for users already enrolled in waitlist */}
+        {!(isAuthenticated && waitlistStatus?.enrolled) && (
+          <Link href={isAuthenticated ? "/waitlist" : "/signup"}
             style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: "7px 20px", backgroundColor: ACCENT, borderRadius: 6, border: `1px solid ${ACCENT}`, transition: "all 0.15s", boxShadow: `0 0 20px ${ACCENT_GLOW}` }}
             onMouseEnter={e => (e.currentTarget.style.backgroundColor = ACCENT_DARK)}
             onMouseLeave={e => (e.currentTarget.style.backgroundColor = ACCENT)}>
             Get Started →
           </Link>
+        )}
       </div>
     </nav>
     <SignOutModal
@@ -2088,10 +2150,15 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
   const [zoom, setZoom] = useState(1);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const [user, setUser] = useState<User | null>(null);
-
+  const [waitlistStatus, setWaitlistStatus] = useState<WaitlistStatusResponse | null>(null);
+  const [waitlistCount, setWaitlistCount] = useState<number>(0);
+  
   useEffect(() => {
+    // Fetch public waitlist count unconditionally
+    getWaitlistCount().then(c => setWaitlistCount(c)).catch(() => {});
     if (isAuthenticated) {
       getMe().then(u => setUser(u)).catch(() => {});
+      checkWaitlistStatus().then(status => setWaitlistStatus(status)).catch(() => {});
     }
   }, [isAuthenticated]);
 
@@ -2211,7 +2278,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
         }
       `}</style>
 
-      <Nav isDark={isDark} onToggle={toggle} isAuthenticated={isAuthenticated} userName={userName} />
+      <Nav isDark={isDark} onToggle={toggle} isAuthenticated={isAuthenticated} userName={userName} waitlistStatus={waitlistStatus} waitlistCount={waitlistCount} />
       <section style={{ position: "relative", minHeight: `${(1 / zoom) * 100}vh`, display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden" }}>
 
         {/* ↓ Particle network replaces the old hero-grid div */}
@@ -2260,9 +2327,9 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
 
         {/* Powered by — bottom of hero */}
         <div style={{ maxWidth: 1140, margin: "0 auto", width: "100%", padding: "0 48px", position: "relative", zIndex: 1 }}>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 14, paddingBottom: 32, animation: "fadeUp 0.4s ease 0.6s both" }}>
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 500, color: "var(--fgColor-muted)", letterSpacing: "0.04em", lineHeight: 1, paddingBottom: 3 }}>Powered by</span>
-            <img src="/images/GKT-logo.png" alt="Global Knowledge" style={{ height: 64, objectFit: "contain" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 16, paddingBottom: 32, animation: "fadeUp 0.4s ease 0.6s both" }}>
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, color: "var(--fgColor-muted)", letterSpacing: "0.04em", lineHeight: 1 }}>Powered by</span>
+            <img src="/images/GKT-logo.png" alt="Global Knowledge" style={{ height: 80, objectFit: "contain", filter: "brightness(1.1)" }} />
           </div>
         </div>
       </section>

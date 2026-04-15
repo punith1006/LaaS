@@ -76,6 +76,12 @@ export class WaitlistController {
     );
   }
 
+  @Get('count')
+  async getWaitlistCount() {
+    const count = await this.waitlistService.getWaitlistCount();
+    return { count };
+  }
+
   @Get('status')
   async getWaitlistStatus(@Req() req: Request) {
     const authHeader = req.headers.authorization;
@@ -97,8 +103,8 @@ export class WaitlistController {
     const result = await this.waitlistService.getWaitlistStatus(userId);
 
     if (result) {
-      const { position, ...entry } = result;
-      return { enrolled: true, entry, position };
+      const { position, totalCount, ...entry } = result;
+      return { enrolled: true, entry, position, totalCount };
     }
     return { enrolled: false };
   }

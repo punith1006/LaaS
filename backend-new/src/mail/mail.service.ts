@@ -1,9 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 @Injectable()
 export class MailService {
   constructor(private mailer: MailerService) {}
+
+  // Helper to load logo images for email templates (CID embedding)
+  private getLogoAttachments() {
+    return [
+      {
+        filename: 'ksrce-logo.png',
+        content: readFileSync(join(process.cwd(), 'templates', 'images', 'ksrce-logo.png')),
+        cid: 'ksrce-logo@laas.ai',
+        encoding: 'base64',
+      },
+      {
+        filename: 'global-knowledge-logo.png',
+        content: readFileSync(join(process.cwd(), 'templates', 'images', 'global-knowledge-logo.png')),
+        cid: 'global-knowledge-logo@laas.ai',
+        encoding: 'base64',
+      },
+    ];
+  }
 
   async sendOtpEmail(to: string, code: string): Promise<void> {
     await this.mailer.sendMail({
@@ -168,6 +188,7 @@ export class MailService {
       subject: "You're on the List — Welcome to LaaS!",
       template: 'waitlist-confirmation',
       context,
+      attachments: this.getLogoAttachments(),
     });
   }
 }
