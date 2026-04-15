@@ -31,6 +31,7 @@ export class MailService {
       subject: 'Your LaaS verification code',
       template: 'otp',
       context: { code },
+      attachments: this.getLogoAttachments(),
     });
   }
   
@@ -40,6 +41,7 @@ export class MailService {
       subject: 'LaaS - Password Reset Code',
       template: 'password-reset',
       context: { code },
+      attachments: this.getLogoAttachments(),
     });
   }
 
@@ -49,6 +51,7 @@ export class MailService {
       subject: 'Welcome to LaaS',
       template: 'welcome',
       context: { firstName },
+      attachments: this.getLogoAttachments(),
     });
   }
 

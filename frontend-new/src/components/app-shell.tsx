@@ -161,7 +161,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (idToken) {
         params.set("id_token_hint", idToken);
       }
-      params.set("post_logout_redirect_uri", `${appUrl}/signin`);
+      params.set("post_logout_redirect_uri", `${appUrl}/`);
       logoutUrl += `?${params.toString()}`;
       
       window.location.href = logoutUrl;

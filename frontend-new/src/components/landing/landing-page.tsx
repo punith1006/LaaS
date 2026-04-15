@@ -2127,7 +2127,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
 }
 
 function CapabilitiesSection({ isMobile }: { isMobile?: boolean }) {
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
     <section id="capabilities" className="reveal-on-scroll" style={{ padding: isMobile ? "32px 20px 20px" : "48px 48px 24px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
@@ -2462,9 +2462,54 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
 
       {/* ── YOUR GPU, YOUR DESKTOP ── */}
       <section className="reveal-on-scroll" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
-        <div className="land-section hero-split" style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 32 : 56, alignItems: isMobile ? "flex-start" : "center", padding: isMobile ? "40px 20px" : undefined }}>
-          {/* LEFT: Text content */}
+        <div className="land-section hero-split" style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: "center", gap: isMobile ? 32 : 48, padding: isMobile ? "40px 20px" : "72px 48px", width: "100%" }}>
+          {/* LEFT (desktop) / BOTTOM (mobile): Workload cards grid */}
+          {!isMobile && (
           <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: 10,
+            }}>
+              {[
+                { title: "AI/ML Training", desc: "Train models with PyTorch, TensorFlow & JAX on dedicated RTX 5090 GPUs with full CUDA toolkit." },
+                { title: "LLM Fine-Tuning", desc: "Fine-tune LLMs with LoRA & QLoRA. 32 GB VRAM handles up to 70B parameters." },
+                { title: "Engineering Simulation", desc: "Run MATLAB, ANSYS & OpenFOAM with GPU-accelerated solvers and persistent storage." },
+                { title: "3D Rendering & CAD", desc: "Render in Blender, Maya or AutoCAD with real-time GPU ray tracing." },
+                { title: "Video Editing & VFX", desc: "Edit 4K/8K in DaVinci Resolve with GPU-accelerated encoding and compositing." },
+                { title: "Data Science & Analytics", desc: "Process massive datasets with RAPIDS & GPU-accelerated Jupyter notebooks." },
+                { title: "Autonomous Systems & Robotics", desc: "Simulate and train autonomous agents with GPU-accelerated physics and reinforcement learning." },
+                { title: "Bioinformatics & Genomics", desc: "Accelerate genome sequencing, protein folding and molecular dynamics with dedicated GPU compute." },
+              ].map((card, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 12,
+                    padding: "12px 16px",
+                    transition: "all 0.2s ease",
+                    cursor: "default",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = "rgba(79,110,247,0.35)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
+                >
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "var(--fgColor-default)", marginBottom: 5 }}>{card.title}</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", color: "var(--fgColor-muted)", lineHeight: 1.5 }}>{card.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          )}
+
+          {/* RIGHT (desktop) / TOP (mobile): Text content */}
+          <div style={{ flex: 1, minWidth: 0, alignSelf: "center" }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Built for Every Workload</div>
             <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.6rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15 }}>Your GPU,<br />Your Desktop</h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", lineHeight: 1.75, color: "var(--fgColor-muted)", marginBottom: 28 }}>From deep learning to 3D rendering, simulation to video editing — run any workload on dedicated GPU hardware with full root access and persistent storage.</p>
@@ -2491,20 +2536,23 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
             </div>
           </div>
 
-          {/* RIGHT: Workload cards grid */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Cards below text on mobile */}
+          {isMobile && (
+          <div style={{ flex: 1, minWidth: 0, width: "100%" }}>
             <div style={{
               display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
-              gap: 12,
+              gridTemplateColumns: "1fr",
+              gap: 10,
             }}>
               {[
-                { emoji: "🧠", title: "AI/ML Training", desc: "Train deep learning models with PyTorch, TensorFlow & JAX on dedicated NVIDIA RTX 5090 GPUs. Full CUDA toolkit included." },
-                { emoji: "🤖", title: "LLM Fine-Tuning", desc: "Fine-tune large language models with LoRA, QLoRA, and full-parameter training. 32 GB VRAM handles models up to 70B parameters." },
-                { emoji: "⚙️", title: "Engineering Simulation", desc: "Run MATLAB, ANSYS, OpenFOAM and CFD simulations with GPU-accelerated solvers. Persistent storage for large datasets." },
-                { emoji: "🎨", title: "3D Rendering & CAD", desc: "Render complex scenes in Blender, Maya, or AutoCAD with real-time GPU ray tracing. No more overnight render queues." },
-                { emoji: "🎬", title: "Video Editing & VFX", desc: "Edit 4K/8K footage in DaVinci Resolve or After Effects with GPU-accelerated encoding, color grading and compositing." },
-                { emoji: "📊", title: "Data Science & Analytics", desc: "Process massive datasets with RAPIDS, Spark, and GPU-accelerated pandas. Interactive Jupyter notebooks with instant compute." },
+                { title: "AI/ML Training", desc: "Train models with PyTorch, TensorFlow & JAX on dedicated RTX 5090 GPUs with full CUDA toolkit." },
+                { title: "LLM Fine-Tuning", desc: "Fine-tune LLMs with LoRA & QLoRA. 32 GB VRAM handles up to 70B parameters." },
+                { title: "Engineering Simulation", desc: "Run MATLAB, ANSYS & OpenFOAM with GPU-accelerated solvers and persistent storage." },
+                { title: "3D Rendering & CAD", desc: "Render in Blender, Maya or AutoCAD with real-time GPU ray tracing." },
+                { title: "Video Editing & VFX", desc: "Edit 4K/8K in DaVinci Resolve with GPU-accelerated encoding and compositing." },
+                { title: "Data Science & Analytics", desc: "Process massive datasets with RAPIDS & GPU-accelerated Jupyter notebooks." },
+                { title: "Autonomous Systems & Robotics", desc: "Simulate and train autonomous agents with GPU-accelerated physics and reinforcement learning." },
+                { title: "Bioinformatics & Genomics", desc: "Accelerate genome sequencing, protein folding and molecular dynamics with dedicated GPU compute." },
               ].map((card, idx) => (
                 <div
                   key={idx}
@@ -2512,7 +2560,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
                     background: "rgba(255,255,255,0.03)",
                     border: "1px solid rgba(255,255,255,0.08)",
                     borderRadius: 12,
-                    padding: "16px 20px",
+                    padding: "12px 16px",
                     transition: "all 0.2s ease",
                     cursor: "default",
                   }}
@@ -2525,13 +2573,13 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
                     e.currentTarget.style.transform = "translateY(0)";
                   }}
                 >
-                  <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{card.emoji}</div>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "var(--fgColor-default)", marginBottom: 6 }}>{card.title}</div>
-                  <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.78rem", color: "var(--fgColor-muted)", lineHeight: 1.5 }}>{card.desc}</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "var(--fgColor-default)", marginBottom: 5 }}>{card.title}</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", color: "var(--fgColor-muted)", lineHeight: 1.5 }}>{card.desc}</div>
                 </div>
               ))}
             </div>
           </div>
+          )}
         </div>
       </section>
 

@@ -210,6 +210,27 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
+
+  // ─── sessionStorage: restore ack view for unauthenticated users after reload ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = sessionStorage.getItem('waitlist_just_submitted');
+    if (stored) {
+      sessionStorage.removeItem('waitlist_just_submitted'); // consume once
+      try {
+        const data = JSON.parse(stored) as {
+          entry: WaitlistEntry;
+          position: number | null;
+          totalCount: number | null;
+        };
+        setWaitlistEntry(data.entry);
+        setWaitlistPosition(data.position ?? null);
+        setAlreadyEnrolled(true);
+      } catch {
+        // Corrupted storage — ignore and show normal form
+      }
+    }
+  }, []);
   
   // AI Analysis state
   const [analysisState, setAnalysisState] = useState<'idle' | 'analyzing' | 'success' | 'failure'>('idle');
@@ -359,8 +380,38 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
             lastName: manualLastName || undefined,
             email: manualEmail,
           };
-      await submitWaitlist(payload);
+      const responseData = await submitWaitlist(payload);
       setSubmitted(true);
+
+      // For unauthenticated users, persist enough data to restore the status view
+      // after the full-page reload triggered by handleViewStatus
+      if (!authenticatedUser) {
+        const entrySnapshot: WaitlistEntry = {
+          id: responseData.id,
+          firstName: manualFirstName,
+          lastName: manualLastName || '',
+          email: manualEmail,
+          currentStatus: formData.currentStatus,
+          organizationName: formData.organizationName || null,
+          jobTitle: formData.jobTitle || null,
+          computeNeeds: formData.computeNeeds || null,
+          expectedDuration: formData.expectedDuration || null,
+          urgency: formData.urgency || null,
+          primaryWorkload: formData.primaryWorkload || null,
+          workloadDescription: formData.workloadDescription || null,
+          status: responseData.status,
+          createdAt: responseData.createdAt,
+        };
+        try {
+          sessionStorage.setItem('waitlist_just_submitted', JSON.stringify({
+            entry: entrySnapshot,
+            position: null,
+            totalCount: null,
+          }));
+        } catch {
+          // sessionStorage unavailable — not critical
+        }
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Submission failed";
       if (message.includes("409") || message.toLowerCase().includes("already")) {
@@ -901,6 +952,31 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
           {/* ── STEP 1: Personal Information ── */}
           {formStep === 1 && (
             <>
+              {/* Back to Home */}
+              <div style={{ marginBottom: 24 }}>
+                <a
+                  href="/"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: "0.875rem",
+                    color: "var(--fgColor-muted)",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-sans)",
+                    transition: "color 0.15s ease",
+                    textDecoration: "none",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fgColor-default)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fgColor-muted)")}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7" />
+                  </svg>
+                  Back to Home
+                </a>
+              </div>
+
               {/* ── Your Information Section ── */}
               <div style={{
                 background: "var(--bgColor-mild)",
