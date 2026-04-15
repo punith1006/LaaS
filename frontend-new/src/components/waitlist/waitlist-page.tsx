@@ -128,6 +128,15 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
   const [authenticatedUser, setAuthenticatedUser] = useState<User | null>(user);
   const [formStep, setFormStep] = useState<1 | 2>(1);
 
+  // ─── Mobile responsive hook ───────────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
   // Manual fields for unauthenticated mode
   const [manualFirstName, setManualFirstName] = useState('');
   const [manualLastName, setManualLastName] = useState('');
@@ -400,7 +409,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
   // Success view
   if (submitted) {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bgColor-default)", display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 24px" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bgColor-default)", display: "flex", alignItems: "center", justifyContent: "center", padding: isMobile ? "32px 16px" : "48px 24px" }}>
         <style>{`
           @keyframes scaleIn {
             from { transform: scale(0.8); opacity: 0; }
@@ -508,7 +517,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
       <section style={{
         position: 'relative',
         overflow: 'hidden',
-        padding: "80px 24px 48px",
+        padding: isMobile ? "48px 16px 32px" : "80px 24px 48px",
         textAlign: "center",
         borderBottom: "1px solid var(--borderColor-default)",
       }}>
@@ -568,7 +577,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
 
       {/* ── ALREADY ENROLLED MESSAGE ── */}
       {alreadyEnrolled && waitlistEntry ? (
-        <section style={{ padding: "80px 24px" }}>
+        <section style={{ padding: isMobile ? "32px 12px" : "80px 24px" }}>
           <div style={{
             maxWidth: 800,
             margin: "0 auto",
@@ -580,7 +589,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
               border: "1px solid",
               borderImage: "linear-gradient(135deg, rgba(79, 110, 247, 0.3), rgba(139, 92, 246, 0.3)) 1",
               borderRadius: 20,
-              padding: "64px 48px",
+              padding: isMobile ? "32px 16px" : "64px 48px",
               textAlign: "center",
               position: "relative",
               overflow: "hidden",
@@ -697,13 +706,15 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                   display: "flex",
                   gap: 16,
                   justifyContent: "center",
+                  flexDirection: isMobile ? "column" : "row",
+                  alignItems: isMobile ? "stretch" : "flex-start",
                   flexWrap: "wrap",
                   marginBottom: 40,
                 }}>
                   {/* Left card: Queue position */}
                   <div style={{
                     flex: "1 1 160px",
-                    maxWidth: 200,
+                    maxWidth: isMobile ? "100%" : 200,
                     background: "rgba(79, 110, 247, 0.07)",
                     border: "1px solid rgba(79, 110, 247, 0.22)",
                     borderRadius: 14,
@@ -746,7 +757,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                   {/* Right card: Enrollment date */}
                   <div style={{
                     flex: "1 1 160px",
-                    maxWidth: 200,
+                    maxWidth: isMobile ? "100%" : 200,
                     background: "rgba(255, 255, 255, 0.03)",
                     border: "1px solid rgba(255, 255, 255, 0.08)",
                     borderRadius: 14,
@@ -831,8 +842,9 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                   <Link
                     href="/"
                     style={{
-                      display: "inline-flex",
+                      display: isMobile ? "flex" : "inline-flex",
                       alignItems: "center",
+                      justifyContent: "center",
                       gap: 8,
                       padding: "12px 24px",
                       background: "transparent",
@@ -894,7 +906,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                 background: "var(--bgColor-mild)",
                 border: "1px solid var(--borderColor-default)",
                 borderRadius: 12,
-                padding: "36px 40px",
+                padding: isMobile ? "20px 16px" : "36px 40px",
                 marginBottom: 48,
               }}>
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: ACCENT, marginBottom: 20 }}>
@@ -903,7 +915,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
 
                 {authenticatedUser ? (
                   /* ── AUTHENTICATED: read-only pre-filled fields ── */
-                  <div className="waitlist-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
+                  <div className="waitlist-grid" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 20 }}>
                     <div>
                       <label style={{ display: "block", fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 500, color: "var(--fgColor-muted)", marginBottom: 9 }}>First Name</label>
                       <div style={{
@@ -965,7 +977,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                 ) : (
                   /* ── UNAUTHENTICATED: editable fields + OAuth buttons ── */
                   <>
-                    <div className="waitlist-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, marginBottom: 28 }}>
+                    <div className="waitlist-grid" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 20, marginBottom: 28 }}>
                       {/* First Name */}
                       <div>
                         <label style={{ display: "block", fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 500, color: "var(--fgColor-muted)", marginBottom: 9 }}>
@@ -1058,7 +1070,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                     </div>
 
                     {/* OAuth buttons */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
                       {/* Google */}
                       <button
                         type="button"
@@ -1132,7 +1144,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
               </div>
 
               {/* Professional Details in 2-column grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px 32px', marginBottom: 48 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '24px 32px', marginBottom: 48 }}>
                 {/* I am a... */}
                 <div>
                   <label style={{ display: "block", fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 500, color: "var(--fgColor-default)", marginBottom: 8 }}>
@@ -1278,7 +1290,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
               <div style={{
                 display: 'flex',
                 gap: '12px',
-                padding: '14px 16px',
+                padding: isMobile ? '10px 12px' : '14px 16px',
                 backgroundColor: 'var(--bgColor-info, #cedeff)',
                 border: '1px solid var(--borderColor-info, #3a73ff)',
                 borderRadius: '4px',
@@ -1319,7 +1331,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                   backgroundColor: 'var(--bgColor-mild)',
                   border: '1px solid var(--borderColor-default)',
                   borderRadius: '4px',
-                  padding: '20px',
+                  padding: isMobile ? '14px' : '20px',
                 }}>
                   <div style={{
                     fontSize: 'var(--text-xs, 0.75rem)',
@@ -1563,7 +1575,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
               </div>
 
               {/* Primary workload type & Expected duration - side by side */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px 32px', marginBottom: 32 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '24px 32px', marginBottom: 32 }}>
                 <div>
                   <label style={{ display: "block", fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 500, color: "var(--fgColor-default)", marginBottom: 8 }}>
                     Primary workload type <span style={{ color: "#ef4444" }}>*</span>
@@ -1640,7 +1652,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                     <span style={{ fontSize: 11, color: "rgba(56, 139, 253, 0.8)", marginLeft: 8, fontWeight: 500 }}>✦ AI-suggested</span>
                   )}
                 </label>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12 }}>
                   {COMPUTE_OPTIONS.map((opt) => {
                     const isSelected = formData.computeNeeds === opt.value;
                     return (
@@ -1680,7 +1692,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                 background: "var(--bgColor-mild)",
                 border: "1px solid var(--borderColor-default)",
                 borderRadius: 12,
-                padding: "32px 36px",
+                padding: isMobile ? "20px 16px" : "32px 36px",
                 marginBottom: 40,
               }}>
                 <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "var(--fgColor-muted)", marginBottom: 20, lineHeight: 1.6 }}>
@@ -1803,7 +1815,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
       )}
 
       {/* ── FAQ ── */}
-      <section id="faq" style={{ borderTop: "1px solid var(--borderColor-default)", padding: "80px 48px" }}>
+      <section id="faq" style={{ borderTop: "1px solid var(--borderColor-default)", padding: isMobile ? "48px 16px" : "80px 48px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 56 }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>FAQ</div>
@@ -1815,7 +1827,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
               <a href="mailto:ksrcsupport@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>ksrcsupport@gktech.ai</a>.
             </p>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 48px", alignItems: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 48px", alignItems: "start" }}>
             <div>{faqs.slice(0, 5).map((f, i) => (
               <FAQ key={i} {...f} isOpen={openFaqIndex === i} onToggle={() => setOpenFaqIndex(openFaqIndex === i ? null : i)} />
             ))}</div>

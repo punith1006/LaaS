@@ -123,9 +123,32 @@ export class WaitlistService {
   }
 
   async getWaitlistStatus(userId: string) {
-    const entry = await this.prisma.waitlistEntry.findFirst({
+    // First try by userId (fast path)
+    let entry = await this.prisma.waitlistEntry.findFirst({
       where: { userId },
     });
+
+    // Fallback: unauthenticated submission — find by email and link userId
+    if (!entry) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      });
+
+      if (user?.email) {
+        entry = await this.prisma.waitlistEntry.findFirst({
+          where: { email: user.email },
+        });
+
+        // Back-fill userId so future lookups hit the fast path
+        if (entry && !entry.userId) {
+          await this.prisma.waitlistEntry.update({
+            where: { id: entry.id },
+            data: { userId },
+          });
+        }
+      }
+    }
 
     if (!entry) {
       return null;

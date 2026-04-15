@@ -59,7 +59,7 @@ export function OtpVerification() {
       toast.success("Account created successfully!");
       // Reset the signup store since we're skipping onboarding
       reset();
-      router.push("/");
+      router.push("/waitlist");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Verification failed");
     } finally {

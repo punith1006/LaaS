@@ -77,7 +77,7 @@ export default function OAuthCallbackPage() {
         }
 
         toast.success("Signed in successfully");
-        router.replace("/");
+        router.replace("/waitlist");
       } catch (e) {
         toast.error(
           e instanceof Error ? e.message : "Authentication failed",

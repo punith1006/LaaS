@@ -757,7 +757,7 @@ function BentoStepCard({ num, icon, title, desc, items, color, glow2, border }: 
         background: hov ? "#191c24" : "#111318",
         border: `1px solid ${hov ? border : "rgba(255,255,255,0.08)"}`,
         borderRadius: 16,
-        padding: "24px 36px",
+        padding: "24px 28px",
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
@@ -878,10 +878,11 @@ function useScrollReveal() {
 }
 
 // ─── Nav ──────────────────────────────────────────────────────────────────────
-function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, waitlistCount }: { isDark: boolean; onToggle: () => void; isAuthenticated?: boolean; userName?: string | null; waitlistStatus?: WaitlistStatusResponse | null; waitlistCount?: number }) {
+function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, waitlistCount, isMobile }: { isDark: boolean; onToggle: () => void; isAuthenticated?: boolean; userName?: string | null; waitlistStatus?: WaitlistStatusResponse | null; waitlistCount?: number; isMobile?: boolean }) {
   const [scrolled, setScrolled] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -889,6 +890,11 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
     window.addEventListener("scroll", h);
     return () => window.removeEventListener("scroll", h);
   }, []);
+
+  // Close mobile menu on resize to desktop
+  useEffect(() => {
+    if (!isMobile) setMobileMenuOpen(false);
+  }, [isMobile]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -929,28 +935,33 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
       position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
       height: 64,
       display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "0 48px",
+      padding: isMobile ? "0 16px" : "0 48px",
       background: scrolled ? (isDark ? "rgba(8,10,18,0.92)" : "rgba(245,245,240,0.92)") : "transparent",
       borderBottom: scrolled ? `1px solid var(--borderColor-default)` : "1px solid transparent",
       backdropFilter: scrolled ? "blur(14px)" : "none",
       transition: "all 0.3s ease",
     }}>
       <a href="/" style={{ display: "flex", alignItems: "center" }}>
-        <img src="/images/ksrce-logo.png" alt="KSRCE LaaS" style={{ height: 44, objectFit: "contain", verticalAlign: "middle" }} />
+        <img src="/images/ksrce-logo.png" alt="KSRCE LaaS" style={{ height: isMobile ? 36 : 44, objectFit: "contain", verticalAlign: "middle" }} />
       </a>
-      <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
-        {["Features", "How It Works", "Pricing", "FAQ"].map((l, i) => (
-          <a key={l} href={i === 0 ? "#capabilities" : `#${l.toLowerCase().replace(/ /g, "-")}`}
-            style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", color: "var(--fgColor-muted)", textDecoration: "none", transition: "color 0.15s" }}
-            onMouseEnter={e => (e.currentTarget.style.color = "var(--fgColor-default)")}
-            onMouseLeave={e => (e.currentTarget.style.color = "var(--fgColor-muted)")}>
-            {l}
-          </a>
-        ))}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {/* Demand badge for non-enrolled users */}
-        {!(isAuthenticated && waitlistStatus?.enrolled) && (waitlistCount ?? 0) > 0 && (
+
+      {/* Desktop center nav links */}
+      {!isMobile && (
+        <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+          {["Features", "How It Works", "Pricing", "FAQ"].map((l, i) => (
+            <a key={l} href={i === 0 ? "#capabilities" : `#${l.toLowerCase().replace(/ /g, "-")}`}
+              style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", color: "var(--fgColor-muted)", textDecoration: "none", transition: "color 0.15s" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "var(--fgColor-default)")}
+              onMouseLeave={e => (e.currentTarget.style.color = "var(--fgColor-muted)")}>
+              {l}
+            </a>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10 }}>
+        {/* Demand badge — hidden on mobile to save space */}
+        {!isMobile && !(isAuthenticated && waitlistStatus?.enrolled) && (waitlistCount ?? 0) > 0 && (
           <span style={{
             display: "inline-flex",
             alignItems: "center",
@@ -974,8 +985,8 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
         )}
         {isAuthenticated ? (
           <>
-            {/* Waitlist status indicator for enrolled users */}
-            {waitlistStatus?.enrolled && (
+            {/* Waitlist status indicator for enrolled users — hide on mobile */}
+            {!isMobile && waitlistStatus?.enrolled && (
               <Link
                 href="/waitlist"
                 style={{
@@ -1010,11 +1021,11 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
             <div ref={dropdownRef} style={{ position: "relative" }}>
             <button
               onClick={() => setShowDropdown(!showDropdown)}
-              style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", padding: "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", cursor: "pointer", transition: "all 0.15s" }}
+              style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", padding: isMobile ? "6px 10px" : "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", cursor: "pointer", transition: "all 0.15s" }}
               onMouseEnter={e => (e.currentTarget.style.background = "var(--bgColor-muted)")}
               onMouseLeave={e => { if (!showDropdown) e.currentTarget.style.background = "transparent"; }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              {userName || "Account"}
+              {!isMobile && (userName || "Account")}
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2, transition: "transform 0.2s", transform: showDropdown ? "rotate(180deg)" : "rotate(0deg)" }}><polyline points="6 9 12 15 18 9"/></svg>
             </button>
             {showDropdown && (
@@ -1037,7 +1048,7 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
           </>
         ) : (
           <Link href="/signin"
-            style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", textDecoration: "none", padding: "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, transition: "all 0.15s" }}
+            style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "0.8rem" : "0.875rem", fontWeight: 500, color: "var(--fgColor-default)", textDecoration: "none", padding: isMobile ? "6px 12px" : "7px 18px", border: "1px solid var(--borderColor-default)", borderRadius: 6, transition: "all 0.15s" }}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--bgColor-muted)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
             Sign In
@@ -1046,14 +1057,66 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
         {/* Hide "Get Started" button for users already enrolled in waitlist */}
         {!(isAuthenticated && waitlistStatus?.enrolled) && (
           <Link href={isAuthenticated ? "/waitlist" : "/signup"}
-            style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: "7px 20px", backgroundColor: ACCENT, borderRadius: 6, border: `1px solid ${ACCENT}`, transition: "all 0.15s", boxShadow: `0 0 20px ${ACCENT_GLOW}` }}
+            style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "0.8rem" : "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: isMobile ? "6px 12px" : "7px 20px", backgroundColor: ACCENT, borderRadius: 6, border: `1px solid ${ACCENT}`, transition: "all 0.15s", boxShadow: `0 0 20px ${ACCENT_GLOW}` }}
             onMouseEnter={e => (e.currentTarget.style.backgroundColor = ACCENT_DARK)}
             onMouseLeave={e => (e.currentTarget.style.backgroundColor = ACCENT)}>
-            Get Started →
+            {isMobile ? "Join" : "Get Started →"}
           </Link>
+        )}
+
+        {/* Hamburger menu button — mobile only */}
+        {isMobile && (
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            style={{ background: "transparent", border: "1px solid var(--borderColor-default)", borderRadius: 6, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fgColor-default)", flexShrink: 0, transition: "all 0.15s" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--bgColor-muted)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+            {mobileMenuOpen
+              ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            }
+          </button>
         )}
       </div>
     </nav>
+
+    {/* Mobile menu overlay */}
+    {isMobile && mobileMenuOpen && (
+      <div style={{
+        position: "fixed", top: 64, left: 0, right: 0, zIndex: 199,
+        background: isDark ? "rgba(8,10,18,0.97)" : "rgba(245,245,240,0.97)",
+        borderBottom: `1px solid var(--borderColor-default)`,
+        backdropFilter: "blur(16px)",
+        padding: "16px 20px 24px",
+        display: "flex", flexDirection: "column", gap: 4,
+      }}>
+        {["Features", "How It Works", "Pricing", "FAQ"].map((l, i) => (
+          <a key={l}
+            href={i === 0 ? "#capabilities" : `#${l.toLowerCase().replace(/ /g, "-")}`}
+            onClick={() => setMobileMenuOpen(false)}
+            style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 500, color: "var(--fgColor-default)", textDecoration: "none", padding: "14px 8px", borderBottom: "1px solid var(--borderColor-default)", display: "block" }}>
+            {l}
+          </a>
+        ))}
+        {/* Waitlist badge in mobile menu */}
+        {!(isAuthenticated && waitlistStatus?.enrolled) && (waitlistCount ?? 0) > 0 && (
+          <div style={{ padding: "12px 8px", borderBottom: "1px solid var(--borderColor-default)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", background: "rgba(251,146,60,0.10)", border: "1px solid rgba(251,146,60,0.25)", borderRadius: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fb923c" }} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", fontWeight: 600, color: "#fb923c" }}>{waitlistCount}+ on the waitlist</span>
+            </span>
+          </div>
+        )}
+        {isAuthenticated && waitlistStatus?.enrolled && (
+          <Link href="/waitlist" onClick={() => setMobileMenuOpen(false)}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 8px", borderBottom: "1px solid var(--borderColor-default)", textDecoration: "none" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, color: "var(--fgColor-default)" }}>#{waitlistStatus.position} of {waitlistStatus.totalCount} in waitlist</span>
+          </Link>
+        )}
+      </div>
+    )}
+
     <SignOutModal
       isOpen={isSignOutModalOpen}
       onClose={() => setIsSignOutModalOpen(false)}
@@ -1308,9 +1371,21 @@ function FeatureComparison() {
           opacity: 1;
           transform: translateY(0) scale(1);
         }
+        @media (max-width: 767px) {
+          .bento-card[style*="span 2"], .bento-card[style*="span 3"] {
+            grid-column: span 1 !important;
+            flex-direction: column !important;
+          }
+          .bento-grid-root {
+            grid-template-columns: 1fr !important;
+          }
+          .bento-grid-root > * {
+            grid-column: span 1 !important;
+          }
+        }
       `}</style>
 
-      <div ref={gridRef} style={{
+      <div ref={gridRef} className="bento-grid-root" style={{
         display: "grid",
         gridTemplateColumns: "repeat(3, 1fr)",
         gap: 16,
@@ -1492,7 +1567,8 @@ function PricingGrid({ rows }: { rows: any[] }) {
       `}</style>
 
       <div className="reveal-on-scroll" style={{ width: "100%", maxWidth: 1040, margin: "0 auto", padding: "0 20px" }}>
-        <div style={{ background: "var(--bgColor-default)", border: "1px solid var(--borderColor-default)", borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ background: "var(--bgColor-default)", border: "1px solid var(--borderColor-default)", borderRadius: 14, overflow: "hidden", minWidth: 560 }}>
           <table className="pricing-table">
             <thead>
               <tr>
@@ -1527,6 +1603,7 @@ function PricingGrid({ rows }: { rows: any[] }) {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
     </>
@@ -2049,11 +2126,11 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   );
 }
 
-function CapabilitiesSection() {
+function CapabilitiesSection({ isMobile }: { isMobile?: boolean }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section id="capabilities" className="reveal-on-scroll" style={{ padding: "48px 48px 24px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
+    <section id="capabilities" className="reveal-on-scroll" style={{ padding: isMobile ? "32px 20px 20px" : "48px 48px 24px 48px", background: "var(--bgColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
 
         {/* Header */}
@@ -2062,17 +2139,17 @@ function CapabilitiesSection() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--fgColor-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h7" /></svg>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-default)", fontWeight: 500 }}>Capabilities</span>
           </div>
-          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.65rem, 3.1vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
+          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.4rem, 6vw, 2rem)" : "clamp(1.65rem, 3.1vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
             You bring the ideas. We provide the <span style={{ color: ACCENT }}>compute</span>.
           </h2>
-          <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.6, textAlign: "center" }}>
-            <span style={{ display: "block", marginBottom: "0.5rem", color: "#FFD700", fontFamily: "'Courier New', 'Lucida Console', monospace", fontWeight: 700, letterSpacing: "0.04em", fontSize: "1.1rem" }}>No more fighting hardware limits or expensive cloud bills.</span>
+          <p style={{ fontFamily: "var(--font-mono)", fontSize: isMobile ? "0.85rem" : "0.95rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.6, textAlign: "center" }}>
+            <span style={{ display: "block", marginBottom: "0.5rem", color: "#FFD700", fontFamily: "'Courier New', 'Lucida Console', monospace", fontWeight: 700, letterSpacing: "0.04em", fontSize: isMobile ? "0.95rem" : "1.1rem" }}>No more fighting hardware limits or expensive cloud bills.</span>
             LaaS gives students, researchers, and fast-moving teams instant, pay-as-you-go access to top-tier AI supercomputing.
           </p>
         </div>
 
         {/* Content Split */}
-        <div style={{ display: "flex", gap: 80, alignItems: "stretch", flexWrap: "wrap", paddingTop: 16 }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 32 : 80, alignItems: "stretch", flexWrap: "wrap", paddingTop: 16 }}>
 
           {/* Left: Accordion */}
           <div style={{ flex: "1 1 500px", display: "flex", flexDirection: "column" }}>
@@ -2091,7 +2168,7 @@ function CapabilitiesSection() {
 
                     {/* Title */}
                     <div style={{ flex: 1 }}>
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: "1.55rem", fontWeight: 700, color: "var(--fgColor-default)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                      <span style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "1.15rem" : "1.55rem", fontWeight: 700, color: "var(--fgColor-default)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                         {item.title}
                       </span>
                     </div>
@@ -2132,10 +2209,12 @@ function CapabilitiesSection() {
             })}
           </div>
 
-          {/* Right: Isometric Stack Asset */}
+          {/* Right: Isometric Stack Asset — hidden on mobile */}
+          {!isMobile && (
           <div style={{ flex: "1 1 400px", minHeight: 460, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", alignSelf: "flex-start" }}>
             <IsometricStackAsset activeIndex={openIndex} />
           </div>
+          )}
 
         </div>
       </div>
@@ -2152,7 +2231,15 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
   const [user, setUser] = useState<User | null>(null);
   const [waitlistStatus, setWaitlistStatus] = useState<WaitlistStatusResponse | null>(null);
   const [waitlistCount, setWaitlistCount] = useState<number>(0);
+  const [isMobile, setIsMobile] = useState(false);
   
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
   useEffect(() => {
     // Fetch public waitlist count unconditionally
     getWaitlistCount().then(c => setWaitlistCount(c)).catch(() => {});
@@ -2164,9 +2251,14 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
 
   const userName = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email : null;
 
-  // Apply zoom to match 1280px design viewport
+  // Apply zoom to match 1280px design viewport (desktop only)
   useEffect(() => {
     const setZoomValue = () => {
+      if (window.innerWidth < 768) {
+        document.documentElement.style.zoom = "1";
+        setZoom(1);
+        return;
+      }
       const zoomValue = window.innerWidth / 1280;
       document.documentElement.style.zoom = String(zoomValue);
       setZoom(zoomValue);
@@ -2258,6 +2350,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
       </Head>
       <style>{`
         .landing-page { zoom: calc(100vw / 1280); }
+        @media (max-width: 767px) { .landing-page { zoom: 1; } }
         @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
         .land-section { padding: 90px 48px; max-width: 1140px; margin: 0 auto; }
         .land-section-full { padding: 90px 48px; }
@@ -2278,7 +2371,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
         }
       `}</style>
 
-      <Nav isDark={isDark} onToggle={toggle} isAuthenticated={isAuthenticated} userName={userName} waitlistStatus={waitlistStatus} waitlistCount={waitlistCount} />
+      <Nav isDark={isDark} onToggle={toggle} isAuthenticated={isAuthenticated} userName={userName} waitlistStatus={waitlistStatus} waitlistCount={waitlistCount} isMobile={isMobile} />
       <section style={{ position: "relative", minHeight: `${(1 / zoom) * 100}vh`, display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden" }}>
 
         {/* ↓ Particle network replaces the old hero-grid div */}
@@ -2287,31 +2380,31 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
         {/* Radial glow top-left */}
         <div style={{ position: "absolute", top: -120, left: -120, width: 600, height: 600, background: `radial-gradient(circle, ${ACCENT_GLOW} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
-        <div className="hero-split" style={{ display: "flex", alignItems: "center", gap: 48, padding: "100px 48px 28px", maxWidth: 1140, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
+        <div className="hero-split" style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 24 : 48, padding: isMobile ? "88px 20px 24px" : "100px 48px 28px", maxWidth: 1140, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
           {/* Left */}
-          <div style={{ flex: "1 1 52%", minWidth: 0 }}>
+          <div style={{ flex: isMobile ? "none" : "1 1 52%", minWidth: 0, width: isMobile ? "100%" : undefined }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", background: "var(--bgColor-mild)", border: `1px solid ${ACCENT}`, borderRadius: 9999, marginBottom: 20, animation: "fadeUp 0.4s ease 0.1s both" }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
               <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: ACCENT }}>KSRCE AI Lab Infrastructure</span>
             </div>
-            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.4rem, 5vw, 4rem)", fontWeight: 800, lineHeight: 1.1, color: "var(--fgColor-default)", marginBottom: 10, letterSpacing: "-0.02em", animation: "fadeUp 0.4s ease 0.2s both" }}>
+            <h1 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.8rem, 8vw, 2.4rem)" : "clamp(2.4rem, 5vw, 4rem)", fontWeight: 800, lineHeight: 1.1, color: "var(--fgColor-default)", marginBottom: 10, letterSpacing: "-0.02em", animation: "fadeUp 0.4s ease 0.2s both" }}>
               Your Remote AI Workstation.
             </h1>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", fontWeight: 700, lineHeight: 1.2, color: ACCENT, marginBottom: 16, letterSpacing: "-0.02em", animation: "fadeUp 0.4s ease 0.3s both" }}>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.2rem, 5vw, 1.6rem)" : "clamp(1.6rem, 3.5vw, 2.6rem)", fontWeight: 700, lineHeight: 1.2, color: ACCENT, marginBottom: 16, letterSpacing: "-0.02em", animation: "fadeUp 0.4s ease 0.3s both" }}>
               Work Anywhere. Create Everywhere.
             </h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", lineHeight: 1.65, color: "var(--fgColor-muted)", maxWidth: 440, marginBottom: 12, animation: "fadeUp 0.4s ease 0.4s both" }}>
               Built for the ones who build what's next — GPU power that scales with your ambition, not your budget.
             </p>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20, animation: "fadeUp 0.4s ease 0.5s both" }}>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 12, flexWrap: "wrap", marginBottom: 20, animation: "fadeUp 0.4s ease 0.5s both" }}>
               <Link href="/waitlist"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
+                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
                   onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
                   Launch GPU Instance →
                 </Link>
               <a href="#how-it-works"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s" }}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px 26px", background: "transparent", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 500, borderRadius: 8, border: "1px solid var(--borderColor-default)", textDecoration: "none", transition: "all 0.2s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bgColor-mild)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = "translateY(0)"; }}>
                 See How It Works
@@ -2320,13 +2413,13 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
           </div>
 
           {/* Right — Terminal */}
-          <div style={{ flex: "1 1 48%", minWidth: 0, animation: "fadeUp 0.5s ease 0.5s both" }}>
+          <div style={{ flex: isMobile ? "none" : "1 1 48%", minWidth: 0, width: isMobile ? "100%" : undefined, animation: "fadeUp 0.5s ease 0.5s both" }}>
             <HeroTerminal />
           </div>
         </div>
 
         {/* Powered by — bottom of hero */}
-        <div style={{ maxWidth: 1140, margin: "0 auto", width: "100%", padding: "0 48px", position: "relative", zIndex: 1 }}>
+        <div style={{ maxWidth: 1140, margin: "0 auto", width: "100%", padding: isMobile ? "0 20px" : "0 48px", position: "relative", zIndex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, paddingBottom: 32, animation: "fadeUp 0.4s ease 0.6s both" }}>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, color: "var(--fgColor-muted)", letterSpacing: "0.04em", lineHeight: 1 }}>Powered by</span>
             <img src="/images/GKT-logo.png" alt="Global Knowledge" style={{ height: 80, objectFit: "contain", filter: "brightness(1.1)" }} />
@@ -2336,24 +2429,24 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
 
       {/* ── STATS ── */}
       <div className="reveal-on-scroll" style={{ borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)", background: "var(--bgColor-mild)" }}>
-        <div style={{ maxWidth: 1140, margin: "0 auto", padding: "0 48px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <div style={{ maxWidth: 1140, margin: "0 auto", padding: isMobile ? "0 12px" : "0 48px", display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(auto-fit, minmax(180px, 1fr))" }}>
           {stats.map((s, i) => (
-            <div key={i} style={{ padding: "32px 24px", borderRight: i < stats.length - 1 ? "1px solid var(--borderColor-default)" : "none", textAlign: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "var(--font-sans)", fontSize: "2.2rem", fontWeight: 800, color: "var(--fgColor-default)", lineHeight: 1, marginBottom: 6 }}>
-                {(s as any).icon && <img src={(s as any).icon} alt="" style={{ height: 32, objectFit: "contain" }} />}
+            <div key={i} style={{ padding: isMobile ? "20px 12px" : "32px 24px", borderRight: isMobile ? (i % 2 === 0 ? "1px solid var(--borderColor-default)" : "none") : (i < stats.length - 1 ? "1px solid var(--borderColor-default)" : "none"), borderBottom: isMobile && i < 2 ? "1px solid var(--borderColor-default)" : "none", textAlign: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "var(--font-sans)", fontSize: isMobile ? "1.5rem" : "2.2rem", fontWeight: 800, color: "var(--fgColor-default)", lineHeight: 1, marginBottom: 6 }}>
+                {(s as any).icon && <img src={(s as any).icon} alt="" style={{ height: isMobile ? 22 : 32, objectFit: "contain" }} />}
                 {"val" in s && typeof s.val === "string"
                   ? `${s.val}${s.suffix}`
                   : <Counter end={s.val as number} suffix={s.suffix} />
                 }
               </div>
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--fgColor-muted)" }}>{s.label}</div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--fgColor-muted)" }}>{s.label}</div>
             </div>
           ))}
         </div>
       </div>
 
       {/* ── TRUSTED BY ── */}
-      <div className="reveal-on-scroll" style={{ borderBottom: "1px solid var(--borderColor-default)", padding: "28px 48px", textAlign: "center" }}>
+      <div className="reveal-on-scroll" style={{ borderBottom: "1px solid var(--borderColor-default)", padding: isMobile ? "20px 20px" : "28px 48px", textAlign: "center" }}>
         <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, color: "var(--fgColor-muted)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 20 }}>
           Powering institutions that push boundaries
         </div>
@@ -2365,45 +2458,21 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
       </div>
 
       {/* ── CAPABILITIES ── */}
-      <CapabilitiesSection />
+      <CapabilitiesSection isMobile={isMobile} />
 
-      {/* ── YOUR GPU, YOUR TERMINAL ── */}
+      {/* ── YOUR GPU, YOUR DESKTOP ── */}
       <section className="reveal-on-scroll" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
-        <div className="land-section hero-split" style={{ display: "flex", gap: 56, alignItems: "center" }}>
+        <div className="land-section hero-split" style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 32 : 56, alignItems: isMobile ? "flex-start" : "center", padding: isMobile ? "40px 20px" : undefined }}>
+          {/* LEFT: Text content */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ background: "var(--bgColor-muted)", border: "1px solid var(--borderColor-default)", borderRadius: 10, overflow: "hidden", fontFamily: "var(--font-mono),ui-monospace,monospace", fontSize: "0.82rem", lineHeight: 1.8 }}>
-              <div style={{ background: "var(--bgColor-mild)", borderBottom: "1px solid var(--borderColor-default)", padding: "10px 18px", display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#ef4444" }} />
-                <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#f59e0b" }} />
-                <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#22c55e" }} />
-                <span style={{ marginLeft: "auto", fontSize: "0.72rem", color: "var(--fgColor-muted)" }}>ssh student@sess.laas.io</span>
-              </div>
-              <div style={{ padding: "18px 22px" }}>
-                <div style={{ color: "var(--fgColor-muted)" }}>Welcome to LaaS — 4-Node GPU Cluster</div>
-                <div style={{ color: "var(--fgColor-muted)" }}>NVIDIA RTX 5090 · 32 GB VRAM · CUDA 12.x · Ubuntu 22.04</div>
-                <div style={{ height: 12 }} />
-                <div style={{ color: "var(--fgColor-default)" }}>$ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader</div>
-                <div style={{ color: "#22c55e" }}>NVIDIA GeForce RTX 5090, 32768 MiB</div>
-                <div style={{ height: 8 }} />
-                <div style={{ color: "var(--fgColor-default)" }}>$ du -sh ~/data/</div>
-                <div style={{ color: "var(--fgColor-muted)" }}>3.2G    /home/student/data/</div>
-                <div style={{ height: 8 }} />
-                <div style={{ color: "var(--fgColor-default)" }}>$ python train.py --epochs 50 --model resnet50</div>
-                <div style={{ color: "#22c55e" }}>Epoch  1/50  loss: 2.4132  acc: 0.312 ✓</div>
-                <div style={{ color: "#22c55e" }}>Epoch  2/50  loss: 1.9820  acc: 0.418 ✓</div>
-                <div style={{ color: ACCENT }}>▊</div>
-              </div>
-            </div>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Full Linux Access</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.6rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15 }}>Your GPU,<br />Your Terminal</h2>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", lineHeight: 1.75, color: "var(--fgColor-muted)", marginBottom: 28 }}>Get root-level SSH access to your GPU node. Run any workload — training, inference, data processing — with no restrictions. Your home directory persists across all sessions.</p>
+            <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Built for Every Workload</div>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.6rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15 }}>Your GPU,<br />Your Desktop</h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", lineHeight: 1.75, color: "var(--fgColor-muted)", marginBottom: 28 }}>From deep learning to 3D rendering, simulation to video editing — run any workload on dedicated GPU hardware with full root access and persistent storage.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {[
-                "Instance & session management from dashboard",
-                "Managed background runs with log tailing",
-                "File transfer via SCP, SFTP or browser UI",
+                "Run AI training, inference & fine-tuning at scale",
+                "Engineering simulations with MATLAB, ANSYS & more",
+                "Video editing & creative workflows in real-time",
                 "Containerized workspaces via WebRTC in seconds",
               ].map((f, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2417,8 +2486,50 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, borderRadius: 7, textDecoration: "none", transition: "all 0.2s" }}
                 onMouseEnter={e => (e.currentTarget.style.background = ACCENT_DARK)}
                 onMouseLeave={e => (e.currentTarget.style.background = ACCENT)}>
-                Start Free →
+                Explore What's Possible →
               </Link>
+            </div>
+          </div>
+
+          {/* RIGHT: Workload cards grid */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+              gap: 12,
+            }}>
+              {[
+                { emoji: "🧠", title: "AI/ML Training", desc: "Train deep learning models with PyTorch, TensorFlow & JAX on dedicated NVIDIA RTX 5090 GPUs. Full CUDA toolkit included." },
+                { emoji: "🤖", title: "LLM Fine-Tuning", desc: "Fine-tune large language models with LoRA, QLoRA, and full-parameter training. 32 GB VRAM handles models up to 70B parameters." },
+                { emoji: "⚙️", title: "Engineering Simulation", desc: "Run MATLAB, ANSYS, OpenFOAM and CFD simulations with GPU-accelerated solvers. Persistent storage for large datasets." },
+                { emoji: "🎨", title: "3D Rendering & CAD", desc: "Render complex scenes in Blender, Maya, or AutoCAD with real-time GPU ray tracing. No more overnight render queues." },
+                { emoji: "🎬", title: "Video Editing & VFX", desc: "Edit 4K/8K footage in DaVinci Resolve or After Effects with GPU-accelerated encoding, color grading and compositing." },
+                { emoji: "📊", title: "Data Science & Analytics", desc: "Process massive datasets with RAPIDS, Spark, and GPU-accelerated pandas. Interactive Jupyter notebooks with instant compute." },
+              ].map((card, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 12,
+                    padding: "16px 20px",
+                    transition: "all 0.2s ease",
+                    cursor: "default",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = "rgba(79,110,247,0.35)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
+                >
+                  <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{card.emoji}</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", fontWeight: 700, color: "var(--fgColor-default)", marginBottom: 6 }}>{card.title}</div>
+                  <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.78rem", color: "var(--fgColor-muted)", lineHeight: 1.5 }}>{card.desc}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -2431,8 +2542,8 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
         <div className="land-section reveal-on-scroll" style={{ position: "relative", zIndex: 1, paddingTop: 40, paddingBottom: 40 }}>
           <div style={{ textAlign: "center", marginBottom: 40 }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 12 }}>How It Works</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.6rem, 4vw, 2.6rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Launch AI Workspaces<br />in Minutes</h2>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: "1.05rem", color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.4rem, 6vw, 2rem)" : "clamp(1.6rem, 4vw, 2.6rem)", fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 14 }}>Launch AI Workspaces<br />in Minutes</h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "0.88rem" : "1.05rem", color: "rgba(255,255,255,0.6)", whiteSpace: isMobile ? "normal" : "nowrap", margin: "0 auto", lineHeight: 1.7 }}>From template to production in five steps. No hardware hassles — just pure computational power on-demand.</p>
           </div>
 
           <style>{`
@@ -2455,6 +2566,15 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
                   grid-column: span 12;
                }
             }
+            @media (max-width: 767px) {
+               .bento-asymmetric-grid {
+                 grid-template-columns: 1fr;
+                 padding: 0 4px;
+               }
+               .bento-card-01, .bento-card-02, .bento-card-03, .bento-card-04, .bento-card-05 {
+                  grid-column: span 1;
+               }
+            }
           `}</style>
           <div className="bento-asymmetric-grid">
             <div className="reveal-on-scroll bento-card-01" style={{ transitionDelay: "0.1s" }}><BentoStepCard {...steps[0]} /></div>
@@ -2471,13 +2591,13 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
 
       {/* ── PRICING ── */}
       <section id="pricing" style={{ background: "var(--bgColor-mild)", borderTop: "1px solid var(--borderColor-default)", borderBottom: "1px solid var(--borderColor-default)" }}>
-        <div style={{ width: "100%", maxWidth: 1300, margin: "0 auto", padding: "120px 20px" }}>
+        <div style={{ width: "100%", maxWidth: 1300, margin: "0 auto", padding: isMobile ? "48px 16px" : "120px 20px" }}>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 60, alignItems: "flex-start", marginBottom: 50 }}>
+          <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: isMobile ? 32 : 60, alignItems: "flex-start", marginBottom: 50 }}>
             {/* Left Header Column */}
             <div className="reveal-on-scroll" style={{ flex: "1 1 320px", textAlign: "left" }}>
               <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>Pricing</div>
-              <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 12 }}>Pay as you go</h2>
+              <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.5rem, 6vw, 2rem)" : "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 12 }}>Pay as you go</h2>
               <p style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", color: "var(--fgColor-muted)", maxWidth: "100%", lineHeight: 1.7, marginBottom: 32 }}>Our pricing model lets you pay only for what you use. No minimum commitments. Paused instances only incur storage fees. <span style={{ color: ACCENT, fontWeight: 700 }}>Zero Lock-in!</span></p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2546,7 +2666,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
               <div className="all-plans-inner">
                 <div style={{ fontFamily: "var(--font-sans)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--fgColor-muted)", marginBottom: 28, textAlign: "center" }}>All plans include</div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "28px 40px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(280px, 1fr))", gap: "28px 40px" }}>
                   {[
                     { title: "Persistent ZFS Storage", desc: "Datasets outlive sessions with high-speed local mounts." },
                     { title: "Pre-built ML Images", desc: "CUDA, PyTorch, and TensorFlow environments pre-configured." },
@@ -2574,16 +2694,16 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
 
       {/* ── FAQ ── */}
       <section id="faq">
-        <div className="land-section">
+        <div className="land-section" style={{ padding: isMobile ? "48px 20px" : undefined }}>
           <div style={{ textAlign: "center", marginBottom: 56 }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: ACCENT, marginBottom: 10 }}>FAQ</div>
-            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 14 }}>Frequently Asked Questions</h2>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.4rem, 6vw, 2rem)" : "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 14 }}>Frequently Asked Questions</h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", color: "var(--fgColor-muted)" }}>
               Can&apos;t find what you&apos;re looking for? Reach us at{" "}
               <a href="mailto:ksrcsupport@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>ksrcsupport@gktech.ai</a>.
             </p>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 48px", alignItems: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 48px", alignItems: "start" }}>
             <div>{faqs.slice(0, 5).map((f, i) => (
               <FAQ key={i} {...f} isOpen={openFaqIndex === i} onToggle={() => setOpenFaqIndex(openFaqIndex === i ? null : i)} />
             ))}</div>
@@ -2633,9 +2753,9 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
           zIndex: 1,
         }} />
         {/* Content - Centered */}
-        <div style={{ position: "relative", zIndex: 2, maxWidth: 700, transform: "translateY(-15vh)" }}>
-          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(2.2rem, 5vw, 3.8rem)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15, textShadow: "0 4px 30px rgba(0,0,0,0.8)" }}>Ready to launch your first GPU session?</h2>
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: "clamp(0.9rem, 1.5vw, 1.1rem)", color: "rgba(255,255,255,0.85)", marginBottom: 40, lineHeight: 1.6, maxWidth: 640, margin: "0 auto 40px" }}>Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 60 seconds.</p>
+        <div style={{ position: "relative", zIndex: 2, maxWidth: 700, padding: isMobile ? "0 20px" : "0", transform: isMobile ? "translateY(0)" : "translateY(-15vh)" }}>
+          <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.6rem, 7vw, 2.4rem)" : "clamp(2.2rem, 5vw, 3.8rem)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15, textShadow: "0 4px 30px rgba(0,0,0,0.8)" }}>Ready to launch your first GPU session?</h2>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "0.9rem" : "clamp(0.9rem, 1.5vw, 1.1rem)", color: "rgba(255,255,255,0.85)", marginBottom: 40, lineHeight: 1.6, maxWidth: 640, margin: "0 auto 40px" }}>Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 60 seconds.</p>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
             <Link href="/waitlist"
               style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 700, borderRadius: 10, textDecoration: "none", boxShadow: `0 6px 30px rgba(79,110,247,0.6)`, transition: "all 0.2s" }}
@@ -2648,7 +2768,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
       </section>
 
       {/* ── FOOTER ── */}
-      <footer style={{ borderTop: "1px solid var(--borderColor-default)", padding: "28px 48px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      <footer style={{ borderTop: "1px solid var(--borderColor-default)", padding: isMobile ? "24px 20px" : "28px 48px", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fgColor-default)" }}>LaaS</span>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)" }}>KSRCE AI Lab — Lab as a Service Platform · © 2025</span>
         <div style={{ display: "flex", gap: 24 }}>
