@@ -351,7 +351,7 @@ export default function ReferralPage() {
               margin: 0,
             }}
           >
-            Share your unique referral link with friends and colleagues. When they sign up and make their first payment of ₹100 or more, you'll receive ₹50 in platform credits — usable for compute sessions, storage, and more.
+            Share your unique referral link with friends and colleagues. When they sign up and make their first payment of ₹100 or more, you&apos;ll receive ₹50 in platform credits — usable for compute sessions, storage, and more.
           </p>
         </div>
       </div>

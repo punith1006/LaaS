@@ -827,7 +827,7 @@ export interface ActivityLogEntry {
   action: string;
   category: string;
   status: string;
-  details: Record<string, any> | null;
+  details: Record<string, unknown> | null;
   ipAddress: string | null;
   createdAt: string;
 }
@@ -999,7 +999,7 @@ export interface PaginatedTransactions {
 }
 
 export interface TransactionDetail extends PaymentTransactionItem {
-  gatewayResponse: any;
+  gatewayResponse: Record<string, unknown> | null;
   completedAt?: string | null;
   invoice: {
     id: string;
@@ -1372,7 +1372,7 @@ export async function createRecommendationSession(data: {
   workloadDescription?: string;
   documentFileName?: string;
   documentExtractedText?: string;
-  analysisResult?: any;
+  analysisResult?: Record<string, unknown>;
   analysisQuality?: string;
   analysisConfidence?: number;
   detectedGoal?: string;
@@ -1400,7 +1400,7 @@ export async function updateRecommendationSession(id: string, data: {
   goalAutoSelected?: boolean;
   datasetAutoSelected?: boolean;
   intensityAutoSelected?: boolean;
-  recommendations?: any;
+  recommendations?: { slug: string; score: number; tag: string }[];
   selectedConfigSlug?: string;
   completedAt?: string;
 }): Promise<void> {
@@ -1415,7 +1415,7 @@ export async function updateRecommendationSession(id: string, data: {
 
 export async function generateExplanation(
   configSlug: string,
-  configSpecs: Record<string, any>,
+  configSpecs: Record<string, unknown>,
   userGoal: string,
   userContext: string
 ): Promise<{ explanation: string; bullets?: string[] }> {

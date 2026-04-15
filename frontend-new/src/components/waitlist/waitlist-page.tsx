@@ -70,7 +70,7 @@ const faqs = [
   { q: "What happens when a session is idle?", a: "Sessions that exceed a configurable idle threshold are automatically terminated to conserve resources. Files saved to your persistent storage are always preserved regardless of session termination status." },
   { q: "What happens when I end or delete a session?", a: "When a session ends, the temporary compute environment is permanently torn down — any in-session system changes are discarded. However, all files in your personal storage are always preserved. Compute charges stop immediately; any applicable storage fees continue based on your subscription." },
   { q: "What happens if my browser disconnects mid-session?", a: "Your session keeps running on the platform until the booked time expires. Simply reopen the LaaS portal and reconnect — your desktop or notebook resumes exactly where you left off. You will also receive advance warnings before any scheduled session expiry." },
-  { q: "What is the refund policy?", a: "Credits consumed by active sessions are non-refundable. If you believe a deduction occurred due to a platform-side issue, contact us at ksrcsupport@gktech.ai with your session details and we will review it within 2 business days. Unused wallet balance refund requests from institutions are considered on a case-by-case basis." },
+  { q: "What is the refund policy?", a: "Credits consumed by active sessions are non-refundable. If you believe a deduction occurred due to a platform-side issue, contact us at ksrcesupport@gktech.ai with your session details and we will review it within 2 business days. Unused wallet balance refund requests from institutions are considered on a case-by-case basis." },
 ];
 
 // ─── Form Options ────────────────────────────────────────────────────────────
@@ -234,7 +234,15 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
   
   // AI Analysis state
   const [analysisState, setAnalysisState] = useState<'idle' | 'analyzing' | 'success' | 'failure'>('idle');
-  const [analysisData, setAnalysisData] = useState<any>(null);
+  const [analysisData, setAnalysisData] = useState<{
+    detectedGoal?: string;
+    estimatedVramNeedGb?: number;
+    estimatedComputeIntensity?: string;
+    detectedFrameworks?: string[];
+    keyInsights?: string[];
+    suggestions?: string;
+    [key: string]: unknown;
+  } | null>(null);
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
 
   const isStudent = formData.currentStatus === "Student";
@@ -326,9 +334,9 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
       } else {
         setAnalysisState('failure');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setAnalysisState('failure');
-      setAnalysisData({ suggestions: err.message || 'Analysis failed. Please try again.' });
+      setAnalysisData({ suggestions: (err instanceof Error ? err.message : null) || 'Analysis failed. Please try again.' });
     }
   };
 
@@ -879,7 +887,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                     Got questions, ideas, or something urgent? We&apos;re always listening.
                   </p>
                   <a
-                    href="mailto:ksrcsupport@gktech.ai"
+                    href="mailto:ksrcesupport@gktech.ai"
                     style={{
                       fontFamily: "var(--font-sans)",
                       fontSize: "1.1rem",
@@ -895,7 +903,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                       e.currentTarget.style.color = ACCENT;
                     }}
                   >
-                    ksrcsupport@gktech.ai
+                    ksrcesupport@gktech.ai
                   </a>
                 </div>
 
@@ -965,7 +973,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
             <>
               {/* Back to Home */}
               <div style={{ marginBottom: 24 }}>
-                <a
+                <Link
                   href="/"
                   style={{
                     display: "inline-flex",
@@ -985,7 +993,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                     <path d="M19 12H5M12 19l-7-7 7-7" />
                   </svg>
                   Back to Home
-                </a>
+                </Link>
               </div>
 
               {/* ── Your Information Section ── */}
@@ -1406,7 +1414,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                     lineHeight: 1.5,
                     fontFamily: 'var(--font-sans)',
                   }}>
-                    We learn what you're building and tailor the right GPU resources around it — so you can focus on the work that matters.
+                    We learn what you&apos;re building and tailor the right GPU resources around it — so you can focus on the work that matters.
                   </div>
                 </div>
               </div>
@@ -1566,19 +1574,19 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
                       </div>
 
                       {/* Frameworks */}
-                      {analysisData.detectedFrameworks?.length > 0 && (
+                      {(analysisData.detectedFrameworks?.length ?? 0) > 0 && (
                         <div style={{ marginBottom: '8px' }}>
                           <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--fgColor-muted)', letterSpacing: '0.05em', fontFamily: 'var(--font-sans)' }}>Frameworks: </span>
                           <span style={{ fontSize: 'var(--text-sm)', color: 'var(--fgColor-default)', fontFamily: 'var(--font-sans)' }}>
-                            {analysisData.detectedFrameworks.join(', ')}
+                            {analysisData.detectedFrameworks?.join(', ')}
                           </span>
                         </div>
                       )}
 
                       {/* Key insights */}
-                      {analysisData.keyInsights?.length > 0 && (
+                      {(analysisData.keyInsights?.length ?? 0) > 0 && (
                         <ul style={{ margin: '8px 0 0', paddingLeft: '20px', listStyleType: 'disc' }}>
-                          {analysisData.keyInsights.map((insight: string, i: number) => (
+                          {analysisData.keyInsights?.map((insight: string, i: number) => (
                             <li key={i} style={{ fontSize: 'var(--text-sm)', color: 'var(--fgColor-default)', marginBottom: '4px', fontFamily: 'var(--font-sans)' }}>
                               {insight}
                             </li>
@@ -1911,7 +1919,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
             </h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", color: "var(--fgColor-muted)" }}>
               Can&apos;t find what you&apos;re looking for? Reach us at{" "}
-              <a href="mailto:ksrcsupport@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>ksrcsupport@gktech.ai</a>.
+              <a href="mailto:ksrcesupport@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>ksrcesupport@gktech.ai</a>.
             </p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 48px", alignItems: "start" }}>

@@ -941,9 +941,9 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
       backdropFilter: scrolled ? "blur(14px)" : "none",
       transition: "all 0.3s ease",
     }}>
-      <a href="/" style={{ display: "flex", alignItems: "center" }}>
+      <Link href="/" style={{ display: "flex", alignItems: "center" }}>
         <img src="/images/ksrce-logo.png" alt="KSRCE LaaS" style={{ height: isMobile ? 36 : 44, objectFit: "contain", verticalAlign: "middle" }} />
-      </a>
+      </Link>
 
       {/* Desktop center nav links */}
       {!isMobile && (
@@ -1418,7 +1418,7 @@ function FeatureComparison() {
             Zero Egress
           </div>
           <div style={{ fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 800, color: "var(--fgColor-default)", marginBottom: 8, lineHeight: 1.25 }}>No bandwidth tax on your models</div>
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "var(--fgColor-muted)", lineHeight: 1.7, marginBottom: 16 }}>Move massive checkpoints on our high-speed local network. AWS charges per-GB — we don't.</p>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "var(--fgColor-muted)", lineHeight: 1.7, marginBottom: 16 }}>Move massive checkpoints on our high-speed local network. AWS charges per-GB — we don&apos;t.</p>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(0,212,255,0.06)", borderRadius: 10, border: "1px solid rgba(0,212,255,0.15)" }}>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "1.6rem", fontWeight: 800, color: "#00d4ff" }}>$0</span>
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.78rem", color: "var(--fgColor-muted)", lineHeight: 1.4 }}>egress fees,<br />ever</span>
@@ -1540,7 +1540,7 @@ function FAQ({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boolean
 }
 
 // ─── Pricing table ─────────────────────────────────────────────────────────────
-function PricingGrid({ rows }: { rows: any[] }) {
+function PricingGrid({ rows }: { rows: { title: string; badge?: string; highlight?: boolean; bestFor?: string; vcpu: string | number; memory: string; vram: string; hami: string; price: string | number }[] }) {
   return (
     <>
       <style>{`
@@ -1874,7 +1874,7 @@ function IsometricStackAsset({ activeIndex }: { activeIndex: number | null }) {
   const angleRad = Math.atan2(DY, DX);
   const angleDeg = (angleRad * 180) / Math.PI;
 
-  const getPoints = (c: any) => {
+  const getPoints = (c: { top: { x: number; y: number }; right: { x: number; y: number }; bottom: { x: number; y: number }; left: { x: number; y: number } }) => {
     return {
       topFace: `${c.top.x},${c.top.y} ${c.right.x},${c.right.y} ${c.bottom.x},${c.bottom.y} ${c.left.x},${c.left.y}`,
       leftFace: `${c.left.x},${c.left.y} ${c.bottom.x},${c.bottom.y} ${c.bottom.x},${c.bottom.y + DEPTH} ${c.left.x},${c.left.y + DEPTH}`,
@@ -2332,7 +2332,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
     { q: "What happens when a session is idle?", a: "Sessions that exceed a configurable idle threshold are automatically terminated to conserve resources. Files saved to your persistent storage are always preserved regardless of session termination status." },
     { q: "What happens when I end or delete a session?", a: "When a session ends, the temporary compute environment is permanently torn down — any in-session system changes are discarded. However, all files in your personal storage are always preserved. Compute charges stop immediately; any applicable storage fees continue based on your subscription." },
     { q: "What happens if my browser disconnects mid-session?", a: "Your session keeps running on the platform until the booked time expires. Simply reopen the LaaS portal and reconnect — your desktop or notebook resumes exactly where you left off. You will also receive advance warnings before any scheduled session expiry." },
-    { q: "What is the refund policy?", a: "Credits consumed by active sessions are non-refundable. If you believe a deduction occurred due to a platform-side issue, contact us at ksrcsupport@gktech.ai with your session details and we will review it within 2 business days. Unused wallet balance refund requests from institutions are considered on a case-by-case basis." },
+    { q: "What is the refund policy?", a: "Credits consumed by active sessions are non-refundable. If you believe a deduction occurred due to a platform-side issue, contact us at ksrcesupport@gktech.ai with your session details and we will review it within 2 business days. Unused wallet balance refund requests from institutions are considered on a case-by-case basis." },
   ];
 
   const pricing = [
@@ -2394,7 +2394,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
               Work Anywhere. Create Everywhere.
             </h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", lineHeight: 1.65, color: "var(--fgColor-muted)", maxWidth: 440, marginBottom: 12, animation: "fadeUp 0.4s ease 0.4s both" }}>
-              Built for the ones who build what's next — GPU power that scales with your ambition, not your budget.
+              Built for the ones who build what&apos;s next — GPU power that scales with your ambition, not your budget.
             </p>
             <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 12, flexWrap: "wrap", marginBottom: 20, animation: "fadeUp 0.4s ease 0.5s both" }}>
               <Link href="/waitlist"
@@ -2433,7 +2433,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
           {stats.map((s, i) => (
             <div key={i} style={{ padding: isMobile ? "20px 12px" : "32px 24px", borderRight: isMobile ? (i % 2 === 0 ? "1px solid var(--borderColor-default)" : "none") : (i < stats.length - 1 ? "1px solid var(--borderColor-default)" : "none"), borderBottom: isMobile && i < 2 ? "1px solid var(--borderColor-default)" : "none", textAlign: "center" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "var(--font-sans)", fontSize: isMobile ? "1.5rem" : "2.2rem", fontWeight: 800, color: "var(--fgColor-default)", lineHeight: 1, marginBottom: 6 }}>
-                {(s as any).icon && <img src={(s as any).icon} alt="" style={{ height: isMobile ? 22 : 32, objectFit: "contain" }} />}
+                {(s as { icon?: string }).icon && <img src={(s as { icon?: string }).icon} alt="" style={{ height: isMobile ? 22 : 32, objectFit: "contain" }} />}
                 {"val" in s && typeof s.val === "string"
                   ? `${s.val}${s.suffix}`
                   : <Counter end={s.val as number} suffix={s.suffix} />
@@ -2531,7 +2531,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, borderRadius: 7, textDecoration: "none", transition: "all 0.2s" }}
                 onMouseEnter={e => (e.currentTarget.style.background = ACCENT_DARK)}
                 onMouseLeave={e => (e.currentTarget.style.background = ACCENT)}>
-                Explore What's Possible →
+                Explore What&apos;s Possible →
               </Link>
             </div>
           </div>
@@ -2748,7 +2748,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
             <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.4rem, 6vw, 2rem)" : "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 800, color: "var(--fgColor-default)", letterSpacing: "-0.02em", marginBottom: 14 }}>Frequently Asked Questions</h2>
             <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.95rem", color: "var(--fgColor-muted)" }}>
               Can&apos;t find what you&apos;re looking for? Reach us at{" "}
-              <a href="mailto:ksrcsupport@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>ksrcsupport@gktech.ai</a>.
+              <a href="mailto:ksrcesupport@gktech.ai" style={{ color: ACCENT, textDecoration: "underline", fontWeight: 600 }}>ksrcesupport@gktech.ai</a>.
             </p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 48px", alignItems: "start" }}>

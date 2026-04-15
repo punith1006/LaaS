@@ -12,7 +12,21 @@ interface AddCreditsModalProps {
 
 declare global {
   interface Window {
-    Razorpay: any;
+    Razorpay: new (options: {
+      key: string;
+      amount: number;
+      currency: string;
+      name: string;
+      description: string;
+      order_id: string;
+      handler: (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => void;
+      modal: { ondismiss: () => void };
+      prefill: Record<string, unknown>;
+      theme: { color: string };
+    }) => {
+      on(event: 'payment.failed', callback: (response: { error?: { description?: string } }) => void): void;
+      open(): void;
+    };
   }
 }
 
@@ -102,8 +116,9 @@ export function AddCreditsModal({ isOpen, onClose, onSuccess }: AddCreditsModalP
             } else {
               setError("Payment verification failed. Please contact support.");
             }
-          } catch (err: any) {
-            setError(err.message || "Payment verification failed");
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Payment verification failed";
+            setError(message);
           }
         },
         modal: {
@@ -118,13 +133,14 @@ export function AddCreditsModal({ isOpen, onClose, onSuccess }: AddCreditsModalP
       };
 
       const rzp = new window.Razorpay(options);
-      rzp.on("payment.failed", function (response: any) {
+      rzp.on("payment.failed", function (response: { error?: { description?: string } }) {
         setError(response.error?.description || "Payment failed. Please try again.");
         setIsLoading(false);
       });
       rzp.open();
-    } catch (err: any) {
-      setError(err.message || "Failed to create payment order");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create payment order";
+      setError(message);
       setIsLoading(false);
     }
   };

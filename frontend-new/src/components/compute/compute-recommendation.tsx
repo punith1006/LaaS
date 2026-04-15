@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ScoredConfig, scoreConfigs, ConfigForScoring } from "@/lib/recommendation-engine";
+import { ScoredConfig, scoreConfigs, ConfigForScoring, WorkloadAnalysis } from "@/lib/recommendation-engine";
 import { createRecommendationSession, updateRecommendationSession } from "@/lib/api";
 
 // ============================================================================
@@ -185,10 +185,10 @@ export function ComputeRecommendation({
 
   // Analyze flow state
   const [analysisState, setAnalysisState] = useState<'input' | 'analyzing' | 'success' | 'failure'>('input');
-  const [analysisData, setAnalysisData] = useState<any>(null);
+  const [analysisData, setAnalysisData] = useState<Partial<WorkloadAnalysis> | null>(null);
   const [autoSelectedFields, setAutoSelectedFields] = useState<Set<string>>(new Set());
   const [recommendationSessionId, setRecommendationSessionId] = useState<string | null>(null);
-  const [llmAnalysis, setLlmAnalysis] = useState<any>(null);
+  const [llmAnalysis, setLlmAnalysis] = useState<WorkloadAnalysis | null>(null);
   
   // Wizard state
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
@@ -780,7 +780,7 @@ export function ComputeRecommendation({
               <div>
                 <div style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "var(--fgColor-muted)", letterSpacing: "0.05em", marginBottom: "4px", fontFamily: "var(--font-sans)" }}>Detected Goal</div>
                 <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
-                  {({ ml_training: "ML Model Training", inference: "AI Inference & Testing", data_science: "Data Science & Notebooks", rendering: "3D Rendering & Simulation", general_dev: "General Development", research: "Research & Experimentation" } as Record<string, string>)[analysisData?.detectedGoal] || analysisData?.detectedGoal || "—"}
+                  {analysisData?.detectedGoal ? ({ ml_training: "ML Model Training", inference: "AI Inference & Testing", data_science: "Data Science & Notebooks", rendering: "3D Rendering & Simulation", general_dev: "General Development", research: "Research & Experimentation" } as Record<string, string>)[analysisData.detectedGoal] || analysisData.detectedGoal : "—"}
                 </div>
               </div>
               <div>
@@ -792,13 +792,13 @@ export function ComputeRecommendation({
               <div>
                 <div style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "var(--fgColor-muted)", letterSpacing: "0.05em", marginBottom: "4px", fontFamily: "var(--font-sans)" }}>Workload Intensity</div>
                 <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
-                  {({ low: "Light", medium: "Moderate", high: "Heavy", very_high: "Maximum" } as Record<string, string>)[analysisData?.estimatedComputeIntensity] || "—"}
+                  {analysisData?.estimatedComputeIntensity ? ({ low: "Light", medium: "Moderate", high: "Heavy", very_high: "Maximum" } as Record<string, string>)[analysisData.estimatedComputeIntensity] : "—"}
                 </div>
               </div>
             </div>
 
             {/* Frameworks */}
-            {analysisData?.detectedFrameworks?.length > 0 && (
+            {analysisData?.detectedFrameworks && analysisData.detectedFrameworks.length > 0 && (
               <div style={{ marginBottom: "8px" }}>
                 <span style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "var(--fgColor-muted)", letterSpacing: "0.05em", fontFamily: "var(--font-sans)" }}>Frameworks: </span>
                 <span style={{ fontSize: "var(--text-sm)", color: "var(--fgColor-default)", fontFamily: "var(--font-sans)" }}>
@@ -808,7 +808,7 @@ export function ComputeRecommendation({
             )}
 
             {/* Key insights */}
-            {analysisData?.keyInsights?.length > 0 && (
+            {analysisData?.keyInsights && analysisData.keyInsights.length > 0 && (
               <ul style={{ margin: "8px 0 0", paddingLeft: "20px", listStyleType: "disc" }}>
                 {analysisData.keyInsights.map((insight: string, i: number) => (
                   <li key={i} style={{ fontSize: "var(--text-sm)", color: "var(--fgColor-default)", marginBottom: "4px", fontFamily: "var(--font-sans)" }}>
@@ -876,10 +876,10 @@ export function ComputeRecommendation({
               </span>
             </div>
 
-            {analysisData?.missingCategories?.length > 0 && (
+            {analysisData?.missingCategories && analysisData.missingCategories.length > 0 && (
               <p style={{ fontSize: "var(--text-sm)", color: "var(--fgColor-default)", margin: "0 0 8px", fontFamily: "var(--font-sans)" }}>
                 We couldn&apos;t confidently determine your{' '}
-                {(analysisData.missingCategories as string[]).map((cat) => ({
+                {analysisData.missingCategories.map((cat) => ({
                   primary_goal: 'primary goal',
                   gpu_memory: 'GPU memory requirements',
                   workload_intensity: 'workload intensity',
@@ -983,7 +983,7 @@ export function ComputeRecommendation({
                 <span>
                   Based on your analysis:
                   {" "}<strong style={{ color: "var(--fgColor-default)" }}>
-                    {({ ml_training: "ML Model Training", inference: "AI Inference & Testing", data_science: "Data Science & Notebooks", rendering: "3D Rendering & Simulation", general_dev: "General Development", research: "Research & Experimentation" } as Record<string, string>)[analysisData?.detectedGoal] || "Your goal"}
+                    {analysisData.detectedGoal ? ({ ml_training: "ML Model Training", inference: "AI Inference & Testing", data_science: "Data Science & Notebooks", rendering: "3D Rendering & Simulation", general_dev: "General Development", research: "Research & Experimentation" } as Record<string, string>)[analysisData.detectedGoal] || "Your goal" : "Your goal"}
                   </strong>
                   {analysisData?.estimatedVramNeedGb && <> · ~{analysisData.estimatedVramNeedGb} GB VRAM</>}
                   {analysisData?.estimatedComputeIntensity && <> · {({ low: "Light", medium: "Moderate", high: "Heavy", very_high: "Maximum" } as Record<string, string>)[analysisData.estimatedComputeIntensity]} intensity</>}

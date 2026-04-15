@@ -305,7 +305,7 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
       case 'session.running':
         return `Instance ${details?.instanceName || 'Instance'} is now running`;
       case 'session.terminated':
-        const termCost = details?.finalCostCents ? `₹${(details.finalCostCents / 100).toFixed(2)}` : '';
+        const termCost = details?.finalCostCents ? `₹${(Number(details.finalCostCents) / 100).toFixed(2)}` : '';
         return `Terminated instance ${details?.instanceName || 'Instance'}${termCost ? ` — ${termCost}` : ''}`;
       case 'session.failed':
         return `Instance ${details?.instanceName || 'Instance'} failed`;
@@ -315,11 +315,11 @@ export function HomeTabContent({ user }: HomeTabContentProps) {
         return `Restarted instance ${details?.instanceName || 'Instance'}`;
       // Billing events
       case 'billing.charge':
-        const chargeAmount = details?.amountCents ? `₹${(details.amountCents / 100).toFixed(2)}` : '₹0.00';
+        const chargeAmount = details?.amountCents ? `₹${(Number(details.amountCents) / 100).toFixed(2)}` : '₹0.00';
         const chargeName = details?.instanceName || 'Session';
         return `Billed ${chargeAmount} for ${chargeName}`;
       case 'wallet.credit':
-        const creditAmount = details?.amountCents ? `₹${(details.amountCents / 100).toFixed(2)}` : '₹0.00';
+        const creditAmount = details?.amountCents ? `₹${(Number(details.amountCents) / 100).toFixed(2)}` : '₹0.00';
         return `Added ${creditAmount} to wallet`;
       default:
         // Fallback: convert action to readable format
