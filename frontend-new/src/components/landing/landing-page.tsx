@@ -854,9 +854,10 @@ function useTheme() {
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
+    try { localStorage.setItem('darkMode', 'true'); } catch(e) {}
   }, []);
 
-  const toggle = () => { /* Disabled */ };
+  const toggle = () => {};
 
   return [isDark, toggle] as const;
 }

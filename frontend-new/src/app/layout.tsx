@@ -33,13 +33,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="dark">
       <head>
         <Script
           id="dark-mode-init"
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var d=localStorage.getItem('darkMode');if(d==='true'){document.documentElement.classList.add('dark')}}catch(e){}})();`,
+            __html: `(function(){try{var d=localStorage.getItem('darkMode');if(d!=='false'){document.documentElement.classList.add('dark')}}catch(e){document.documentElement.classList.add('dark')}})();`,
           }}
         />
       </head>

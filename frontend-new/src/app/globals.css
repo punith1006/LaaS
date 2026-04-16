@@ -10,9 +10,9 @@
 /* App shell — Lambda's exact CSS system (from Lambda.ai) */
 :root {
   /* Lambda Color Tokens */
-  --bgColor-default: #F0EFE2;
-  --bgColor-mild: #E7E6D9;
-  --bgColor-muted: #D7D6CE;
+  --bgColor-default: #F0EFE2;   /* warm cream white */
+  --bgColor-mild: #E7E6D9;      /* slightly darker warm */
+  --bgColor-muted: #D7D6CE;     /* muted warm */
   --fgColor-default: #0B0B0B;
   --fgColor-mild: #2E2E2E;
   --fgColor-muted: #636363;

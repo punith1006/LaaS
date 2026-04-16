@@ -1,1 +1,4 @@
 -v /tmp/bash.bashrc.orig:/etc/bash.bashrc \
+
+upload .next to server
+scp -i "C:\Users\Punith\.ssh\lightsail.pem" -r c:\Users\Punith\LaaS\frontend-new\.next ec2-user@3.109.186.22:/opt/laas/frontend/

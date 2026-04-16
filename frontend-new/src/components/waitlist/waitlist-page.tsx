@@ -560,6 +560,7 @@ export function WaitlistPage({ user }: WaitlistPageProps) {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bgColor-default)" }}>
+
       <style>{`
         .waitlist-input:focus {
           border-color: ${ACCENT} !important;
