@@ -228,8 +228,8 @@ async function main() {
     create: {
       hostname: 'laas-node-01',
       displayName: 'LaaS Node 01 — RTX 4090',
-      ipCompute: '192.168.10.92',
-      ipStorage: '192.168.10.92',
+      ipCompute: '192.168.10.99',
+      ipStorage: '192.168.10.99',
       cpuModel: 'AMD Ryzen 9 7950X3D',
       totalVcpu: 16,
       totalMemoryMb: 65536,          // 64 GB

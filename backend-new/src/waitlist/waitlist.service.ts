@@ -117,7 +117,7 @@ export class WaitlistService {
   }
 
   async getWaitlistCount(): Promise<number> {
-    const WAITLIST_BASE_OFFSET = 72;
+    const WAITLIST_BASE_OFFSET = parseInt(process.env.WAITLIST_BASE_OFFSET || '130', 10);
     const realCount = await this.prisma.waitlistEntry.count();
     return realCount + WAITLIST_BASE_OFFSET;
   }
@@ -155,7 +155,7 @@ export class WaitlistService {
     }
 
     // Calculate queue position: count of all entries created at or before this entry
-    const WAITLIST_BASE_OFFSET = 72; // Base offset to reflect pre-registered interest
+    const WAITLIST_BASE_OFFSET = parseInt(process.env.WAITLIST_BASE_OFFSET || '130', 10); // Base offset to reflect pre-registered interest
     const rawPosition = await this.prisma.waitlistEntry.count({
       where: {
         createdAt: {

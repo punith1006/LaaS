@@ -75,7 +75,7 @@ export class ComputeService {
     body?: unknown,
   ): Promise<unknown> {
     const baseUrl =
-      process.env.SESSION_ORCHESTRATION_URL || 'http://192.168.10.92:9998';
+      process.env.SESSION_ORCHESTRATION_URL || 'http://192.168.10.99:9998';
     const secret = process.env.SESSION_ORCHESTRATION_SECRET;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -696,7 +696,7 @@ export class ComputeService {
           );
 
           // Build session URL using node IP
-          const nodeIp = node.ipCompute || '192.168.10.92';
+          const nodeIp = node.ipCompute || '192.168.10.99';
           const sessionUrl = `http://${nodeIp}:${connInfo.nginxPort}/`;
 
           // Get current resource snapshot

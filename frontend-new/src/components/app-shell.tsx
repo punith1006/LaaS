@@ -152,21 +152,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
     const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || "laas";
     
-    if (keycloakUrl) {
+    if (keycloakUrl && idToken) {
       const appUrl = window.location.origin;
       // Logout from the laas realm (the broker realm where OAuth/SSO sessions are created)
       let logoutUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/logout`;
       const params = new URLSearchParams();
       
-      if (idToken) {
-        params.set("id_token_hint", idToken);
-      }
+      // Add id_token_hint if available (Keycloak 26+ requires it)
+      params.set("id_token_hint", idToken);
       params.set("post_logout_redirect_uri", `${appUrl}/`);
       logoutUrl += `?${params.toString()}`;
       
       window.location.href = logoutUrl;
     } else {
-      router.push("/signin");
+      // No id_token available (expired/invalid) - skip Keycloak logout
+      // Redirect directly to landing page to avoid "Missing id_token_hint" error
+      router.push("/");
     }
   };
 

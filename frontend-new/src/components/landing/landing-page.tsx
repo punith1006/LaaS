@@ -647,7 +647,7 @@
 //       {/* ── FOOTER ── */}
 //       <footer style={{ borderTop: "1px solid var(--borderColor-default)", padding: "28px 48px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
 //         <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fgColor-default)" }}>LaaS</span>
-//         <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)" }}>KSRCE AI Lab — Lab as a Service Platform · © 2025</span>
+//         <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)" }}>KSRCE AI Lab — Lab as a Service Platform · © 2026</span>
 //         <div style={{ display: "flex", gap: 24 }}>
 //           {["Privacy", "Terms", "Docs", "Pricing"].map(l => (
 //             <a key={l} href="#" style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)", textDecoration: "none", transition: "color 0.15s" }}
@@ -917,15 +917,17 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
     setIsSignOutModalOpen(false);
     const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
     const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || "laas";
-    if (keycloakUrl) {
+    if (keycloakUrl && idToken) {
       const appUrl = window.location.origin;
       let logoutUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/logout`;
       const params = new URLSearchParams();
-      if (idToken) params.set("id_token_hint", idToken);
+      // Add id_token_hint (Keycloak 26+ requires it)
+      params.set("id_token_hint", idToken);
       params.set("post_logout_redirect_uri", `${appUrl}/`);
       logoutUrl += `?${params.toString()}`;
       window.location.href = logoutUrl;
     } else {
+      // No id_token available (expired/invalid) - redirect directly to landing
       window.location.href = "/";
     }
   };
@@ -2804,7 +2806,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
         {/* Content - Centered */}
         <div style={{ position: "relative", zIndex: 2, maxWidth: 700, padding: isMobile ? "0 20px" : "0", transform: isMobile ? "translateY(0)" : "translateY(-15vh)" }}>
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.6rem, 7vw, 2.4rem)" : "clamp(2.2rem, 5vw, 3.8rem)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15, textShadow: "0 4px 30px rgba(0,0,0,0.8)" }}>Ready to launch your first GPU session?</h2>
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "0.9rem" : "clamp(0.9rem, 1.5vw, 1.1rem)", color: "rgba(255,255,255,0.85)", marginBottom: 40, lineHeight: 1.6, maxWidth: 640, margin: "0 auto 40px" }}>Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 60 seconds.</p>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "0.9rem" : "clamp(0.9rem, 1.5vw, 1.1rem)", color: "rgba(255,255,255,0.85)", marginBottom: 40, lineHeight: 1.6, maxWidth: 640, margin: "0 auto 40px" }}>Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 30 seconds.</p>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
             <Link href="/waitlist"
               style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 700, borderRadius: 10, textDecoration: "none", boxShadow: `0 6px 30px rgba(79,110,247,0.6)`, transition: "all 0.2s" }}
@@ -2818,11 +2820,11 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
 
       {/* ── FOOTER ── */}
       <footer style={{ borderTop: "1px solid var(--borderColor-default)", padding: isMobile ? "24px 20px" : "28px 48px", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fgColor-default)" }}>LaaS</span>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)" }}>KSRCE AI Lab — Lab as a Service Platform · © 2025</span>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 800, letterSpacing: "0.1em", color: "var(--fgColor-default)" }}>LaaS</span>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)" }}>KSRCE AI Lab — Lab as a Service Platform · © 2026</span>
         <div style={{ display: "flex", gap: 24 }}>
           {["Privacy", "Terms", "Docs", "Pricing"].map(l => (
-            <a key={l} href="#"
+            <a key={l} href={l === "Pricing" ? "#pricing" : "#"}
               style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "var(--fgColor-muted)", textDecoration: "none", transition: "color 0.15s" }}
               onMouseEnter={e => (e.currentTarget.style.color = "var(--fgColor-default)")}
               onMouseLeave={e => (e.currentTarget.style.color = "var(--fgColor-muted)")}>

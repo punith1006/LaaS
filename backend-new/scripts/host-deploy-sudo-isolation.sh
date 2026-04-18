@@ -301,7 +301,7 @@ section_header "Step 6b: TURN Server (coturn) Setup"
 
 # Required for bridge networking: containers on isolated networks need
 # TURN relay for WebRTC desktop streaming (Selkies GStreamer).
-TURN_HOST="${TURN_HOST:-192.168.10.92}"
+TURN_HOST="${TURN_HOST:-192.168.10.99}"
 TURN_USER="${TURN_USERNAME:-selkies}"
 TURN_PASS="${TURN_PASSWORD:-wVIAbfwkgkxjaCiZVX4BDsdU}"
 
@@ -365,7 +365,7 @@ section_header "Step 6c: Network Isolation (DOCKER-USER iptables)"
 #   2. RETURN for TURN server traffic (containers need WebRTC relay)
 #   3. DROP for private IP ranges (host isolation)
 LAAS_SUBNET="172.31.0.0/16"
-TURN_IP="${TURN_HOST:-192.168.10.92}"
+TURN_IP="${TURN_HOST:-192.168.10.99}"
 
 echo "[INFO] Setting up DOCKER-USER iptables rules for host isolation..."
 
