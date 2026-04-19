@@ -1,11 +1,35 @@
 "use client";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
-export default function ConsoleLayout({ children: _children }: { children: React.ReactNode }) {
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/app-shell";
+import { getAccessToken } from "@/lib/token";
+
+export default function ConsoleLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
   useEffect(() => {
-    router.replace("/");
+    // Check if user has a valid access token
+    const token = getAccessToken();
+    if (!token) {
+      // No token, redirect to sign-in
+      router.replace("/signin");
+      return;
+    }
+
+    // Token exists, user is authenticated
+    setIsAuthenticated(true);
   }, [router]);
-  return null;
+
+  // Show nothing while checking authentication
+  if (isAuthenticated === null) {
+    return null;
+  }
+
+  return <AppShell>{children}</AppShell>;
 }

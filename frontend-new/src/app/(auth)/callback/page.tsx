@@ -77,7 +77,8 @@ function CallbackContent() {
         }
 
         toast.success("Signed in successfully");
-        router.replace("/waitlist");
+        // Redirect to /home after successful OAuth sign-in (matching frontend behavior)
+        router.replace("/home");
       } catch (e) {
         toast.error(
           e instanceof Error ? e.message : "Authentication failed",

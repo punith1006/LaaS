@@ -36,7 +36,8 @@ export function SignInForm() {
     try {
       await signIn(data.email, data.password);
       toast.success("Signed in successfully");
-      router.push("/waitlist");
+      // Redirect to /home after successful sign-in (matching frontend behavior)
+      router.push("/home");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Sign in failed");
     } finally {
