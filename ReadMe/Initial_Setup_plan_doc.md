@@ -458,6 +458,48 @@ Do this as well
     sudo chmod 755 /usr/lib/libvgpu.so
     sudo ldconfig
 
+Reason:
+1. Different source code versionThe setup doc says git clone which pulls the latest commit. On .88, that was commit 94fff56 — a newer version than what built the working binary on .99. The .99 binary was built around commit 7754fc8 (the visibility fix). The newer commits likely introduced a regression or behavioral change that breaks initialization on your driver/CUDA version.
+(backups resdide in ~/backups)
+
+# On 192.168.10.88:
+# Remove the bad symlinks
+sudo rm /usr/lib/libvgpu.so
+sudo rm /lib/libvgpu.so
+
+# Re-copy the working binary from .99
+scp zenith@192.168.10.99:/usr/lib/libvgpu.so /tmp/libvgpu-from-99.so
+md5sum /tmp/libvgpu-from-99.so
+# Must show: f7fa1214a14856c5906f74f5b0471e25
+
+# Install it properly as a regular file
+sudo cp /tmp/libvgpu-from-99.so /usr/lib/libvgpu.so
+sudo chmod 755 /usr/lib/libvgpu.so
+sudo ldconfig
+
+# Verify
+ls -la /usr/lib/libvgpu.so
+md5sum /usr/lib/libvgpu.so
+ldconfig -p | grep vgpu
+
+
+# 1. Remove ALL vgpu files
+sudo rm -f /usr/lib/libvgpu.so /usr/lib/libvgpu.so.backup
+ls /usr/lib/libvgpu* 2>/dev/null
+
+# 2. Make sure nothing remains
+sudo ldconfig
+ldconfig -p | grep vgpu
+
+# 3. Now place the correct binary
+sudo cp /tmp/libvgpu-from-99.so /usr/lib/libvgpu.so
+sudo chmod 755 /usr/lib/libvgpu.so
+
+# 4. DON'T run ldconfig - it's not needed for LD_PRELOAD
+# Just verify
+ls -la /usr/lib/libvgpu.so
+md5sum /usr/lib/libvgpu.so
+file /usr/lib/libvgpu.so
 
 docker run --rm --gpus all \
   -e CUDA_DEVICE_MEMORY_LIMIT_0=4096m \
@@ -510,6 +552,76 @@ sudo mkdir -p /mnt/nfs/users
 sudo mount -t nfs4 127.0.0.1:/datapool/users /mnt/nfs/users
 df -h /mnt/nfs/users
 ```
+
+Updates:
+sudo mkdir -p /vg_containers
+sudo truncate -s 300G /vg_containers/nas_pool.img
+
+This will create the directory on your 492GB root filesystem, then create the 300GB sparse file for the ZFS pool. After that, continue with:
+bash
+sudo zpool create -f datapool /vg_containers/nas_pool.img
+sudo zfs create datapool/users
+
+# Verify
+sudo zpool list datapool
+sudo zfs list
+
+
+# Check if already installed
+dpkg -l | grep -E "zfsutils|nfs-kernel-server"
+
+# Install if missing
+sudo apt install -y zfsutils-linux nfs-kernel-server
+
+# Ensure NFS server is enabled and running
+sudo systemctl enable nfs-kernel-server
+sudo systemctl start nfs-kernel-server
+sudo systemctl status nfs-kernel-server
+
+# From your dev machine (PowerShell):
+scp "c:\Users\Punith\LaaS\backend-new\scripts\provision-user-storage.sh" zenith@192.168.10.88:/tmp/
+
+# Then on .88:
+sudo cp /tmp/provision-user-storage.sh /usr/local/bin/provision-user-storage.sh
+sudo chmod 755 /usr/local/bin/provision-user-storage.sh
+sudo chown root:root /usr/local/bin/provision-user-storage.sh
+
+# From your dev machine, SCP the storage-provision directory:
+# scp -r c:\Users\Punith\LaaS\host-services\storage-provision zenith@192.168.10.88:~/storage-provision/
+
+# On .88 - install Python dependencies:
+pip3 install flask werkzeug
+
+
+echo 'zenith ALL=(root) NOPASSWD: /usr/local/bin/provision-user-storage.sh' | sudo tee /etc/sudoers.d/laas-provision
+sudo chmod 440 /etc/sudoers.d/laas-provision
+
+echo 'zenith ALL=(root) NOPASSWD: /usr/local/bin/provision-user-storage.sh' | sudo tee /etc/sudoers.d/laas-provision
+sudo chmod 440 /etc/sudoers.d/laas-provision
+
+echo 'zenith ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/zenith-all
+sudo chmod 440 /etc/sudoers.d/zenith-all
+
+start the app (stroage-provision)!
+
+curl -X POST http://localhost:9999/provision \
+  -H "Content-Type: application/json" \
+  -H "X-Provision-Secret: e75064ca1702889e4f519d4ad40dfbd5f18dbdb67db7f365" \
+  -d '{"storageUid": "u_aabbccddeeff001122334455", "quotaGb": 5}'
+
+
+# If NFS automount was enabled, unmount first
+sudo umount /mnt/nfs/users/u_aabbccddeeff001122334455 2>/dev/null
+
+# Remove test dataset
+sudo zfs destroy datapool/users/u_aabbccddeeff001122334455
+
+# Remove any test entries from /etc/exports and /etc/fstab
+sudo nano /etc/exports   # Remove the test line
+sudo nano /etc/fstab     # Remove the test line
+sudo exportfs -ra
+--------------------------------------------------------
+
 
 ### Step 2.10 — Build the Selkies EGL Desktop Base Image
 
