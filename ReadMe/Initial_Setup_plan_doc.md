@@ -649,6 +649,24 @@ docker build \
 
 > **Checkpoint**: If the build fails, note the exact error. Common failure points: CUDA version mismatch in Dockerfile args, KDE Plasma package not found, NVENC library missing. Each has a specific fix.
 
+
+----------------------------------------------------
+# Check if MPS control daemon is running
+ps aux | grep nvidia-cuda-mps
+
+# Check MPS control socket exists
+ls -la /tmp/nvidia-mps/
+
+# Check if there's a systemd service for it
+systemctl status cuda-mps 2>/dev/null
+
+# Check persistence mode
+nvidia-smi -q | grep "Persistence Mode"
+
+# Try querying MPS
+echo "get_server_list" | sudo nvidia-cuda-mps-control
+----------------------------------------------------
+
 ### Step 2.11 — Launch First Selkies Desktop Session
 
 ```bash
@@ -693,6 +711,90 @@ Open browser: `http://localhost:8080` — enter your session token.
 
 **You should see:** A full KDE Plasma desktop running inside your browser, rendered by your RTX 4090.
 
+-------------------------------------------------------
+Post this install lxcfs - runbook
+Then read the host_file_mapping_learnings
+
+New Machine
+sudo mkdir -p /etc/laas
+
+# From .99 terminal:
+for f in bash.bashrc nvidia-smi-wrapper passwd-wrapper seccomp-gpu-desktop.json sudoers sudoers-laas-user supervisord-hami.conf; do
+  scp /etc/laas/$f zenith@192.168.10.88:/tmp/$f
+done
+
+# On .99 — copy sudoers files to readable temp location, then SCP
+sudo cp /etc/laas/sudoers /tmp/laas-sudoers
+sudo cp /etc/laas/sudoers-laas-user /tmp/laas-sudoers-laas-user
+sudo cp /etc/laas/sudo-bin /tmp/laas-sudo-bin
+sudo chmod 644 /tmp/laas-sudoers /tmp/laas-sudoers-laas-user /tmp/laas-sudo-bin
+
+scp /tmp/laas-sudoers zenith@192.168.10.88:/tmp/sudoers
+scp /tmp/laas-sudoers-laas-user zenith@192.168.10.88:/tmp/sudoers-laas-user
+scp /tmp/laas-sudo-bin zenith@192.168.10.88:/tmp/sudo-bin
+
+# Cleanup temp files on .99
+rm /tmp/laas-sudoers /tmp/laas-sudoers-laas-user /tmp/laas-sudo-bin
+
+# Check if .99 already has it
+ls -la /etc/laas/sudo-bin
+
+# If it exists, SCP it:
+scp /etc/laas/sudo-bin zenith@192.168.10.88:/tmp/sudo-bin
+ssh 192.168.10.88 "sudo cp /tmp/sudo-bin /etc/laas/sudo-bin && sudo chmod 4755 /etc/laas/sudo-bin && sudo chown root:root /etc/laas/sudo-bin && rm /tmp/sudo-bin"
+
+# If it doesn't exist on .99, extract from image on .88:
+# ssh 192.168.10.88 "docker create --name temp-selkies ghcr.io/selkies-project/nvidia-egl-desktop:latest && docker cp temp-selkies:/usr/bin/sudo /tmp/sudo-bin && docker rm temp-selkies && sudo cp /tmp/sudo-bin /etc/laas/sudo-bin && sudo chmod 4755 /etc/laas/sudo-bin && sudo chown root:root /etc/laas/sudo-bin"
+
+# libvgpu.so (already on .88 from earlier step, but verify MD5 match)
+ssh 192.168.10.88 "md5sum /usr/lib/libvgpu.so"
+md5sum /usr/lib/libvgpu.so
+# Must match: f7fa1214a14856c5906f74f5b0471e25
+
+# fake_sysconf.so — check if .88 has it
+ssh 192.168.10.88 "ls -la /usr/lib/fake_sysconf.so"
+# If missing, SCP from .99:
+scp /usr/lib/fake_sysconf.so zenith@192.168.10.88:/tmp/fake_sysconf.so
+ssh 192.168.10.88 "sudo cp /tmp/fake_sysconf.so /usr/lib/fake_sysconf.so && sudo chmod 755 /usr/lib/fake_sysconf.so && rm /tmp/fake_sysconf.so"
+
+
+# On .88:
+sudo chmod 4755 /etc/laas/sudo-bin
+ls -la /etc/laas/sudo-bin
+# Should now show: -rwsr-xr-x (with the 's' in the owner execute position)
+-------------------------------------------------------
+Final Checks
+# 1. lxcfs — CRITICAL (containers will see host's 32 cores/64GB without it)
+dpkg -l | grep lxcfs
+sudo systemctl is-active lxcfs
+ls /var/lib/lxcfs/proc/
+
+# 2. fake_sysconf.so — HIGH (KDE will show 64GB instead of container limit)
+ls -lah /usr/lib/fake_sysconf.so
+file /usr/lib/fake_sysconf.so
+
+# 3. CPU topology static files — HIGH (containers need per-slot CPU view)
+ls -lad /tmp/container-*-cpu 2>/dev/null
+
+# 4. vgpulock directories (optional check)
+ls -lad /tmp/vgpulock-* 2>/dev/null
+
+# If CPU topology static files are missing
+for i in 1 2 3 4; do
+  mkdir -p /tmp/container-$i-cpu
+  CPUSET_START=$(( ($i-1)*4 ))
+  CPUSET_END=$(( ($i-1)*4+3 ))
+  CPUSET="${CPUSET_START}-${CPUSET_END}"
+  echo "$CPUSET" > /tmp/container-$i-cpu/online
+  echo "$CPUSET" > /tmp/container-$i-cpu/present
+  echo "$CPUSET" > /tmp/container-$i-cpu/possible
+  echo ""         > /tmp/container-$i-cpu/offline
+  echo ""         > /tmp/container-$i-cpu/isolated
+  chmod 444 /tmp/container-$i-cpu/*
+done
+
+
+-------------------------------------------------------
 ### Step 2.12 — Multi-Container Concurrent Session Test
 
 The production-defining test: 4 concurrent desktop sessions on one GPU:
