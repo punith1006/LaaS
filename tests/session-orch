@@ -3,7 +3,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 SESSION_SECRET=laas-session-secret-dev python3 app.py
-
+SESSION_SECRET=laas-session-secret-dev HOST_IP=100.94.157.114 TURN_HOST=100.94.157.114 python3 app.py
 
 
 #Storage-provision (from the backend env) 

@@ -792,8 +792,6 @@ for i in 1 2 3 4; do
   echo ""         > /tmp/container-$i-cpu/isolated
   chmod 444 /tmp/container-$i-cpu/*
 done
-
-
 -------------------------------------------------------
 ### Step 2.12 — Multi-Container Concurrent Session Test
 
@@ -836,6 +834,88 @@ done
 ```
 
 Run inside each session simultaneously: open a terminal → `nvidia-smi` — each should show its individual VRAM limit.
+------------------------------------------------
+Bridge Network && TURN config Setup
+docker network create \
+  --driver bridge \
+  --subnet 172.31.0.0/16 \
+  --gateway 172.31.0.1 \
+  -o "com.docker.network.bridge.enable_icc=false" \
+  laas-sessions
+
+ip route show | grep 172.31
+docker network inspect laas-sessions | grep -A5 Options
+
+touch /tmp/laas-resource-lock
+chmod 666 /tmp/laas-resource-lock
+
+sudo iptables -I DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+sudo iptables-save | sudo tee /etc/iptables/rules.v4
+
+# IP tables config
+LAAS_SUBNET="172.31.0.0/16"
+TURN_IP="100.94.157.114"
+
+sudo iptables -I DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+sudo iptables -I DOCKER-USER 2 -s "$LAAS_SUBNET" -d "$TURN_IP/32" -p tcp --dport 3478 -j RETURN
+sudo iptables -I DOCKER-USER 3 -s "$LAAS_SUBNET" -d "$TURN_IP/32" -p udp --dport 3478 -j RETURN
+sudo iptables -I DOCKER-USER 4 -s "$LAAS_SUBNET" -d "$TURN_IP/32" -p udp --dport 49152:65535 -j RETURN
+
+for dst in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16; do
+  sudo iptables -A DOCKER-USER -s "$LAAS_SUBNET" -d "$dst" -j DROP
+done
+
+sudo iptables-save | sudo tee /etc/iptables/rules.v4
+
+# Persist the rules
+sudo mkdir -p /etc/iptables
+sudo iptables-save | sudo tee /etc/iptables/rules.v4
+sudo apt install -y iptables-persistent
+
+# Co-Turn Setup
+# Install coturn
+sudo apt install -y coturn
+
+# Copy config from .99
+# on .99
+sudo cp /etc/turnserver.conf /tmp/turnserver.conf
+sudo chmod 644 /tmp/turnserver.conf
+scp /tmp/turnserver.conf zenith@192.168.10.88:/tmp/turnserver.conf
+rm /tmp/turnserver.conf
+
+# on .88
+sudo cp /tmp/turnserver.conf /etc/turnserver.conf
+echo 'TURNSERVER_ENABLED=1' | sudo tee /etc/default/coturn
+sudo systemctl enable coturn
+sudo systemctl start coturn
+sudo systemctl status coturn
+
+sudo cp /tmp/turnserver.conf /etc/turnserver.conf
+
+# On .88:
+sudo nano /etc/turnserver.conf
+# Change: external-ip=192.168.10.99
+# To:     external-ip=100.94.157.114
+# (Tailscale IP, since FortiClient VPN is down)
+
+sudo systemctl restart coturn
+sudo systemctl status coturn
+
+# Enable TURN server daemon (uncomment TURNSERVER_ENABLED)
+echo 'TURNSERVER_ENABLED=1' | sudo tee /etc/default/coturn
+
+# Enable and start
+sudo systemctl enable coturn
+sudo systemctl start coturn
+sudo systemctl status coturn
+
+
+# final checks
+systemctl is-enabled docker
+systemctl is-enabled cuda-mps
+systemctl is-enabled lxcfs
+systemctl is-enabled coturn
+------------------------------------------------
 
 ### Step 2.13 — Phase 2 Full Validation Checklist
 
