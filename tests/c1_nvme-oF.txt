@@ -1,0 +1,63 @@
+docker create \
+  --name laas-nvmeof-test \
+  --hostname ws-nvmeof \
+  --add-host ws-nvmeof:127.0.0.1 \
+  --restart unless-stopped \
+  --gpus all \
+  --cpus=4 \
+  --memory=16g \
+  --pids-limit 2048 \
+  --ipc=host \
+  --network=laas-sessions \
+  --dns 8.8.8.8 \
+  --dns 8.8.4.4 \
+  -p 8100:8080 \
+  -p 19100:19080 \
+  --tmpfs /dev/shm:rw \
+  --cap-drop=ALL \
+  --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+  --cap-add SETUID --cap-add SETGID --cap-add NET_BIND_SERVICE \
+  --cap-add KILL --cap-add SYS_CHROOT --cap-add MKNOD \
+  --cap-add NET_RAW --cap-add FSETID --cap-add AUDIT_WRITE \
+  --security-opt seccomp=/etc/laas/seccomp-gpu-desktop.json \
+  --security-opt apparmor=docker-default \
+  --security-opt no-new-privileges=false \
+  -e TZ=UTC -e DISPLAY=:11 \
+  -e DISPLAY_SIZEW=1920 -e DISPLAY_SIZEH=1080 -e DISPLAY_REFRESH=60 \
+  -e SELKIES_ENCODER=nvh264enc \
+  -e SELKIES_ENABLE_BASIC_AUTH=true -e SELKIES_BASIC_AUTH_PASSWORD=testpass123 \
+  -e NGINX_PORT=8080 -e SELKIES_PORT=9080 -e SELKIES_METRICS_HTTP_PORT=19080 \
+  -e PASSWD=testpass123 \
+  -e CUDA_VISIBLE_DEVICES=0 -e CUDA_NVRTC_ARCH=89 \
+  -e __NV_PRIME_RENDER_OFFLOAD=1 -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
+  -e CUDA_DEVICE_MEMORY_LIMIT_0=8192m -e CUDA_DEVICE_SM_LIMIT=33 \
+  -e CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps -e CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log \
+  -e CUDA_MPS_PINNED_DEVICE_MEM_LIMIT=0=8G -e CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=33 \
+  -e CUDA_MPS_ENABLE_PER_CTX_DEVICE_MULTIPROCESSOR_PARTITIONING=1 \
+  -e CONTAINER_MEMORY_LIMIT_BYTES=17179869184 \
+  -e SELKIES_TURN_HOST=100.94.157.114 -e SELKIES_TURN_PORT=3478 \
+  -e SELKIES_TURN_USERNAME=selkies -e SELKIES_TURN_PASSWORD=wVIAbfwkgkxjaCiZVX4BDsdU \
+  -e SELKIES_TURN_PROTOCOL=tcp \
+  -v /tmp/nvidia-mps:/tmp/nvidia-mps -v /tmp/nvidia-log:/tmp/nvidia-log \
+  -v /mnt/nvme-test:/home/ubuntu \
+  -v /usr/lib/libvgpu.so:/usr/lib/libvgpu.so:ro \
+  -v /usr/lib/fake_sysconf.so:/usr/lib/fake_sysconf.so:ro \
+  -v /tmp/vgpulock-11:/tmp/vgpulock \
+  -v /usr/bin/nvidia-smi:/usr/bin/nvidia-smi.real \
+  -v /etc/laas/nvidia-smi-wrapper:/usr/bin/nvidia-smi:ro \
+  -v /usr/bin/passwd:/usr/bin/passwd.real \
+  -v /etc/laas/passwd-wrapper:/usr/bin/passwd:ro \
+  -v /etc/laas/supervisord-hami.conf:/etc/supervisord.conf:ro \
+  -v /etc/laas/bash.bashrc:/etc/bash.bashrc:ro \
+  -v /etc/laas/sudoers:/etc/sudoers:ro \
+  -v /etc/laas/sudoers-laas-user:/etc/sudoers.d/laas-user:ro \
+  -v /etc/laas/sudo-bin:/usr/bin/sudo \
+  --label laas.session_id=test-nvmeof \
+  --label laas.tier=test-8gb \
+  --label laas.session_type=stateful \
+  --label laas.display=11 \
+  --label laas.nginx_port=8100 \
+  --label laas.storage_uid=nvme-test \
+  ghcr.io/selkies-project/nvidia-egl-desktop:latest
+
+docker start laas-nvmeof-test

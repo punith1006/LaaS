@@ -1,0 +1,30 @@
+10.99
+# Check if NFS server is running
+sudo systemctl status nfs-kernel-server
+
+# If not running:
+sudo apt install -y nfs-kernel-server
+sudo systemctl enable --now nfs-kernel-server
+
+# Export the dataset to 10.88 over 10GbE
+echo "/datapool/users/u_fac7be8f67ad517291ac4dac 10.10.100.88(rw,sync,no_subtree_check,no_root_squash)" | sudo tee -a /etc/exports
+
+# Reload
+sudo exportfs -ra
+sudo exportfs -v
+
+10.88
+# Mount 10.99's storage over 10GbE
+sudo mkdir -p /mnt/nfs-10g/u_fac7be8f67ad517291ac4dac
+sudo mount -t nfs4 10.10.100.99:/datapool/users/u_fac7be8f67ad517291ac4dac /mnt/nfs-10g/u_fac7be8f67ad517291ac4dac
+
+# Verify
+ls -la /mnt/nfs-10g/u_fac7be8f67ad517291ac4dac/
+mount | grep 10.10.100.99
+
+
+Make sure the owner is current!! (One issue: the directory is owned by zenith:zenith but the container runs as ubuntu (UID 1000). Let's fix ownership and check prerequisites on 10.88:)
+sudo chown 1000:1000 /datapool/users/u_fac7be8f67ad517291ac4dac
+
+consideration()
+The ownership shows Uid: 1000/zenith on 10.99. The issue is that on 10.99, UID 1000 is zenith, while in the container UID 1000 is ubuntu. This is actually fine — NFS maps by UID number, not username. Both are UID 1000, so the container user ubuntu (UID 1000) will have full read/write access.The ls -la on 10.88 shows zenith zenith because 10.88 also has a zenith user at UID 1000 — it's just resolving the name locally. The UID match is what matters.You're good to go. Did you already stop and remove the old containers? If so, run the docker create command I provided earlier and then:
