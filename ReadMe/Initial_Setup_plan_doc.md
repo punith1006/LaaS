@@ -578,7 +578,7 @@ sudo systemctl enable nfs-kernel-server
 sudo systemctl start nfs-kernel-server
 sudo systemctl status nfs-kernel-server
 
-# From your dev machine (PowerShell):
+# From your dev machine (PowerShell): (take it from 10.99)
 scp "c:\Users\Punith\LaaS\backend-new\scripts\provision-user-storage.sh" zenith@192.168.10.88:/tmp/
 
 # Then on .88:
@@ -1007,3 +1007,150 @@ Keep a log of:
 6. NFS mount options that gave stable performance
 
 This becomes your **runbook** for the production Phase 0.
+
+
+
+# Interconnecting Both these machines
+on 10.99
+sudo ip addr add 10.10.100.99/24 dev eno2
+sudo ethtool eno2 | grep Speed
+
+on 10.88
+sudo ip addr add 10.10.100.88/24 dev eno2
+sudo ethtool eno2 | grep Speed
+
+# Quick Test
+# On 10.88 (server):
+iperf3 -s
+
+# On 10.99 (client, in another terminal):
+iperf3 -c 10.10.100.88 -t 10
+
+![alt text](image.png)
+
+# Persistence Change
+network:
+  version: 2
+  ethernets:
+    eno1:
+      dhcp4: no
+      addresses:
+        - 192.168.10.99/23
+      routes:
+        - to: default
+          via: 192.168.10.1
+      nameservers:
+        addresses:
+          - 8.8.8.8
+          - 1.1.1.1
+    eno2:
+      dhcp4: no
+      addresses:
+        - 10.10.100.99/24
+      mtu: 9000
+
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eno1:
+      dhcp4: false
+      addresses:
+        - 192.168.10.88/23
+      routes:
+        - to: default
+          via: 192.168.10.1
+      nameservers:
+        addresses:
+          - 8.8.8.8
+          - 8.8.4.4
+    eno2:
+      dhcp4: no
+      addresses:
+        - 10.10.100.88/24
+      mtu: 9000
+
+# Then test jumbo frames work over the 10GbE link:
+# From 10.99:
+ping -c 3 -M do -s 8972 10.10.100.88
+
+
+
+
+
+
+
+
+NVME-oF setup!!
+On 10.99 (storage / NVMe-oF TARGET):
+10.99
+
+sudo apt install -y nvme-cli
+sudo modprobe nvmet
+sudo modprobe nvmet_tcp
+lsmod | grep nvmet
+
+10.88
+sudo apt install -y nvme-cli
+sudo modprobe nvme_tcp
+lsmod | grep nvme_tcp
+
+on 10.99
+# On 10.99 (storage node):
+sudo zfs create -V 10G datapool/nvme-test
+ls -la /dev/zvol/datapool/nvme-test
+
+# wait for the block to come, and then format it!
+sudo mkfs.ext4 /dev/zvol/datapool/nvme-test
+
+# Create configfs subsystem
+sudo mkdir -p /sys/kernel/config/nvmet/subsystems/laas-test
+echo 1 | sudo tee /sys/kernel/config/nvmet/subsystems/laas-test/attr_allow_any_host
+
+# Create namespace 1 backed by the zvol
+sudo mkdir /sys/kernel/config/nvmet/subsystems/laas-test/namespaces/1
+echo "/dev/zvol/datapool/nvme-test" | sudo tee /sys/kernel/config/nvmet/subsystems/laas-test/namespaces/1/device_path
+echo 1 | sudo tee /sys/kernel/config/nvmet/subsystems/laas-test/namespaces/1/enable
+
+# Create a TCP port on the 10GbE interface
+sudo mkdir -p /sys/kernel/config/nvmet/ports/1
+echo "tcp" | sudo tee /sys/kernel/config/nvmet/ports/1/addr_trtype
+echo "10.10.100.99" | sudo tee /sys/kernel/config/nvmet/ports/1/addr_traddr
+echo "4420" | sudo tee /sys/kernel/config/nvmet/ports/1/addr_trsvcid
+echo "ipv4" | sudo tee /sys/kernel/config/nvmet/ports/1/addr_adrfam
+
+# Link subsystem to port
+sudo ln -s /sys/kernel/config/nvmet/subsystems/laas-test /sys/kernel/config/nvmet/ports/1/subsystems/laas-test
+
+ss -tlnp | grep 4420
+You should see something like LISTEN 0 ... 10.10.100.99:4420.
+
+
+
+On 10.88 
+# Connect from Inititator and Mount
+# Discover available targets
+sudo nvme discover -t tcp -a 10.10.100.99 -s 4420
+
+# Connect to the test subsystem
+sudo nvme connect -t tcp -n laas-test -a 10.10.100.99 -s 4420
+
+# List NVMe devices - find the new one
+sudo nvme list
+
+sudo mkdir -p /mnt/nvme-test
+sudo mount /dev/nvme0n1 /mnt/nvme-test
+
+
+
+# tests to find if it is correct
+# On 10.88:
+sudo nvme list-subsys /dev/nvme1n1
+
+# 2. Confirm the zvol does NOT exist on 10.88:
+# On 10.88:
+sudo zfs list | grep nvme-test
+
+# 3. Confirm the zvol DOES exist on 10.99:
+# On 10.99:
+sudo zfs list datapool/nvme-test
