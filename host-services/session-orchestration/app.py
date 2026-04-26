@@ -9,6 +9,7 @@ Expects SESSION_SECRET in env; validates X-Session-Secret header on every protec
 import fcntl
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -409,6 +410,135 @@ def verify_local_zfs(storage_uid: str, storage_backend: str = 'zfs_dataset') -> 
         if stat_info.st_uid != 1000:
             raise Exception(f"ZFS dataset owner UID is {stat_info.st_uid}, expected 1000")
         return dataset_path
+
+
+def provision_ephemeral_zvol(session_id: str, size_mb: int, container_name: str) -> str:
+    """Create, format, and mount an ephemeral ZFS zvol for a session.
+
+    Returns mount_path on success. On any failure, rolls back all created
+    resources and raises Exception.
+    """
+    size_gb = math.ceil(size_mb / 1024)
+    zvol_path = f"datapool/ephemeral/sess_{session_id}"
+    zvol_dev = f"/dev/zvol/{zvol_path}"
+    mount_path = f"/datapool/ephemeral/sess_{session_id}"
+
+    created_zvol = False
+    mounted = False
+
+    try:
+        # 1. Create zvol
+        emit_event(container_name, "allocating_storage", f"Creating {size_gb}G zvol {zvol_path}...")
+        ok, err = _run_cmd(["sudo", "zfs", "create", "-V", f"{size_gb}G", zvol_path], timeout=30)
+        if not ok:
+            raise Exception(f"zfs create failed: {err}")
+        created_zvol = True
+
+        # 2. Wait for device node
+        waited = 0
+        while waited < 5:
+            if os.path.exists(zvol_dev):
+                break
+            time.sleep(0.5)
+            waited += 0.5
+        if not os.path.exists(zvol_dev):
+            raise Exception(f"Device node {zvol_dev} did not appear within 5s")
+
+        # 3. Format ext4
+        ok, err = _run_cmd(["sudo", "mkfs.ext4", "-F", zvol_dev], timeout=30)
+        if not ok:
+            raise Exception(f"mkfs.ext4 failed: {err}")
+
+        # 4. Create mount dir
+        ok, err = _run_cmd(["sudo", "mkdir", "-p", mount_path], timeout=5)
+        if not ok:
+            raise Exception(f"mkdir failed: {err}")
+
+        # 5. Mount
+        ok, err = _run_cmd(["sudo", "mount", zvol_dev, mount_path], timeout=15)
+        if not ok:
+            raise Exception(f"mount failed: {err}")
+        mounted = True
+
+        # 6. Fix permissions
+        _run_cmd(["sudo", "chown", "1000:1000", mount_path], timeout=5)
+        _run_cmd(["sudo", "chmod", "u+rwX", mount_path], timeout=5)
+
+        # 7. Remove lost+found
+        _run_cmd(["sudo", "rm", "-rf", f"{mount_path}/lost+found"], timeout=5)
+
+        logger.info(f"[EPHEMERAL-ZVOL] Created and mounted {zvol_path} at {mount_path}")
+        return mount_path
+
+    except Exception as e:
+        logger.error(f"[EPHEMERAL-ZVOL] Failed: {e}")
+        # Rollback
+        if mounted:
+            _run_cmd(["sudo", "umount", mount_path], timeout=15)
+        if created_zvol:
+            _run_cmd(["sudo", "zfs", "destroy", "-f", zvol_path], timeout=30)
+        if os.path.exists(mount_path) and not os.path.ismount(mount_path):
+            _run_cmd(["sudo", "rmdir", mount_path], timeout=5)
+        raise
+
+
+def cleanup_orphaned_ephemeral_zvols() -> int:
+    """Scan for ephemeral zvols with no matching running container and destroy them."""
+    try:
+        ok, output = _run_cmd(["sudo", "zfs", "list", "-H", "-r", "-o", "name", "datapool/ephemeral"], timeout=10)
+        if not ok or not output.strip():
+            return 0
+
+        # Get running container names
+        ok2, containers = _run_cmd(["docker", "ps", "--format", "{{.Names}}"], timeout=10)
+        running_containers = set(containers.strip().split("\n")) if ok2 and containers.strip() else set()
+
+        cleaned = 0
+        for line in output.strip().split("\n"):
+            zvol_name = line.strip()
+            if not zvol_name.startswith("datapool/ephemeral/sess_"):
+                continue
+
+            # Extract session_id
+            sess_id = zvol_name.replace("datapool/ephemeral/sess_", "")
+            container_name = f"laas-{sess_id[:8]}"
+
+            if container_name not in running_containers:
+                mount_path = f"/datapool/ephemeral/sess_{sess_id}"
+                logger.info(f"[ORPHAN-CLEANUP] Found orphaned ephemeral zvol: {zvol_name}")
+
+                # Unmount if mounted
+                if os.path.ismount(mount_path):
+                    _run_cmd(["sudo", "umount", mount_path], timeout=15)
+
+                # Destroy zvol
+                ok, err = _run_cmd(["sudo", "zfs", "destroy", "-f", zvol_name], timeout=30)
+                if ok:
+                    cleaned += 1
+                    logger.info(f"[ORPHAN-CLEANUP] Destroyed orphaned zvol: {zvol_name}")
+                else:
+                    logger.warning(f"[ORPHAN-CLEANUP] Failed to destroy {zvol_name}: {err}")
+
+                # Remove mount dir
+                if os.path.exists(mount_path) and not os.path.ismount(mount_path):
+                    _run_cmd(["sudo", "rmdir", mount_path], timeout=5)
+
+        if cleaned > 0:
+            logger.info(f"[ORPHAN-CLEANUP] Cleaned up {cleaned} orphaned ephemeral zvol(s)")
+        return cleaned
+    except Exception as e:
+        logger.error(f"[ORPHAN-CLEANUP] Error during orphan scan: {e}")
+        return 0
+
+
+def _ephemeral_cleanup_loop():
+    """Background thread that runs orphan cleanup every 5 minutes."""
+    while True:
+        time.sleep(300)  # 5 minutes
+        try:
+            cleanup_orphaned_ephemeral_zvols()
+        except Exception as e:
+            logger.error(f"[ORPHAN-CLEANUP] Periodic cleanup error: {e}")
 
 
 def cleanup_nvmeof_storage(
@@ -911,6 +1041,10 @@ def build_docker_command(
             resolved_path = f"{NFS_MOUNT_ROOT}/{storage_uid}"
         cmd.extend(["-v", f"{resolved_path}:/home/ubuntu"])
     
+    # Volume mounts - Ephemeral storage
+    if storage_type == "ephemeral" and mount_path:
+        cmd.extend(["-v", f"{mount_path}:/home/ubuntu"])
+    
     # Volume mounts - HAMi-core libs
     cmd.extend(["-v", "/usr/lib/libvgpu.so:/usr/lib/libvgpu.so:ro"])
     cmd.extend(["-v", "/usr/lib/fake_sysconf.so:/usr/lib/fake_sysconf.so:ro"])
@@ -986,6 +1120,7 @@ def launch_session_worker(
     nvme_port: int = 4420,
     nvme_subsystem: Optional[str] = None,
     storage_backend: Optional[str] = None,
+    ephemeral_storage_size_mb: Optional[int] = None,
 ) -> None:
     """Background worker thread to handle the multi-step session launch."""
     
@@ -1129,10 +1264,27 @@ def launch_session_worker(
             # Store session metadata for cleanup
             store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem, storage_backend)
         else:
-            emit_event(container_name, "validating_mount", "Ephemeral session - skipping mount validation")
-            complete_event(container_name, "validating_mount", "Ephemeral session - no persistent storage")
-            # Store metadata even for ephemeral (for consistent cleanup)
-            store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem, storage_backend)
+            # Ephemeral session
+            if ephemeral_storage_size_mb and ephemeral_storage_size_mb > 0:
+                emit_event(container_name, "allocating_storage",
+                          f"Creating {ephemeral_storage_size_mb}MB ephemeral zvol...")
+                try:
+                    mount_path = provision_ephemeral_zvol(
+                        session_id, ephemeral_storage_size_mb, container_name
+                    )
+                    complete_event(container_name, "allocating_storage",
+                                  f"Ephemeral zvol created at {mount_path}")
+                    # Store in session metadata for cleanup
+                    store_session_metadata(container_name, "ephemeral_zvol", session_id, None, "zfs_zvol")
+                except Exception as e:
+                    fail_session(container_name, "allocating_storage",
+                                f"Ephemeral zvol creation failed: {e}")
+                    return
+            else:
+                emit_event(container_name, "validating_mount", "Ephemeral session - default overlay2")
+                complete_event(container_name, "validating_mount", "Ephemeral session - no dedicated storage")
+                # Store metadata even for ephemeral (for consistent cleanup)
+                store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem, storage_backend)
         
         # Generate password
         password = generate_password(16)
@@ -1289,6 +1441,16 @@ def launch_session_worker(
         if storage_transport == "local_zfs" and storage_backend == "zfs_zvol" and storage_uid:
             zvol_mount = f"/datapool/users/{storage_uid}"
             logger.info(f"[CLEANUP-ERR] Local zvol at {zvol_mount} is provision-managed, skipping unmount")
+        # Cleanup ephemeral zvol if it was set up
+        if ephemeral_storage_size_mb and ephemeral_storage_size_mb > 0:
+            ephemeral_mount = f"/datapool/ephemeral/sess_{session_id}"
+            zvol_path = f"datapool/ephemeral/sess_{session_id}"
+            logger.info(f"[CLEANUP-ERR] Rolling back ephemeral zvol for {container_name}")
+            if os.path.ismount(ephemeral_mount):
+                _run_cmd(["sudo", "umount", ephemeral_mount], timeout=15)
+            _run_cmd(["sudo", "zfs", "destroy", "-f", zvol_path], timeout=30)
+            if os.path.exists(ephemeral_mount) and not os.path.ismount(ephemeral_mount):
+                _run_cmd(["sudo", "rmdir", ephemeral_mount], timeout=5)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1367,6 +1529,11 @@ def validate_launch_request(data: Dict[str, Any]) -> Tuple[bool, str]:
     if storage_backend and storage_transport != "local_zfs":
         return False, f"storage_backend '{storage_backend}' only applies when storage_transport is 'local_zfs'"
     
+    # Validate ephemeral_storage_size_mb if provided
+    ephemeral_storage_size_mb = data.get("ephemeral_storage_size_mb", 0)
+    if ephemeral_storage_size_mb and (ephemeral_storage_size_mb < 0 or ephemeral_storage_size_mb > 102400):
+        return False, f"Invalid ephemeral_storage_size_mb: {ephemeral_storage_size_mb}"
+    
     return True, ""
 
 
@@ -1437,7 +1604,8 @@ def launch_session():
         "storage_node_ip": "10.10.100.99" (required if nvmeof_tcp),
         "nvme_port": 4420 (optional, default 4420),
         "nvme_subsystem": "laas-u_abc123" (required if nvmeof_tcp),
-        "storage_backend": "zfs_dataset" | "zfs_zvol" | null (optional, only for local_zfs, default zfs_dataset)
+        "storage_backend": "zfs_dataset" | "zfs_zvol" | null (optional, only for local_zfs, default zfs_dataset),
+        "ephemeral_storage_size_mb": 8192 (optional, only for ephemeral sessions)
     }
     """
     request_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
@@ -1482,6 +1650,7 @@ def launch_session():
     nvme_port = data.get("nvme_port", 4420)             # NVMe-oF port
     nvme_subsystem = data.get("nvme_subsystem")         # e.g., "laas-u_abc123"
     storage_backend = data.get("storage_backend")       # "zfs_dataset" | "zfs_zvol" | null
+    ephemeral_storage_size_mb = data.get("ephemeral_storage_size_mb")  # optional, for ephemeral sessions
     
     # Generate container name
     container_name = f"laas-{session_id[:8]}"
@@ -1506,6 +1675,7 @@ def launch_session():
             vcpu, memory_mb, vram_mb, hami_sm_percent,
             storage_type, storage_uid, node_hostname,
             storage_transport, storage_node_ip, nvme_port, nvme_subsystem, storage_backend,
+            ephemeral_storage_size_mb,
         ),
         daemon=True
     )
@@ -1654,6 +1824,28 @@ def stop_session(name: str):
     if storage_transport == "local_zfs" and storage_backend == "zfs_zvol" and storage_uid:
         zvol_mount = f"/datapool/users/{storage_uid}"
         logger.info(f"[CLEANUP-ZVOL] Local zvol at {zvol_mount} is provision-managed, skipping unmount")
+    
+    # Step 5: Ephemeral zvol cleanup (if applicable)
+    if storage_transport == "ephemeral_zvol":
+        sess_id = storage_uid
+        if sess_id:
+            ephemeral_mount = f"/datapool/ephemeral/sess_{sess_id}"
+            zvol_path = f"datapool/ephemeral/sess_{sess_id}"
+            logger.info(f"[CLEANUP-EPHEMERAL] Cleaning up ephemeral zvol for {name}")
+            # Unmount
+            if os.path.ismount(ephemeral_mount):
+                ok, err = _run_cmd(["sudo", "umount", ephemeral_mount], timeout=15)
+                if not ok:
+                    logger.warning(f"[CLEANUP-EPHEMERAL] Unmount failed: {err}")
+            # Destroy zvol
+            ok, err = _run_cmd(["sudo", "zfs", "destroy", "-f", zvol_path], timeout=30)
+            if ok:
+                logger.info(f"[CLEANUP-EPHEMERAL] Destroyed zvol {zvol_path}")
+            else:
+                logger.warning(f"[CLEANUP-EPHEMERAL] Destroy failed: {err}")
+            # Remove mount dir
+            if os.path.exists(ephemeral_mount) and not os.path.ismount(ephemeral_mount):
+                _run_cmd(["sudo", "rmdir", ephemeral_mount], timeout=5)
     
     # Clean up event tracking
     with session_events_lock:
@@ -1878,6 +2070,19 @@ if __name__ == "__main__":
     print(f"Host IP: {HOST_IP}", file=sys.stderr)
     print(f"NFS Mount Root: {NFS_MOUNT_ROOT}", file=sys.stderr)
     print(f"Selkies Image: {SELKIES_IMAGE}", file=sys.stderr)
+    
+    # Run orphan cleanup at startup
+    try:
+        cleaned = cleanup_orphaned_ephemeral_zvols()
+        if cleaned > 0:
+            print(f"[STARTUP] Cleaned up {cleaned} orphaned ephemeral zvol(s)", file=sys.stderr)
+    except Exception as e:
+        print(f"[STARTUP] Orphan cleanup failed: {e}", file=sys.stderr)
+    
+    # Start background thread for periodic orphan cleanup
+    cleanup_thread = threading.Thread(target=_ephemeral_cleanup_loop, daemon=True)
+    cleanup_thread.start()
+    print("[STARTUP] Ephemeral zvol orphan cleanup thread started (interval: 5 min)", file=sys.stderr)
     
     app.run(host="0.0.0.0", port=port, threaded=True)
         

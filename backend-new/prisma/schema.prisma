@@ -1061,6 +1061,10 @@ model Session {
   storageNodeId      String?              @map("storage_node_id") @db.Uuid
   storageTransport   StorageTransport?    @map("storage_transport")
 
+  // Ephemeral storage allocation
+  ephemeralStorageSizeMb Int?    @map("ephemeral_storage_size_mb")
+  ephemeralStoragePath   String? @map("ephemeral_storage_path") @db.VarChar(512)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   createdBy String?  @map("created_by") @db.Uuid

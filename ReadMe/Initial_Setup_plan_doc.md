@@ -1304,3 +1304,7 @@ ssh zenith@10.10.100.88 "sudo zfs destroy -r datapool/users/u_test_migrate"
 sudo zfs destroy -r datapool/users/u_test_migrate
 
 echo "Pipeline test complete!"
+
+
+# For emphemeral Each Node should have!
+sudo zfs create datapool/ephemeral

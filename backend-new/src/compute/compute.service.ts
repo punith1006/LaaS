@@ -477,6 +477,7 @@ export class ComputeService {
             allocatedMemoryMb: config.memoryMb,
             allocatedGpuVramMb: config.gpuVramMb,
             allocatedHamiSmPercent: config.hamiSmPercent,
+            ephemeralStorageSizeMb: dto.storageType === 'ephemeral' ? 10240 : null,
             allocationSnapshotAt: new Date(),
             actualGpuVramMb: config.gpuVramMb,
             actualHamiSmPercent: config.hamiSmPercent,
@@ -592,6 +593,9 @@ export class ComputeService {
             nvme_port: storageVolume.node.nvmeOfPort,
             nvme_subsystem: `laas-${storageVolume.storageUid}`,
           }),
+          ...(dto.storageType === 'ephemeral' && {
+            ephemeral_storage_size_mb: 10240, // 10GB default for all ephemeral sessions
+          }),
         },
         orchestrationUrl,
       )) as { containerName: string; launchId: string; sessionId: string };
@@ -602,6 +606,9 @@ export class ComputeService {
         data: {
           containerName: orchResponse.containerName,
           status: 'starting',
+          ...(dto.storageType === 'ephemeral' && {
+            ephemeralStoragePath: `/datapool/ephemeral/sess_${session.id}`,
+          }),
         },
       });
 
