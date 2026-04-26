@@ -1081,7 +1081,7 @@ ping -c 3 -M do -s 8972 10.10.100.88
 
 
 
-NVME-oF setup!!
+# NVME-oF setup!!
 On 10.99 (storage / NVMe-oF TARGET):
 10.99
 
@@ -1154,3 +1154,26 @@ sudo zfs list | grep nvme-test
 # 3. Confirm the zvol DOES exist on 10.99:
 # On 10.99:
 sudo zfs list datapool/nvme-test
+
+
+10.88
+# Stop and remove the container
+docker stop laas-nvmeof-test
+docker rm laas-nvmeof-test
+
+# Unmount the NVMe-oF filesystem
+sudo umount /mnt/nvme-test
+
+# Disconnect NVMe-oF
+sudo nvme disconnect -n laas-test
+
+
+10.99
+# Remove NVMe-oF target config
+sudo rm /sys/kernel/config/nvmet/ports/1/subsystems/laas-test
+sudo rmdir /sys/kernel/config/nvmet/ports/1
+sudo rmdir /sys/kernel/config/nvmet/subsystems/laas-test/namespaces/1
+sudo rmdir /sys/kernel/config/nvmet/subsystems/laas-test
+
+# Destroy the test zvol
+sudo zfs destroy datapool/nvme-test

@@ -472,10 +472,14 @@ export class StorageController {
     const zfsDatasetPath = `datapool/users/${storageUid}`;
     const nfsExportPath = `/mnt/nfs/users/${storageUid}`;
 
+    // Multi-node: capture nodeId and storageBackend from provision result
+    const provisionedNodeId = result.nodeId ?? null;
+    const provisionedBackend = result.storageBackend ?? 'zfs_dataset';
+
     // Create database record using raw SQL
     try {
       const volume = await this.prisma.$queryRaw<StorageVolumeRow>`
-        INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at)
+        INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, node_id, storage_backend, created_at, updated_at)
         VALUES (
           gen_random_uuid()::uuid,
           ${userId}::uuid,
@@ -489,6 +493,8 @@ export class StorageController {
           'user_created',
           'active',
           NOW(),
+          ${provisionedNodeId}::uuid,
+          ${provisionedBackend},
           NOW(),
           NOW()
         )

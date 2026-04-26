@@ -491,6 +491,9 @@ export interface StorageVolume {
   allocationType: string;
   provisionedAt: string | null;
   createdAt: string;
+  nodeId: string | null;
+  node: { id: string; hostname: string } | null;
+  storageBackend: string | null;
 }
 
 export interface NameCheckResult {

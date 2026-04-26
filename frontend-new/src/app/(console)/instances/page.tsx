@@ -45,6 +45,9 @@ interface Session {
   allocatedHamiSmPercent: number | null;
   computeConfig: ComputeConfig | null;
   node: SessionNode | null;
+  storageNodeId: string | null;
+  storageNode: SessionNode | null;
+  storageTransport: string | null;
   terminationReason: string | null;
   terminatedBy: string | null;
   terminatedAt: string | null;
@@ -1431,7 +1434,41 @@ export default function InstancesPage() {
                       Infrastructure
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <DetailRow label="Node" value={selectedSession.node?.hostname || "-"} mono />
+                      <DetailRow label="Compute Node" value={selectedSession.node?.hostname || "-"} mono />
+                      <DetailRow label="Storage Node" value={selectedSession.storageNode?.hostname || (selectedSession.storageNodeId ? selectedSession.storageNodeId.substring(0, 8) : "\u2014")} mono />
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.875rem", color: "var(--fgColor-muted)" }}>Storage Transport</span>
+                        {(() => {
+                          const transport = selectedSession.storageTransport;
+                          let label = "NFS (Legacy)";
+                          let badgeBg = "var(--bgColor-mild)";
+                          let badgeColor = "var(--fgColor-muted)";
+                          if (transport === "local_zfs") {
+                            label = "Local ZFS";
+                            badgeBg = "rgba(0, 156, 0, 0.1)";
+                            badgeColor = "#009C00";
+                          } else if (transport === "nvmeof_tcp") {
+                            label = "NVMe-oF TCP";
+                            badgeBg = "rgba(56, 132, 255, 0.1)";
+                            badgeColor = "#3884FF";
+                          }
+                          return (
+                            <span
+                              style={{
+                                fontSize: "0.75rem",
+                                fontWeight: 500,
+                                color: badgeColor,
+                                backgroundColor: badgeBg,
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                fontFamily: "var(--font-mono)",
+                              }}
+                            >
+                              {label}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <DetailRow label="Container" value={selectedSession.containerName || "-"} mono />
                     </div>
                   </div>

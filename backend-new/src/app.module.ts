@@ -15,6 +15,7 @@ import { SupportModule } from './support/support.module';
 import { MailModule } from './mail/mail.module';
 import { ReferralModule } from './referral/referral.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
+import { NodeModule } from './node/node.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     MailModule,
     ReferralModule,
     WaitlistModule,
+    NodeModule,
   ],
   controllers: [AppController],
   providers: [AppService],

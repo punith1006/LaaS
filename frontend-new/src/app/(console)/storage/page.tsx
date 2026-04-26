@@ -32,6 +32,9 @@ interface StorageVolume {
   allocationType: string;
   provisionedAt: string | null;
   createdAt: string;
+  nodeId: string | null;
+  node: { id: string; hostname: string } | null;
+  storageBackend: string | null;
 }
 
 // File types - extend API type with UI-specific fields
@@ -622,6 +625,27 @@ export default function StoragePage() {
                 of {totalAllocated > 0 ? `${totalAllocated} GB` : "0 GB"} allocated
               </span>
             </div>
+            {/* Storage node badge */}
+            {storages[0]?.node?.hostname && (
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  marginTop: "8px",
+                  fontSize: "0.75rem",
+                  color: "var(--fgColor-muted)",
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="2" width="20" height="8" rx="2" />
+                  <rect x="2" y="14" width="20" height="8" rx="2" />
+                  <line x1="6" y1="6" x2="6.01" y2="6" />
+                  <line x1="6" y1="18" x2="6.01" y2="18" />
+                </svg>
+                <span>Stored on <span style={{ fontFamily: "var(--font-mono)", fontWeight: 500, color: "var(--fgColor-default)" }}>{storages[0].node.hostname}</span></span>
+              </div>
+            )}
           </div>
           {/* Upgrade Storage Button */}
           {totalAllocated > 0 && totalAllocated < 10 && (

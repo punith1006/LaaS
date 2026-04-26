@@ -12,6 +12,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AuditService } from '../audit/audit.service';
+import { NodeService } from '../node/node.service';
 import { SessionTerminationReason } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import * as crypto from 'crypto';
@@ -63,6 +64,7 @@ export class ComputeService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
     private readonly auditService: AuditService,
+    private readonly nodeService: NodeService,
   ) {}
 
   // ============================================================================
@@ -73,9 +75,12 @@ export class ComputeService {
     path: string,
     method: 'GET' | 'POST' = 'GET',
     body?: unknown,
+    baseUrlOverride?: string,
   ): Promise<unknown> {
     const baseUrl =
-      process.env.SESSION_ORCHESTRATION_URL || 'http://192.168.10.99:9998';
+      baseUrlOverride ||
+      process.env.SESSION_ORCHESTRATION_URL ||
+      'http://192.168.10.99:9998';
     const secret = process.env.SESSION_ORCHESTRATION_SECRET;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -212,7 +217,13 @@ export class ComputeService {
 
   async getConfigsWithAvailability(): Promise<ComputeConfigsResponse> {
     const resourceUsage = await this.getResourceUsage();
-    const available = resourceUsage.available;
+
+    // Use fleet-wide availability from NodeService
+    const fleetAvailability =
+      await this.nodeService.getFleetConfigAvailability();
+    const availabilityMap = new Map(
+      fleetAvailability.map((a) => [a.configId, a]),
+    );
 
     // Fetch all active configs sorted by sortOrder
     const configs = await this.prisma.computeConfig.findMany({
@@ -226,28 +237,7 @@ export class ComputeService {
     });
 
     const configsWithAvailability = configs.map((config) => {
-      const isAvailable =
-        config.gpuVramMb <= available.vramMb &&
-        config.vcpu <= available.vcpu &&
-        config.memoryMb <= available.ramMb;
-
-      // Calculate max launchable instances
-      let maxLaunchable = 0;
-      if (isAvailable) {
-        const byVram =
-          config.gpuVramMb > 0
-            ? Math.floor(available.vramMb / config.gpuVramMb)
-            : Infinity;
-        const byCpu =
-          config.vcpu > 0 ? Math.floor(available.vcpu / config.vcpu) : Infinity;
-        const byRam =
-          config.memoryMb > 0
-            ? Math.floor(available.ramMb / config.memoryMb)
-            : Infinity;
-        maxLaunchable = Math.min(byVram, byCpu, byRam);
-        if (!isFinite(maxLaunchable)) maxLaunchable = 0;
-      }
-
+      const avail = availabilityMap.get(config.id);
       return {
         id: config.id,
         slug: config.slug,
@@ -264,8 +254,8 @@ export class ComputeService {
         currency: config.currency,
         bestFor: config.bestFor,
         sortOrder: config.sortOrder,
-        available: isAvailable,
-        maxLaunchable,
+        available: avail?.available ?? false,
+        maxLaunchable: avail?.maxLaunchable ?? 0,
       };
     });
 
@@ -307,25 +297,15 @@ export class ComputeService {
           throw new ConflictException('Instance name already in use');
         }
 
-        // 3. Get node and allocatable resources
-        const node = await tx.node.findFirst({ where: { status: 'healthy' } });
-        if (!node) {
-          throw new ServiceUnavailableException(
-            'No healthy compute nodes available',
-          );
-        }
-        const metadata = node.metadata as Record<string, unknown> | null;
-        const allocatable = {
-          vramMb:
-            (metadata?.allocatableGpuVramMb as number) ??
-            node.totalGpuVramMb - 1024,
-          vcpu: (metadata?.allocatableVcpu as number) ?? node.totalVcpu - 2,
-          ramMb:
-            (metadata?.allocatableMemoryMb as number) ??
-            node.totalMemoryMb - 10240,
-        };
+        // 3. Select compute node using fleet-wide balanced selection
+        const computeNode = await this.nodeService.selectComputeNode(
+          config.vcpu,
+          config.memoryMb,
+          config.gpuVramMb,
+        );
+        const node = computeNode;
 
-        // 4. Check resource availability with FOR UPDATE lock
+        // 4. Check resource availability on selected node with FOR UPDATE lock
         const activeSessions = await tx.$queryRaw<
           Array<{ vcpu: number; memory_mb: number; gpu_vram_mb: number }>
         >`
@@ -333,8 +313,20 @@ export class ComputeService {
           FROM sessions s
           JOIN compute_configs cc ON s.compute_config_id = cc.id
           WHERE s.status IN ('pending', 'starting', 'running', 'reconnecting')
+          AND s.node_id = ${node.id}::uuid
           FOR UPDATE
         `;
+
+        const nodeMetadata = node.metadata as Record<string, unknown> | null;
+        const allocatable = {
+          vramMb:
+            (nodeMetadata?.allocatableGpuVramMb as number) ??
+            node.totalGpuVramMb - 1024,
+          vcpu: (nodeMetadata?.allocatableVcpu as number) ?? node.totalVcpu - 2,
+          ramMb:
+            (nodeMetadata?.allocatableMemoryMb as number) ??
+            node.totalMemoryMb - 10240,
+        };
 
         const used = { vramMb: 0, vcpu: 0, ramMb: 0 };
         for (const s of activeSessions) {
@@ -417,18 +409,33 @@ export class ComputeService {
           throw new NotFoundException('User not found');
         }
 
-        // 7. If stateful storage, check user has active File Store
+        // 7. If stateful storage, check user has active File Store and determine transport
         let nfsMountPath: string | null = null;
+        let storageVolume: { id: string; storageUid: string; nfsExportPath: string | null; nodeId: string | null; node: { id: string; ipStorage: string | null; nvmeOfPort: number } | null } | null = null;
+        let storageTransport: 'local_zfs' | 'nvmeof_tcp' | null = null;
+        let storageNodeId: string | null = null;
+
         if (dto.storageType === 'stateful') {
-          const volume = await tx.userStorageVolume.findFirst({
+          storageVolume = await tx.userStorageVolume.findFirst({
             where: { userId, status: 'active' },
+            include: { node: { select: { id: true, ipStorage: true, nvmeOfPort: true } } },
           });
-          if (!volume) {
+          if (!storageVolume) {
             throw new BadRequestException(
               'No active File Store found. Create one first or use ephemeral storage.',
             );
           }
-          nfsMountPath = volume.nfsExportPath;
+          nfsMountPath = storageVolume.nfsExportPath;
+          storageNodeId = storageVolume.nodeId;
+
+          // Determine storage transport based on node co-location
+          if (storageNodeId && storageNodeId === node.id) {
+            storageTransport = 'local_zfs'; // Same node - direct ZFS bind mount
+          } else if (storageNodeId) {
+            storageTransport = 'nvmeof_tcp'; // Cross-node - NVMe-oF over 10GbE
+          } else {
+            storageTransport = null; // Legacy NFS fallback
+          }
         }
 
         // 8. Determine session type
@@ -441,6 +448,8 @@ export class ComputeService {
             userId,
             computeConfigId: config.id,
             nodeId: node.id,
+            storageNodeId: storageNodeId,
+            storageTransport: storageTransport as any,
             sessionType: sessionType as any,
             instanceName: dto.instanceName,
             containerName: null, // Will be set after orchestration responds
@@ -528,12 +537,15 @@ export class ComputeService {
           `Session created: userId=${userId} sessionId=${session.id} config=${config.slug} instanceName=${dto.instanceName}`,
         );
 
-        return { session, config, node, user };
+        return { session, config, node, user, storageVolume, storageTransport, storageNodeId };
       },
       { isolationLevel: 'Serializable', timeout: 15000 },
     );
 
-    const { session, config, node, user } = txResult;
+    const { session, config, node, user, storageVolume, storageTransport, storageNodeId } = txResult;
+
+    // Resolve orchestration URL for the selected compute node
+    const orchestrationUrl = this.nodeService.getSessionOrchestrationUrl(node);
 
     // Phase 2: Call orchestration service to launch the container
     try {
@@ -550,9 +562,20 @@ export class ComputeService {
           vram_mb: config.gpuVramMb,
           hami_sm_percent: config.hamiSmPercent ?? 17,
           storage_type: dto.storageType,
-          storage_uid: dto.storageType === 'stateful' ? user.storageUid : null,
+          storage_uid: dto.storageType === 'stateful' ? (storageVolume?.storageUid ?? user.storageUid) : null,
           node_hostname: node.hostname,
+          // Multi-node storage transport params — only include when truthy;
+          // orchestrator treats missing/null as NFS fallback automatically
+          ...(storageTransport && {
+            storage_transport: storageTransport,
+          }),
+          ...(storageTransport === 'nvmeof_tcp' && storageVolume?.node && {
+            storage_node_ip: storageVolume.node.ipStorage,
+            nvme_port: storageVolume.node.nvmeOfPort,
+            nvme_subsystem: `laas-${storageVolume.storageUid}`,
+          }),
         },
+        orchestrationUrl,
       )) as { containerName: string; launchId: string; sessionId: string };
 
       // Update session with container name and status = starting
@@ -577,7 +600,7 @@ export class ComputeService {
       });
 
       // Phase 3: Start background polling loop
-      this.startEventPolling(session.id, orchResponse.containerName, node);
+      this.startEventPolling(session.id, orchResponse.containerName, node, orchestrationUrl);
 
       this.logger.log(
         `Session launching: sessionId=${session.id} containerName=${orchResponse.containerName}`,
@@ -614,6 +637,7 @@ export class ComputeService {
     sessionId: string,
     containerName: string,
     node: { id: string; hostname: string; ipCompute: string | null },
+    orchestrationUrl?: string,
   ): void {
     // Prevent duplicate polling
     if (this.activePollingMap.get(sessionId)) {
@@ -649,6 +673,9 @@ export class ComputeService {
       try {
         const eventsData = (await this.callOrchestration(
           `/sessions/${containerName}/events`,
+          'GET',
+          undefined,
+          orchestrationUrl,
         )) as {
           events: Array<{
             step: string;
@@ -1249,6 +1276,8 @@ export class ComputeService {
         include: {
           computeConfig: true,
           nodeResourceReservation: true,
+          node: true,
+          storageNode: true,
         },
       });
 
@@ -1456,16 +1485,55 @@ export class ComputeService {
       );
 
       // 14. Call orchestration to stop container (after transaction commits we handle this)
-      // Store containerName for post-transaction orchestration call
-      return { updatedSession, containerName: session.containerName };
+      // Store containerName and node info for post-transaction orchestration call
+      return {
+        updatedSession,
+        containerName: session.containerName,
+        node: session.node,
+        storageTransport: session.storageTransport,
+        storageUid: session.storageNode ? undefined : undefined, // We'll look it up below
+        sessionRecord: session,
+      };
     });
 
     // After transaction: call orchestration to stop the container
     if (result.containerName) {
+      // Resolve orchestration URL from the session's compute node
+      let terminateUrl: string | undefined;
+      if (result.node) {
+        terminateUrl = this.nodeService.getSessionOrchestrationUrl(result.node);
+      }
+
+      // Build cleanup payload for cross-node storage
+      const cleanupPayload: Record<string, unknown> = {};
+      const sess = result.sessionRecord;
+      if (sess?.storageTransport) {
+        cleanupPayload.storage_transport = sess.storageTransport;
+      }
+      // Look up storage UID from the user's active volume if this was a stateful session
+      if (sess?.storageTransport && sess.storageNodeId) {
+        try {
+          const vol = await this.prisma.userStorageVolume.findFirst({
+            where: { userId, status: 'active', nodeId: sess.storageNodeId },
+            select: { storageUid: true },
+          });
+          if (vol) {
+            cleanupPayload.storage_uid = vol.storageUid;
+            if (sess.storageTransport === 'nvmeof_tcp') {
+              cleanupPayload.nvme_subsystem = `laas-${vol.storageUid}`;
+            }
+          }
+        } catch (e) {
+          this.logger.warn(`Failed to look up storage volume for terminate cleanup: ${e}`);
+        }
+      }
+
       try {
         await this.callOrchestration(
           `/sessions/${result.containerName}/stop`,
           'POST',
+          Object.keys(cleanupPayload).length > 0 ? cleanupPayload : undefined,
+          terminateUrl,
         );
         this.logger.log(
           `Container ${result.containerName} stopped via orchestration`,
@@ -1652,7 +1720,7 @@ export class ComputeService {
     // Query sessions with active statuses
     const activeSessions = await this.prisma.session.findMany({
       where: { status: { in: ['starting', 'running', 'reconnecting'] } },
-      include: { computeConfig: true },
+      include: { computeConfig: true, node: true },
     });
 
     if (activeSessions.length === 0) return;
@@ -1663,8 +1731,15 @@ export class ComputeService {
       if (!session.containerName) continue;
 
       try {
+        // Route status check to the session's compute node
+        const nodeOrchUrl = session.node
+          ? this.nodeService.getSessionOrchestrationUrl(session.node)
+          : undefined;
         const statusData = (await this.callOrchestration(
           `/sessions/${session.containerName}/status`,
+          'GET',
+          undefined,
+          nodeOrchUrl,
         )) as { containerName: string; status: string; running: boolean };
 
         // Container is running but session is 'starting' - promote to running
@@ -2095,6 +2170,7 @@ export class ComputeService {
   ): Promise<{ ok: boolean; message: string }> {
     const session = await this.prisma.session.findFirst({
       where: { id: sessionId, userId },
+      include: { node: true },
     });
 
     if (!session) {
@@ -2111,10 +2187,16 @@ export class ComputeService {
       throw new BadRequestException('Session has no container to restart');
     }
 
+    const nodeOrchUrl = session.node
+      ? this.nodeService.getSessionOrchestrationUrl(session.node)
+      : undefined;
+
     try {
       await this.callOrchestration(
         `/sessions/${session.containerName}/restart`,
         'POST',
+        undefined,
+        nodeOrchUrl,
       );
 
       await this.prisma.sessionEvent.create({
@@ -2140,6 +2222,7 @@ export class ComputeService {
   ): Promise<SessionLogsResponse> {
     const session = await this.prisma.session.findFirst({
       where: { id: sessionId, userId },
+      include: { node: true },
     });
 
     if (!session) {
@@ -2151,8 +2234,14 @@ export class ComputeService {
     }
 
     try {
+      const nodeOrchUrl = session.node
+        ? this.nodeService.getSessionOrchestrationUrl(session.node)
+        : undefined;
       const logsData = (await this.callOrchestration(
         `/sessions/${session.containerName}/logs`,
+        'GET',
+        undefined,
+        nodeOrchUrl,
       )) as { containerName: string; logs: string; tail: number };
 
       return {

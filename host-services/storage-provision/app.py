@@ -38,6 +38,14 @@ NFS_MOUNT_ROOT = os.environ.get("NFS_MOUNT_ROOT", "/mnt/nfs/users")
 EXPORTS_PATH = "/etc/exports"
 FSTAB_PATH = "/etc/fstab"
 
+# NVMe-oF target configuration
+STORAGE_IP = os.environ.get("STORAGE_IP", "")  # 10GbE interface IP (e.g. 10.10.100.99)
+NVMET_CONFIGFS = "/sys/kernel/config/nvmet"
+NVMET_PORT_PATH = f"{NVMET_CONFIGFS}/ports/1"
+NVMET_PORT_NUM = 4420
+NVMET_TARGETS_FILE = "/etc/laas/nvmet-targets.json"
+NVME_LOG_PREFIX = "[NVME-TARGET]"
+
 
 def log_event(request_id: str, client_ip: str, storage_uid: str, outcome: str, error: Optional[str] = None):
     payload = {
@@ -50,6 +58,266 @@ def log_event(request_id: str, client_ip: str, storage_uid: str, outcome: str, e
     if error:
         payload["error"] = error[:500]
     print(json.dumps(payload), flush=True)
+
+
+def nvme_log(msg: str):
+    """Log an NVMe-oF target operation."""
+    print(f"{NVME_LOG_PREFIX} {datetime.now(timezone.utc).isoformat()} {msg}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# NVMe-oF configfs helpers
+# ---------------------------------------------------------------------------
+
+def _write_sysfs(path: str, value: str) -> Optional[str]:
+    """Write a value to a sysfs/configfs file via sudo tee. Returns None on success, else error."""
+    ok, out = _run_cmd(["sudo", "bash", "-c", f"echo -n '{value}' > '{path}'"])
+    if not ok:
+        return f"Failed to write '{value}' to {path}: {out}"
+    return None
+
+
+def _read_sysfs(path: str) -> Optional[str]:
+    """Read a sysfs/configfs file. Returns content or None on failure."""
+    ok, out = _run_cmd(["sudo", "cat", path])
+    if ok:
+        return out.strip()
+    return None
+
+
+def ensure_nvmeof_port(port_path: str, storage_ip: str, port_num: int) -> Optional[str]:
+    """
+    Ensure the shared NVMe-oF port directory exists with correct transport config.
+    Only writes transport attributes if the port directory is newly created.
+    Returns None on success, else error string.
+    """
+    if os.path.isdir(port_path):
+        nvme_log(f"Port {port_path} already exists, skipping creation")
+        return None
+
+    nvme_log(f"Creating NVMe-oF port at {port_path} (tcp:{storage_ip}:{port_num})")
+    ok, out = _run_cmd(["sudo", "mkdir", "-p", port_path])
+    if not ok:
+        return f"Failed to create port dir {port_path}: {out}"
+
+    # Set transport attributes (must be done before any subsystem is linked)
+    for attr, val in [
+        ("addr_trtype", "tcp"),
+        ("addr_trsvcid", str(port_num)),
+        ("addr_traddr", storage_ip),
+        ("addr_adrfam", "ipv4"),
+    ]:
+        err = _write_sysfs(f"{port_path}/{attr}", val)
+        if err:
+            return err
+
+    nvme_log(f"Port created: tcp {storage_ip}:{port_num}")
+    return None
+
+
+def setup_nvmeof_target(storage_uid: str, zvol_path: str) -> Optional[str]:
+    """
+    Set up NVMe-oF target for a zvol via configfs.
+    Creates subsystem, namespace, and links to the shared port.
+    Returns None on success, else error string.
+    """
+    if not STORAGE_IP:
+        return "STORAGE_IP environment variable not set — cannot configure NVMe-oF target"
+
+    subsystem_name = f"laas-{storage_uid}"
+    subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
+    ns_path = f"{subsys_path}/namespaces/1"
+    symlink_target = f"{NVMET_PORT_PATH}/subsystems/{subsystem_name}"
+
+    nvme_log(f"Setting up NVMe-oF target: subsystem={subsystem_name}, zvol={zvol_path}")
+
+    # 1. Create subsystem directory
+    ok, out = _run_cmd(["sudo", "mkdir", "-p", subsys_path])
+    if not ok:
+        return f"Failed to create subsystem dir {subsys_path}: {out}"
+    nvme_log(f"Created subsystem directory: {subsys_path}")
+
+    # 2. Allow any host to connect
+    err = _write_sysfs(f"{subsys_path}/attr_allow_any_host", "1")
+    if err:
+        return err
+    nvme_log("Set attr_allow_any_host=1")
+
+    # 3. Create namespace 1
+    ok, out = _run_cmd(["sudo", "mkdir", "-p", ns_path])
+    if not ok:
+        return f"Failed to create namespace dir {ns_path}: {out}"
+    nvme_log(f"Created namespace directory: {ns_path}")
+
+    # 4. Set device path to zvol block device
+    err = _write_sysfs(f"{ns_path}/device_path", zvol_path)
+    if err:
+        return err
+    nvme_log(f"Set device_path={zvol_path}")
+
+    # 5. Enable namespace
+    err = _write_sysfs(f"{ns_path}/enable", "1")
+    if err:
+        return err
+    nvme_log("Enabled namespace 1")
+
+    # 6. Ensure shared port exists
+    err = ensure_nvmeof_port(NVMET_PORT_PATH, STORAGE_IP, NVMET_PORT_NUM)
+    if err:
+        return err
+
+    # 7. Link subsystem to port
+    if not os.path.exists(symlink_target):
+        ok, out = _run_cmd(["sudo", "ln", "-s", subsys_path, symlink_target])
+        if not ok:
+            return f"Failed to symlink subsystem to port: {out}"
+        nvme_log(f"Linked subsystem to port: {symlink_target}")
+    else:
+        nvme_log(f"Subsystem already linked to port")
+
+    nvme_log(f"NVMe-oF target setup complete for {subsystem_name}")
+    return None
+
+
+def teardown_nvmeof_target(storage_uid: str) -> Optional[str]:
+    """
+    Tear down NVMe-oF target for a storage_uid.
+    Removes symlink, disables namespace, removes namespace dir, removes subsystem dir.
+    Returns None on success, else error string.
+    """
+    subsystem_name = f"laas-{storage_uid}"
+    subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
+    ns_path = f"{subsys_path}/namespaces/1"
+    symlink_target = f"{NVMET_PORT_PATH}/subsystems/{subsystem_name}"
+
+    nvme_log(f"Tearing down NVMe-oF target: {subsystem_name}")
+
+    # 1. Unlink subsystem from port (remove symlink)
+    if os.path.exists(symlink_target):
+        ok, out = _run_cmd(["sudo", "rm", "-f", symlink_target])
+        if not ok:
+            return f"Failed to remove port symlink {symlink_target}: {out}"
+        nvme_log(f"Removed port symlink: {symlink_target}")
+
+    # 2. Disable namespace (write "0" to enable)
+    if os.path.exists(f"{ns_path}/enable"):
+        err = _write_sysfs(f"{ns_path}/enable", "0")
+        if err:
+            nvme_log(f"Warning: failed to disable namespace: {err}")
+        else:
+            nvme_log("Disabled namespace 1")
+
+    # 3. Remove namespace directory
+    if os.path.isdir(ns_path):
+        ok, out = _run_cmd(["sudo", "rmdir", ns_path])
+        if not ok:
+            return f"Failed to remove namespace dir {ns_path}: {out}"
+        nvme_log(f"Removed namespace dir: {ns_path}")
+
+    # 4. Remove subsystem directory
+    if os.path.isdir(subsys_path):
+        ok, out = _run_cmd(["sudo", "rmdir", subsys_path])
+        if not ok:
+            return f"Failed to remove subsystem dir {subsys_path}: {out}"
+        nvme_log(f"Removed subsystem dir: {subsys_path}")
+
+    nvme_log(f"NVMe-oF target teardown complete for {subsystem_name}")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# NVMe-oF target persistence (survives reboots)
+# ---------------------------------------------------------------------------
+
+def _load_nvmet_targets() -> dict:
+    """Load saved NVMe-oF targets from JSON file."""
+    if not os.path.isfile(NVMET_TARGETS_FILE):
+        return {"targets": {}}
+    try:
+        with open(NVMET_TARGETS_FILE, "r") as f:
+            data = json.load(f)
+        if "targets" not in data:
+            data["targets"] = {}
+        return data
+    except (json.JSONDecodeError, OSError) as e:
+        nvme_log(f"Warning: failed to load {NVMET_TARGETS_FILE}: {e}")
+        return {"targets": {}}
+
+
+def _save_nvmet_targets(data: dict):
+    """Save NVMe-oF targets to JSON file (creates /etc/laas/ if needed)."""
+    try:
+        os.makedirs(os.path.dirname(NVMET_TARGETS_FILE), exist_ok=True)
+        with open(NVMET_TARGETS_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError as e:
+        nvme_log(f"Warning: failed to save {NVMET_TARGETS_FILE}: {e}")
+
+
+def _add_nvmet_target_record(storage_uid: str, zvol_path: str):
+    """Add a target record to the persistence file."""
+    data = _load_nvmet_targets()
+    subsystem_name = f"laas-{storage_uid}"
+    data["targets"][subsystem_name] = {
+        "storage_uid": storage_uid,
+        "zvol_path": zvol_path,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_nvmet_targets(data)
+    nvme_log(f"Saved target record: {subsystem_name}")
+
+
+def _remove_nvmet_target_record(storage_uid: str):
+    """Remove a target record from the persistence file."""
+    data = _load_nvmet_targets()
+    subsystem_name = f"laas-{storage_uid}"
+    if subsystem_name in data["targets"]:
+        del data["targets"][subsystem_name]
+        _save_nvmet_targets(data)
+        nvme_log(f"Removed target record: {subsystem_name}")
+
+
+def rebuild_nvmet_targets_on_startup():
+    """
+    On Flask startup, rebuild NVMe-oF configfs targets from the persistence JSON.
+    This handles the case where configfs was lost after a reboot.
+    """
+    if not STORAGE_IP:
+        nvme_log("STORAGE_IP not set — skipping NVMe-oF target rebuild")
+        return
+
+    data = _load_nvmet_targets()
+    targets = data.get("targets", {})
+    if not targets:
+        nvme_log("No saved NVMe-oF targets to rebuild")
+        return
+
+    nvme_log(f"Rebuilding {len(targets)} NVMe-oF target(s) from {NVMET_TARGETS_FILE}")
+    for subsystem_name, info in targets.items():
+        storage_uid = info.get("storage_uid", "")
+        zvol_path = info.get("zvol_path", "")
+        if not storage_uid or not zvol_path:
+            nvme_log(f"Skipping invalid target record: {subsystem_name}")
+            continue
+
+        # Check if subsystem already exists in configfs
+        subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
+        if os.path.isdir(subsys_path):
+            nvme_log(f"Target {subsystem_name} already exists in configfs, skipping")
+            continue
+
+        # Check if zvol block device exists
+        if not os.path.exists(zvol_path):
+            nvme_log(f"Warning: zvol {zvol_path} not found for {subsystem_name}, skipping")
+            continue
+
+        err = setup_nvmeof_target(storage_uid, zvol_path)
+        if err:
+            nvme_log(f"Failed to rebuild target {subsystem_name}: {err}")
+        else:
+            nvme_log(f"Rebuilt target {subsystem_name} successfully")
+
+    nvme_log("NVMe-oF target rebuild complete")
 
 
 def _run_cmd(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
@@ -169,20 +437,24 @@ def post_verify_provisioned(storage_uid: str, quota_gb: int) -> Optional[str]:
     return None
 
 
-def run_provision_script(storage_uid: str, quota_gb: int) -> tuple[int, str]:
+def run_provision_script(storage_uid: str, quota_gb: int, storage_backend: str = "zfs_dataset") -> tuple[int, str]:
     """Run provision script with sudo; return (exit_code, stderr_or_stdout)."""
+    cmd = ["sudo", SCRIPT_PATH, storage_uid, str(quota_gb)]
+    if storage_backend != "zfs_dataset":
+        cmd += ["--storage-backend", storage_backend]
+    timeout = 60 if storage_backend == "zfs_zvol" else 30  # zvol needs more time (mkfs)
     try:
         result = subprocess.run(
-            ["sudo", SCRIPT_PATH, storage_uid, str(quota_gb)],
+            cmd,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=timeout,
         )
         return result.returncode, (result.stderr or result.stdout or "").strip()
     except FileNotFoundError:
         return -1, f"Script not found: {SCRIPT_PATH}"
     except subprocess.TimeoutExpired:
-        return -2, "Script timed out (30s)"
+        return -2, f"Script timed out ({timeout}s)"
     except Exception as e:
         return -3, str(e)
 
@@ -222,6 +494,12 @@ def provision():
         return jsonify(error="Invalid JSON body"), 400
     storage_uid = data.get("storageUid") or ""
     quota_gb = data.get("quotaGb", REQUIRED_QUOTA_GB)
+    storage_backend = data.get("storageBackend", "zfs_dataset")
+
+    # Validate storageBackend
+    if storage_backend not in ("zfs_dataset", "zfs_zvol"):
+        log_event(request_id, client_ip, storage_uid, "failed", "Invalid storageBackend")
+        return jsonify(error="storageBackend must be 'zfs_dataset' or 'zfs_zvol'"), 400
 
     # Validate storageUid
     if not STORAGE_UID_PATTERN.match(storage_uid):
@@ -230,6 +508,11 @@ def provision():
     if not isinstance(quota_gb, (int, float)) or not (QUOTA_GB_MIN <= quota_gb <= QUOTA_GB_MAX):
         log_event(request_id, client_ip, storage_uid, "failed", "Invalid quotaGb")
         return jsonify(error="Invalid quotaGb"), 400
+
+    # Zvol backend requires STORAGE_IP for NVMe-oF target
+    if storage_backend == "zfs_zvol" and not STORAGE_IP:
+        log_event(request_id, client_ip, storage_uid, "failed", "STORAGE_IP not set for zvol backend")
+        return jsonify(error="STORAGE_IP env not configured — required for NVMe-oF target setup"), 500
 
     # Convert to integer for ZFS commands
     quota_gb_int = int(quota_gb)
@@ -240,24 +523,45 @@ def provision():
         log_event(request_id, client_ip, storage_uid, "failed", pre_err)
         return jsonify(error=pre_err), 500
 
-    # Run provision script with storage_uid and quota_gb
-    code, output = run_provision_script(storage_uid, quota_gb_int)
+    # Run provision script with storage_uid, quota_gb, and storage_backend
+    code, output = run_provision_script(storage_uid, quota_gb_int, storage_backend)
     if code == 0:
-        # Post-check: only report success to backend after verifying dataset and quota
-        verify_err = post_verify_provisioned(storage_uid, quota_gb_int)
-        if verify_err:
-            log_event(request_id, client_ip, storage_uid, "failed", verify_err)
-            return jsonify(error=verify_err), 500
+        if storage_backend == "zfs_dataset":
+            # Post-check: only report success to backend after verifying dataset and quota
+            verify_err = post_verify_provisioned(storage_uid, quota_gb_int)
+            if verify_err:
+                log_event(request_id, client_ip, storage_uid, "failed", verify_err)
+                return jsonify(error=verify_err), 500
 
-        # Optional: reconcile NFS export, mount, and fstab (single-host POC).
-        if NFS_AUTOMOUNT_ENABLED:
-            nfs_err = reconcile_nfs_for(storage_uid)
-            if nfs_err:
-                log_event(request_id, client_ip, storage_uid, "failed", nfs_err)
-                return jsonify(error=nfs_err), 500
+            # Optional: reconcile NFS export, mount, and fstab (single-host POC).
+            if NFS_AUTOMOUNT_ENABLED:
+                nfs_err = reconcile_nfs_for(storage_uid)
+                if nfs_err:
+                    log_event(request_id, client_ip, storage_uid, "failed", nfs_err)
+                    return jsonify(error=nfs_err), 500
 
-        log_event(request_id, client_ip, storage_uid, "success")
-        return jsonify(ok=True, path=f"/datapool/users/{storage_uid}"), 200
+            log_event(request_id, client_ip, storage_uid, "success")
+            return jsonify(ok=True, path=f"/datapool/users/{storage_uid}"), 200
+
+        else:
+            # zfs_zvol: set up NVMe-oF target after successful zvol creation
+            zvol_path = f"/dev/zvol/datapool/users/{storage_uid}"
+            nvme_err = setup_nvmeof_target(storage_uid, zvol_path)
+            if nvme_err:
+                log_event(request_id, client_ip, storage_uid, "failed", f"NVMe-oF setup failed: {nvme_err}")
+                return jsonify(error=f"Zvol created but NVMe-oF target setup failed: {nvme_err}"), 500
+
+            # Save to persistence file
+            _add_nvmet_target_record(storage_uid, zvol_path)
+
+            log_event(request_id, client_ip, storage_uid, "success")
+            return jsonify(
+                ok=True,
+                path=zvol_path,
+                storageBackend="zfs_zvol",
+                nvmeSubsystem=f"laas-{storage_uid}",
+                nvmeTarget=f"{STORAGE_IP}:{NVMET_PORT_NUM}",
+            ), 200
     if code == 1:
         log_event(request_id, client_ip, storage_uid, "failed", output or "Invalid args")
         return jsonify(error=output or "Invalid storageUid"), 400
@@ -326,17 +630,18 @@ def cleanup_nfs_for(storage_uid: str) -> Optional[str]:
 @app.route("/deprovision", methods=["POST"])
 def deprovision():
     """
-    Deprovision (destroy) a user's ZFS storage dataset.
+    Deprovision (destroy) a user's ZFS storage dataset or zvol.
     Requires X-Provision-Secret header.
-    Body: { "storageUid": "u_..." }
+    Body: { "storageUid": "u_...", "storageBackend": "zfs_dataset" | "zfs_zvol" }
     
     Steps:
       1. Validate storageUid format
-      2. Check if dataset exists (idempotent: return success if not found)
-      3. If NFS_AUTOMOUNT_ENABLED: unmount, remove exports/fstab entries
-      4. Destroy ZFS dataset
-      5. Verify destruction
-      6. Clean up mount point directory
+      2. Check if dataset/zvol exists (idempotent: return success if not found)
+      3. If zfs_zvol: tear down NVMe-oF target first
+      4. If NFS_AUTOMOUNT_ENABLED and zfs_dataset: unmount, remove exports/fstab entries
+      5. Destroy ZFS dataset/zvol
+      6. Verify destruction
+      7. Clean up mount point directory / persistence record
     """
     request_id = request.headers.get("X-Request-Id", "")
     client_ip = request.remote_addr or ""
@@ -355,6 +660,11 @@ def deprovision():
     except Exception:
         return jsonify(error="Invalid JSON body"), 400
     storage_uid = data.get("storageUid") or ""
+    storage_backend = data.get("storageBackend", "zfs_dataset")
+
+    # Validate storageBackend
+    if storage_backend not in ("zfs_dataset", "zfs_zvol"):
+        return jsonify(error="storageBackend must be 'zfs_dataset' or 'zfs_zvol'"), 400
 
     # Validate storageUid BEFORE any destructive action
     if not STORAGE_UID_PATTERN.match(storage_uid):
@@ -363,21 +673,32 @@ def deprovision():
 
     dataset = f"datapool/users/{storage_uid}"
 
-    # Check if dataset exists (idempotent: if not found, return success)
+    # Check if dataset/zvol exists (idempotent: if not found, return success)
     ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
     if not ok:
-        # Dataset doesn't exist — already deprovisioned, return success
+        # Dataset doesn't exist — already deprovisioned
+        # Still clean up NVMe-oF persistence record if it exists
+        if storage_backend == "zfs_zvol":
+            _remove_nvmet_target_record(storage_uid)
         log_event(request_id, client_ip, storage_uid, "deprovision_success", "Dataset already absent")
         return jsonify(ok=True), 200
 
-    # If NFS automount enabled, clean up NFS first
-    if NFS_AUTOMOUNT_ENABLED:
+    # If zfs_zvol: tear down NVMe-oF target first
+    if storage_backend == "zfs_zvol":
+        nvme_log(f"Deprovisioning zvol-backed storage for {storage_uid}")
+        nvme_err = teardown_nvmeof_target(storage_uid)
+        if nvme_err:
+            log_event(request_id, client_ip, storage_uid, "deprovision_failed", f"NVMe-oF teardown failed: {nvme_err}")
+            return jsonify(error=f"NVMe-oF target teardown failed: {nvme_err}"), 500
+
+    # If NFS automount enabled and dataset backend, clean up NFS first
+    if storage_backend == "zfs_dataset" and NFS_AUTOMOUNT_ENABLED:
         nfs_err = cleanup_nfs_for(storage_uid)
         if nfs_err:
             log_event(request_id, client_ip, storage_uid, "deprovision_failed", nfs_err)
             return jsonify(error=nfs_err), 500
 
-    # Destroy ZFS dataset (30s timeout for large datasets)
+    # Destroy ZFS dataset/zvol (30s timeout for large datasets)
     # Use -f flag to force unmount and destroy even with snapshots
     ok, out = _run_cmd(["sudo", "zfs", "destroy", "-f", dataset], timeout=30)
     if not ok:
@@ -391,14 +712,82 @@ def deprovision():
         log_event(request_id, client_ip, storage_uid, "deprovision_failed", "Dataset still exists after destroy")
         return jsonify(error="Dataset destruction verification failed"), 500
 
-    # Clean up mount point directory (ignore errors — may not exist)
-    if NFS_AUTOMOUNT_ENABLED:
+    # Clean up persistence / mount point
+    if storage_backend == "zfs_zvol":
+        _remove_nvmet_target_record(storage_uid)
+        nvme_log(f"Deprovision complete for zvol {storage_uid}")
+    elif NFS_AUTOMOUNT_ENABLED:
         mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
         _run_cmd(["sudo", "rmdir", mountpoint])
 
     log_event(request_id, client_ip, storage_uid, "deprovision_success")
     return jsonify(ok=True), 200
 
+
+@app.route("/nvme/verify-target", methods=["POST"])
+def verify_nvme_target():
+    """
+    Check if a specific NVMe-oF subsystem is active and discoverable.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_..." }
+
+    Response:
+      {
+        "active": true/false,
+        "subsystem": "laas-u_...",
+        "device_path": "/dev/zvol/...",
+        "namespace_enabled": true/false,
+        "linked_to_port": true/false
+      }
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    subsystem_name = f"laas-{storage_uid}"
+    subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
+    ns_path = f"{subsys_path}/namespaces/1"
+    symlink_target = f"{NVMET_PORT_PATH}/subsystems/{subsystem_name}"
+
+    # Check if subsystem directory exists
+    subsys_exists = os.path.isdir(subsys_path)
+
+    # Check device_path
+    device_path = None
+    if subsys_exists and os.path.exists(f"{ns_path}/device_path"):
+        device_path = _read_sysfs(f"{ns_path}/device_path")
+
+    # Check if namespace is enabled
+    ns_enabled = False
+    if subsys_exists and os.path.exists(f"{ns_path}/enable"):
+        enable_val = _read_sysfs(f"{ns_path}/enable")
+        ns_enabled = enable_val == "1" if enable_val else False
+
+    # Check if linked to port
+    linked_to_port = os.path.exists(symlink_target)
+
+    active = subsys_exists and ns_enabled and linked_to_port
+
+    return jsonify({
+        "active": active,
+        "subsystem": subsystem_name,
+        "device_path": device_path,
+        "namespace_enabled": ns_enabled,
+        "linked_to_port": linked_to_port,
+    }), 200
 
 @app.route("/host-space", methods=["GET"])
 def get_host_space():
@@ -979,5 +1368,10 @@ def delete_file(storage_uid: str):
 if __name__ == "__main__":
     if not PROVISION_SECRET:
         print("PROVISION_SECRET is not set; service will return 500 on provision.", file=sys.stderr)
+    if STORAGE_IP:
+        print(f"{NVME_LOG_PREFIX} STORAGE_IP={STORAGE_IP}, NVMe-oF target support enabled", flush=True)
+        rebuild_nvmet_targets_on_startup()
+    else:
+        print(f"{NVME_LOG_PREFIX} STORAGE_IP not set — NVMe-oF target support disabled", flush=True)
     port = int(os.environ.get("PORT", "9999"))
     app.run(host="0.0.0.0", port=port, threaded=True)

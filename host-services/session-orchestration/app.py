@@ -166,6 +166,262 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# In-memory session metadata: container_name -> {storage_transport, storage_uid, nvme_subsystem}
+session_metadata: Dict[str, Dict[str, Any]] = {}
+session_metadata_lock = threading.Lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NVMe-oF Error + Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+class NvmeError(Exception):
+    """Custom exception for NVMe-oF verification chain failures."""
+    def __init__(self, step: str, message: str):
+        self.step = step
+        self.message = message
+        super().__init__(f"NVMe-oF error at '{step}': {message}")
+
+
+def find_nvme_device(nvme_subsystem: str) -> Optional[str]:
+    """Parse nvme list-subsys to find the block device for a subsystem.
+    
+    The subsystem name (e.g., 'laas-u_abc123') should appear within the NQN string.
+    Returns the device path (e.g., '/dev/nvme1n1') or None.
+    """
+    result = subprocess.run(
+        ["nvme", "list-subsys", "-o", "json"],
+        capture_output=True, text=True, timeout=10
+    )
+    if result.returncode != 0:
+        logger.error(f"[NVME-DEVICE] nvme list-subsys failed: {result.stderr}")
+        return None
+    
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        logger.error(f"[NVME-DEVICE] Failed to parse nvme list-subsys JSON")
+        return None
+    
+    # nvme-cli >=2.x wraps in {"Subsystems": [...]}
+    subsystems = data.get("Subsystems", data) if isinstance(data, dict) else data
+    if isinstance(subsystems, dict):
+        subsystems = subsystems.get("Subsystems", [])
+    
+    for subsys in subsystems:
+        nqn = subsys.get("NQN", "") or subsys.get("SubsystemNQN", "")
+        name = subsys.get("Name", "")
+        if nvme_subsystem in nqn or nvme_subsystem in name:
+            # Check Namespaces array (nvme-cli v2+)
+            for ns in subsys.get("Namespaces", []):
+                ns_name = ns.get("NameSpace", "") or ns.get("Name", "")
+                if ns_name:
+                    return f"/dev/{ns_name}"
+            # Fallback: check Paths -> Namespaces (older format)
+            for path_info in subsys.get("Paths", []):
+                for ns in path_info.get("Namespaces", []):
+                    ns_name = ns.get("NameSpace", "") or ns.get("Name", "")
+                    if ns_name:
+                        return f"/dev/{ns_name}"
+    return None
+
+
+def rollback_nvmeof(completed_steps: List[str], mount_path: str, nvme_subsystem: str) -> None:
+    """Rollback completed NVMe-oF steps in REVERSE order."""
+    for step in reversed(completed_steps):
+        try:
+            if step == "mount":
+                logger.info(f"[NVME-ROLLBACK] Unmounting {mount_path}...")
+                subprocess.run(["umount", mount_path], capture_output=True, timeout=10)
+            elif step == "connect":
+                logger.info(f"[NVME-ROLLBACK] Disconnecting {nvme_subsystem}...")
+                subprocess.run(
+                    ["nvme", "disconnect", "-n", nvme_subsystem],
+                    capture_output=True, timeout=10
+                )
+            elif step in ("find_device", "discover", "permissions"):
+                pass  # Nothing to rollback
+        except Exception as e:
+            logger.error(f"[NVME-ROLLBACK] Error during {step} rollback: {e}")
+    # Cleanup mount dir if empty and not mounted
+    if os.path.isdir(mount_path) and not os.path.ismount(mount_path):
+        try:
+            os.rmdir(mount_path)
+        except Exception:
+            pass
+
+
+def setup_nvmeof_storage(
+    container_name: str,
+    storage_uid: str,
+    storage_node_ip: str,
+    nvme_port: int,
+    nvme_subsystem: str,
+) -> str:
+    """
+    5-step NVMe-oF verification chain with rollback on failure.
+    Each step emits events for backend visibility.
+    Returns mount_path on success, raises NvmeError on failure.
+    """
+    completed_steps: List[str] = []
+    mount_path = f"/mnt/nvme/{storage_uid}"
+    
+    try:
+        # Step 1: DISCOVER
+        logger.info(f"[NVME-DISCOVER] Discovering subsystem {nvme_subsystem} at {storage_node_ip}:{nvme_port}...")
+        emit_event(container_name, "nvme_discovering", f"Discovering NVMe-oF subsystem at {storage_node_ip}...")
+        result = subprocess.run(
+            ["nvme", "discover", "-t", "tcp", "-a", storage_node_ip, "-s", str(nvme_port)],
+            capture_output=True, text=True, timeout=15
+        )
+        if nvme_subsystem not in result.stdout:
+            raise NvmeError("discover", f"Subsystem {nvme_subsystem} not found in discovery output")
+        completed_steps.append("discover")
+        complete_event(container_name, "nvme_discovering", "NVMe-oF subsystem discovered")
+        
+        # Step 2: CONNECT
+        logger.info(f"[NVME-CONNECT] Connecting to subsystem {nvme_subsystem}...")
+        emit_event(container_name, "nvme_connecting", f"Connecting to NVMe-oF subsystem {nvme_subsystem}...")
+        result = subprocess.run(
+            ["nvme", "connect", "-t", "tcp", "-n", nvme_subsystem,
+             "-a", storage_node_ip, "-s", str(nvme_port)],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode != 0:
+            # "already connected" is not an error
+            if "already connected" not in result.stderr.lower():
+                raise NvmeError("connect", f"Connect failed: {result.stderr}")
+        completed_steps.append("connect")
+        complete_event(container_name, "nvme_connecting", "NVMe-oF connected")
+        
+        # Step 3: FIND DEVICE
+        logger.info(f"[NVME-DEVICE] Finding block device for {nvme_subsystem}...")
+        emit_event(container_name, "nvme_finding_device", "Locating NVMe block device...")
+        # Brief delay for kernel device registration
+        time.sleep(0.5)
+        device_path = find_nvme_device(nvme_subsystem)
+        if not device_path or not os.path.exists(device_path):
+            raise NvmeError("find_device", f"Block device not found for {nvme_subsystem}")
+        completed_steps.append("find_device")
+        complete_event(container_name, "nvme_finding_device", f"Block device found: {device_path}")
+        
+        # Step 4: MOUNT
+        logger.info(f"[NVME-MOUNT] Mounting {device_path} to {mount_path}...")
+        emit_event(container_name, "nvme_mounting", f"Mounting {device_path} to {mount_path}...")
+        os.makedirs(mount_path, exist_ok=True)
+        # Check if already mounted
+        if os.path.ismount(mount_path):
+            logger.info(f"[NVME-MOUNT] {mount_path} already mounted, skipping")
+        else:
+            result = subprocess.run(
+                ["mount", device_path, mount_path],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode != 0:
+                raise NvmeError("mount", f"Mount failed: {result.stderr}")
+            if not os.path.ismount(mount_path):
+                raise NvmeError("mount", "Mount point not active after mount command")
+        completed_steps.append("mount")
+        complete_event(container_name, "nvme_mounting", "NVMe-oF volume mounted")
+        
+        # Step 5: VERIFY PERMISSIONS
+        logger.info(f"[NVME-VERIFY] Verifying permissions on {mount_path}...")
+        emit_event(container_name, "nvme_verifying", "Verifying storage permissions...")
+        stat_info = os.stat(mount_path)
+        if stat_info.st_uid != 1000:
+            raise NvmeError("permissions", f"Owner UID is {stat_info.st_uid}, expected 1000")
+        # Write test to confirm read/write access
+        test_file = os.path.join(mount_path, ".nvme_verify_test")
+        try:
+            with open(test_file, "w") as f:
+                f.write("verify")
+            os.remove(test_file)
+        except Exception as e:
+            raise NvmeError("permissions", f"Write test failed: {e}")
+        completed_steps.append("permissions")
+        complete_event(container_name, "nvme_verifying", "Permissions verified (UID 1000, read/write OK)")
+        
+        logger.info(f"[NVME-READY] Storage ready at {mount_path}")
+        return mount_path
+        
+    except NvmeError as e:
+        logger.error(f"[NVME-FAIL] Failed at step '{e.step}': {e.message}")
+        fail_session(container_name, f"nvme_{e.step}", f"NVMe-oF failed at {e.step}: {e.message}")
+        rollback_nvmeof(completed_steps, mount_path, nvme_subsystem)
+        raise
+
+
+def verify_local_zfs(storage_uid: str) -> str:
+    """Verify local ZFS dataset exists and is accessible.
+    Returns the dataset path on success, raises Exception on failure.
+    """
+    dataset_path = f"/datapool/users/{storage_uid}"
+    if not os.path.isdir(dataset_path):
+        raise Exception(f"Local ZFS dataset path not found: {dataset_path}")
+    stat_info = os.stat(dataset_path)
+    if stat_info.st_uid != 1000:
+        raise Exception(f"ZFS dataset owner UID is {stat_info.st_uid}, expected 1000")
+    return dataset_path
+
+
+def cleanup_nvmeof_storage(
+    storage_uid: str,
+    nvme_subsystem: str,
+) -> List[str]:
+    """
+    Clean up NVMe-oF storage after session shutdown.
+    Returns list of errors (empty = success).
+    """
+    errors: List[str] = []
+    mount_path = f"/mnt/nvme/{storage_uid}"
+    
+    # 1: Unmount
+    logger.info(f"[CLEANUP-3a] Unmounting {mount_path}...")
+    if os.path.ismount(mount_path):
+        ok, out = _run_cmd(["umount", mount_path], timeout=15)
+        if not ok:
+            logger.warning(f"[CLEANUP-3a] Regular umount failed, trying lazy umount...")
+            ok, out = _run_cmd(["umount", "-l", mount_path], timeout=15)
+            if not ok:
+                errors.append(f"umount: {out}")
+    
+    # 2: NVMe disconnect
+    logger.info(f"[CLEANUP-3b] Disconnecting NVMe-oF {nvme_subsystem}...")
+    ok, out = _run_cmd(["nvme", "disconnect", "-n", nvme_subsystem], timeout=15)
+    if not ok:
+        errors.append(f"nvme disconnect: {out}")
+    
+    # 3: Remove mount directory
+    logger.info(f"[CLEANUP-3c] Removing mount dir {mount_path}...")
+    try:
+        if os.path.isdir(mount_path) and not os.path.ismount(mount_path):
+            os.rmdir(mount_path)
+    except Exception as e:
+        errors.append(f"rmdir: {e}")
+    
+    return errors
+
+
+def store_session_metadata(
+    container_name: str,
+    storage_transport: Optional[str],
+    storage_uid: Optional[str],
+    nvme_subsystem: Optional[str],
+) -> None:
+    """Store session metadata for cleanup on shutdown."""
+    with session_metadata_lock:
+        session_metadata[container_name] = {
+            "storage_transport": storage_transport,
+            "storage_uid": storage_uid,
+            "nvme_subsystem": nvme_subsystem,
+        }
+
+
+def pop_session_metadata(container_name: str) -> Dict[str, Any]:
+    """Retrieve and remove session metadata."""
+    with session_metadata_lock:
+        return session_metadata.pop(container_name, {})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Session Event Management
 # ─────────────────────────────────────────────────────────────────────────────
@@ -464,6 +720,7 @@ def build_docker_command(
     user_email: str,
     tier_slug: str,
     node_hostname: str,
+    storage_transport: Optional[str] = None,
 ) -> List[str]:
     """Build the complete docker run command."""
     
@@ -591,7 +848,15 @@ def build_docker_command(
     
     # Volume mounts - User storage (stateful only)
     if storage_type == "stateful" and storage_uid:
-        cmd.extend(["-v", f"{NFS_MOUNT_ROOT}/{storage_uid}:/home/ubuntu"])
+        # Resolve mount path based on storage transport
+        if storage_transport == "local_zfs":
+            resolved_path = f"/datapool/users/{storage_uid}"
+        elif storage_transport == "nvmeof_tcp":
+            resolved_path = f"/mnt/nvme/{storage_uid}"  # Already mounted by setup_nvmeof_storage()
+        else:
+            # Fallback to NFS for backward compatibility
+            resolved_path = f"{NFS_MOUNT_ROOT}/{storage_uid}"
+        cmd.extend(["-v", f"{resolved_path}:/home/ubuntu"])
     
     # Volume mounts - HAMi-core libs
     cmd.extend(["-v", "/usr/lib/libvgpu.so:/usr/lib/libvgpu.so:ro"])
@@ -663,6 +928,10 @@ def launch_session_worker(
     storage_type: str,
     storage_uid: Optional[str],
     node_hostname: str,
+    storage_transport: Optional[str] = None,
+    storage_node_ip: Optional[str] = None,
+    nvme_port: int = 4420,
+    nvme_subsystem: Optional[str] = None,
 ) -> None:
     """Background worker thread to handle the multi-step session launch."""
     
@@ -738,36 +1007,76 @@ def launch_session_worker(
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
                 lock_fd.close()
         
-        # Step 4: Validate NFS mount (stateful sessions only)
+        # Step 4: Validate/setup storage based on transport
         if storage_type == "stateful":
-            emit_event(container_name, "validating_mount", f"Verifying NFS mount for {storage_uid}...")
             if not storage_uid or not STORAGE_UID_PATTERN.match(storage_uid):
                 fail_session(container_name, "validating_mount", f"Invalid storage_uid format: {storage_uid}")
                 return
             
-            mount_path = f"{NFS_MOUNT_ROOT}/{storage_uid}"
-            if not os.path.exists(mount_path):
-                fail_session(container_name, "validating_mount", f"NFS mount not found: {mount_path}")
-                return
+            if storage_transport == "nvmeof_tcp":
+                # Cross-node NVMe-oF storage setup
+                emit_event(container_name, "validating_mount", f"Setting up NVMe-oF storage for {storage_uid}...")
+                if not storage_node_ip or not nvme_subsystem:
+                    fail_session(container_name, "validating_mount",
+                                 "nvmeof_tcp requires storage_node_ip and nvme_subsystem")
+                    return
+                try:
+                    mount_path = setup_nvmeof_storage(
+                        container_name=container_name,
+                        storage_uid=storage_uid,
+                        storage_node_ip=storage_node_ip,
+                        nvme_port=nvme_port,
+                        nvme_subsystem=nvme_subsystem,
+                    )
+                    complete_event(container_name, "validating_mount",
+                                   f"NVMe-oF storage ready at {mount_path}")
+                except NvmeError:
+                    # setup_nvmeof_storage already called fail_session + rollback
+                    return
+                except Exception as e:
+                    fail_session(container_name, "validating_mount",
+                                 f"NVMe-oF setup unexpected error: {e}")
+                    return
             
-            if not os.path.isdir(mount_path):
-                fail_session(container_name, "validating_mount", f"Mount path is not a directory: {mount_path}")
-                return
+            elif storage_transport == "local_zfs":
+                # Same-node ZFS storage verification
+                emit_event(container_name, "validating_mount", f"Verifying local ZFS dataset for {storage_uid}...")
+                try:
+                    dataset_path = verify_local_zfs(storage_uid)
+                    complete_event(container_name, "validating_mount",
+                                   f"Local ZFS dataset verified: {dataset_path}")
+                except Exception as e:
+                    fail_session(container_name, "validating_mount", f"Local ZFS verification failed: {e}")
+                    return
             
-            # Check if writable by creating a test file
-            test_file = os.path.join(mount_path, f".laas-write-test-{session_id[:8]}")
-            try:
-                with open(test_file, "w") as f:
-                    f.write("test")
-                os.remove(test_file)
-            except (IOError, OSError) as e:
-                fail_session(container_name, "validating_mount", f"Mount not writable: {e}")
-                return
+            else:
+                # Legacy NFS fallback
+                emit_event(container_name, "validating_mount", f"Verifying NFS mount for {storage_uid}...")
+                mount_path = f"{NFS_MOUNT_ROOT}/{storage_uid}"
+                if not os.path.exists(mount_path):
+                    fail_session(container_name, "validating_mount", f"NFS mount not found: {mount_path}")
+                    return
+                if not os.path.isdir(mount_path):
+                    fail_session(container_name, "validating_mount", f"Mount path is not a directory: {mount_path}")
+                    return
+                # Check if writable
+                test_file = os.path.join(mount_path, f".laas-write-test-{session_id[:8]}")
+                try:
+                    with open(test_file, "w") as f:
+                        f.write("test")
+                    os.remove(test_file)
+                except (IOError, OSError) as e:
+                    fail_session(container_name, "validating_mount", f"Mount not writable: {e}")
+                    return
+                complete_event(container_name, "validating_mount", f"NFS mount validated: {mount_path}")
             
-            complete_event(container_name, "validating_mount", f"NFS mount validated: {mount_path}")
+            # Store session metadata for cleanup
+            store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem)
         else:
             emit_event(container_name, "validating_mount", "Ephemeral session - skipping mount validation")
             complete_event(container_name, "validating_mount", "Ephemeral session - no persistent storage")
+            # Store metadata even for ephemeral (for consistent cleanup)
+            store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem)
         
         # Generate password
         password = generate_password(16)
@@ -808,6 +1117,7 @@ def launch_session_worker(
             user_email=user_email,
             tier_slug=tier_slug,
             node_hostname=node_hostname,
+            storage_transport=storage_transport,
         )
         
         ok, out = _run_cmd(docker_cmd, timeout=60)
@@ -914,6 +1224,9 @@ def launch_session_worker(
         # Try to cleanup if container was created
         if container_name:
             _run_cmd(["docker", "rm", "-f", container_name], timeout=10)
+        # Cleanup NVMe-oF storage if it was set up
+        if storage_transport == "nvmeof_tcp" and storage_uid and nvme_subsystem:
+            cleanup_nvmeof_storage(storage_uid, nvme_subsystem)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -971,6 +1284,17 @@ def validate_launch_request(data: Dict[str, Any]) -> Tuple[bool, str]:
     hami_sm_percent = data.get("hami_sm_percent", 0)
     if not isinstance(hami_sm_percent, int) or hami_sm_percent < 1 or hami_sm_percent > 100:
         return False, f"Invalid hami_sm_percent: {hami_sm_percent}"
+    
+    # Validate storage_transport if provided
+    storage_transport = data.get("storage_transport")
+    if storage_transport is not None and storage_transport not in ("local_zfs", "nvmeof_tcp"):
+        return False, f"Invalid storage_transport: {storage_transport} (must be 'local_zfs', 'nvmeof_tcp', or null)"
+    
+    if storage_transport == "nvmeof_tcp":
+        if not data.get("storage_node_ip"):
+            return False, "storage_node_ip is required when storage_transport is 'nvmeof_tcp'"
+        if not data.get("nvme_subsystem"):
+            return False, "nvme_subsystem is required when storage_transport is 'nvmeof_tcp'"
     
     return True, ""
 
@@ -1037,7 +1361,11 @@ def launch_session():
         "hami_sm_percent": 17,
         "storage_type": "stateful" | "ephemeral",
         "storage_uid": "u_abc123..." (required if stateful),
-        "node_hostname": "laas-node-01"
+        "node_hostname": "laas-node-01",
+        "storage_transport": "local_zfs" | "nvmeof_tcp" | null (optional, null=NFS fallback),
+        "storage_node_ip": "10.10.100.99" (required if nvmeof_tcp),
+        "nvme_port": 4420 (optional, default 4420),
+        "nvme_subsystem": "laas-u_abc123" (required if nvmeof_tcp)
     }
     """
     request_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
@@ -1076,6 +1404,12 @@ def launch_session():
     storage_uid = data.get("storage_uid")
     node_hostname = data["node_hostname"]
     
+    # New multi-node storage params (optional, backward-compatible)
+    storage_transport = data.get("storage_transport")  # "local_zfs" | "nvmeof_tcp" | null
+    storage_node_ip = data.get("storage_node_ip")      # 10GbE IP for nvmeof_tcp
+    nvme_port = data.get("nvme_port", 4420)             # NVMe-oF port
+    nvme_subsystem = data.get("nvme_subsystem")         # e.g., "laas-u_abc123"
+    
     # Generate container name
     container_name = f"laas-{session_id[:8]}"
     
@@ -1097,7 +1431,8 @@ def launch_session():
         args=(
             container_name, session_id, user_email, tier_slug,
             vcpu, memory_mb, vram_mb, hami_sm_percent,
-            storage_type, storage_uid, node_hostname
+            storage_type, storage_uid, node_hostname,
+            storage_transport, storage_node_ip, nvme_port, nvme_subsystem,
         ),
         daemon=True
     )
@@ -1201,20 +1536,48 @@ def stop_session(name: str):
     
     # Stop container with 30s timeout
     log_event(request_id, client_ip, name, "stop_started")
+    
+    errors: List[str] = []
+    
+    # Step 1: Docker stop (graceful 30s timeout)
+    logger.info(f"[CLEANUP-1] Stopping container {name}...")
     ok, out = _run_cmd(["docker", "stop", "-t", "30", name], timeout=45)
     if not ok:
+        errors.append(f"docker stop: {out}")
         log_event(request_id, client_ip, name, "stop_failed", "", out)
         return jsonify(error=f"docker stop failed: {out}"), 500
     
-    # Remove container
+    # Step 2: Docker remove
+    logger.info(f"[CLEANUP-2] Removing container {name}...")
     ok, out = _run_cmd(["docker", "rm", name], timeout=15)
     if not ok:
+        errors.append(f"docker rm: {out}")
         log_event(request_id, client_ip, name, "remove_failed", "", out)
         return jsonify(error=f"docker rm failed: {out}"), 500
+    
+    # Step 3: NVMe-oF storage cleanup (if applicable)
+    meta = pop_session_metadata(name)
+    storage_transport = meta.get("storage_transport")
+    storage_uid = meta.get("storage_uid")
+    nvme_subsystem = meta.get("nvme_subsystem")
+    
+    if storage_transport == "nvmeof_tcp" and storage_uid and nvme_subsystem:
+        logger.info(f"[CLEANUP-3] Cleaning up NVMe-oF storage for {name}...")
+        nvme_errors = cleanup_nvmeof_storage(storage_uid, nvme_subsystem)
+        if nvme_errors:
+            errors.extend(nvme_errors)
+            logger.warning(f"[CLEANUP-WARN] NVMe-oF cleanup had errors: {nvme_errors}")
+        else:
+            logger.info(f"[CLEANUP-3] NVMe-oF storage cleanup complete for {name}")
     
     # Clean up event tracking
     with session_events_lock:
         session_events.pop(name, None)
+    
+    if errors:
+        logger.warning(f"[CLEANUP-WARN] Session {name} stopped with errors: {errors}")
+    else:
+        logger.info(f"[CLEANUP-OK] Clean shutdown complete for {name}")
     
     log_event(request_id, client_ip, name, "stop_success")
     return jsonify(ok=True, message=f"Container {name} stopped and removed"), 200
