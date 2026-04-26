@@ -580,7 +580,7 @@ export class ComputeService {
           hami_sm_percent: config.hamiSmPercent ?? 17,
           storage_type: dto.storageType,
           storage_uid: dto.storageType === 'stateful' ? (storageVolume?.storageUid ?? user.storageUid) : null,
-          storage_backend: storageVolume?.storageBackend ?? 'zfs_dataset',
+          storage_backend: storageTransport ? (storageVolume?.storageBackend ?? 'zfs_dataset') : null,
           node_hostname: node.hostname,
           // Multi-node storage transport params — only include when truthy;
           // orchestrator treats missing/null as NFS fallback automatically

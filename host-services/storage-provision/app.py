@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -46,6 +47,8 @@ NVMET_PORT_NUM = 4420
 NVMET_TARGETS_FILE = "/etc/laas/nvmet-targets.json"
 NVMET_TARGETS_FILE_FALLBACK = os.path.expanduser("~/storage-provision/nvmet-targets.json")
 NVME_LOG_PREFIX = "[NVME-TARGET]"
+MIGRATE_LOG_PREFIX = "[MIGRATE]"
+IP_PATTERN = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
 
 
 def log_event(request_id: str, client_ip: str, storage_uid: str, outcome: str, error: Optional[str] = None):
@@ -64,6 +67,11 @@ def log_event(request_id: str, client_ip: str, storage_uid: str, outcome: str, e
 def nvme_log(msg: str):
     """Log an NVMe-oF target operation."""
     print(f"{NVME_LOG_PREFIX} {datetime.now(timezone.utc).isoformat()} {msg}", flush=True)
+
+
+def migrate_log(msg: str):
+    """Log a migration operation."""
+    print(f"{MIGRATE_LOG_PREFIX} {datetime.now(timezone.utc).isoformat()} {msg}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -858,13 +866,15 @@ def get_host_space():
 @app.route("/upgrade-storage", methods=["POST"])
 def upgrade_storage():
     """
-    Upgrade storage quota for an existing dataset.
-    Uses zfs set quota= to upgrade - instantaneous and safe.
+    Upgrade storage quota for an existing dataset or zvol.
+    Detects dataset type automatically:
+      - ZFS dataset: uses zfs set quota= (instantaneous)
+      - ZFS zvol: uses zfs set volsize= + resize2fs (online resize)
 
     Requires X-Provision-Secret header.
     Body: { "storageUid": "u_...", "newQuotaGb": 10 }
 
-    Returns: { "ok": true, "storageUid": "...", "newQuotaGb": 10 }
+    Returns: { "ok": true, "storageUid": "...", "newQuotaGb": 10, "storageType": "zvol"|"dataset" }
     On error: { "error": "..." }
     """
     request_id = request.headers.get("X-Request-Id", "")
@@ -906,49 +916,99 @@ def upgrade_storage():
         log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Dataset not found")
         return jsonify(error="Dataset not found"), 404
 
-    # Step 2: Get current quota
-    ok, current_quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
-    if not ok:
-        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to get current quota")
-        return jsonify(error="Failed to get current quota"), 500
-    
-    current_quota_str = current_quota_str.strip()
-    if current_quota_str.lower() == "none":
-        current_quota_gb = 0
+    # Step 2: Detect dataset type (filesystem vs volume/zvol)
+    ok_type, ds_type = _run_cmd(["zfs", "get", "-H", "-o", "value", "type", dataset])
+    if not ok_type:
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to detect dataset type")
+        return jsonify(error="Failed to detect dataset type"), 500
+    is_zvol = ds_type.strip() == "volume"
+
+    # Step 3: Get current size (quota for datasets, volsize for zvols)
+    if is_zvol:
+        ok, current_size_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "volsize", dataset])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to get current volsize")
+            return jsonify(error="Failed to get current volsize"), 500
     else:
-        current_quota_gb = _parse_zfs_size(current_quota_str) / (1024 ** 3)
+        ok, current_size_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to get current quota")
+            return jsonify(error="Failed to get current quota"), 500
 
-    if new_quota_gb <= int(current_quota_gb):
-        log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"newQuotaGb must be greater than current ({current_quota_gb}GB)")
-        return jsonify(error=f"newQuotaGb ({new_quota_gb}) must be greater than current quota ({int(current_quota_gb)}GB)"), 400
+    current_size_str = current_size_str.strip()
+    if current_size_str.lower() == "none":
+        current_size_gb = 0
+    else:
+        current_size_gb = _parse_zfs_size(current_size_str) / (1024 ** 3)
 
-    # Step 3: Upgrade quota using zfs set (instant and safe!)
-    ok, out = _run_cmd(["sudo", "zfs", "set", f"quota={new_quota_gb}G", dataset], timeout=30)
-    if not ok:
-        log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Quota update failed: {out}")
-        return jsonify(error=f"Failed to update quota: {out}"), 500
+    if new_quota_gb <= int(current_size_gb):
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"newQuotaGb must be greater than current ({current_size_gb}GB)")
+        return jsonify(error=f"newQuotaGb ({new_quota_gb}) must be greater than current quota ({int(current_size_gb)}GB)"), 400
 
-    # Step 4: Verify the new quota
-    ok, verify_quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
-    if not ok:
-        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to verify new quota")
-        return jsonify(error="Failed to verify new quota"), 500
-    
-    verify_quota_str = verify_quota_str.strip()
-    verify_quota_gb = _parse_zfs_size(verify_quota_str) / (1024 ** 3)
-    
-    if abs(verify_quota_gb - new_quota_gb) > 0.1:
-        # Rollback to old quota
-        _run_cmd(["sudo", "zfs", "set", f"quota={int(current_quota_gb)}G", dataset])
-        log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Quota verification failed: expected {new_quota_gb}GB, got {verify_quota_gb}GB")
-        return jsonify(error="Quota verification failed, rolled back to original"), 500
+    # Step 4: Upgrade using the appropriate method
+    if is_zvol:
+        # ZFS zvol: use volsize + resize2fs
+        # 4a. Increase the zvol size
+        ok, out = _run_cmd(["sudo", "zfs", "set", f"volsize={new_quota_gb}G", dataset], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Volsize update failed: {out}")
+            return jsonify(error=f"Failed to update volsize: {out}"), 500
 
-    log_event(request_id, client_ip, storage_uid, "upgrade_success", f"Upgraded from {int(current_quota_gb)}GB to {new_quota_gb}GB")
+        # 4b. Brief delay for block device to reflect new size
+        time.sleep(1)
+
+        # 4c. Resize the ext4 filesystem online (works on a mounted filesystem)
+        zvol_dev = f"/dev/zvol/{dataset}"
+        ok, out = _run_cmd(["sudo", "resize2fs", zvol_dev], timeout=30)
+        if not ok:
+            # Attempt rollback to previous volsize
+            _run_cmd(["sudo", "zfs", "set", f"volsize={int(current_size_gb)}G", dataset])
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"resize2fs failed: {out}")
+            return jsonify(error=f"Failed to resize ext4 filesystem: {out}"), 500
+
+        # 4d. Verify the new volsize
+        ok, verify_size_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "volsize", dataset])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to verify new volsize")
+            return jsonify(error="Failed to verify new volsize"), 500
+
+        verify_size_str = verify_size_str.strip()
+        verify_size_gb = _parse_zfs_size(verify_size_str) / (1024 ** 3)
+
+        if abs(verify_size_gb - new_quota_gb) > 0.1:
+            # Rollback to old volsize
+            _run_cmd(["sudo", "zfs", "set", f"volsize={int(current_size_gb)}G", dataset])
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Volsize verification failed: expected {new_quota_gb}GB, got {verify_size_gb}GB")
+            return jsonify(error="Volsize verification failed, rolled back to original"), 500
+    else:
+        # ZFS dataset: use quota (existing behaviour)
+        ok, out = _run_cmd(["sudo", "zfs", "set", f"quota={new_quota_gb}G", dataset], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Quota update failed: {out}")
+            return jsonify(error=f"Failed to update quota: {out}"), 500
+
+        # Verify the new quota
+        ok, verify_quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to verify new quota")
+            return jsonify(error="Failed to verify new quota"), 500
+
+        verify_quota_str = verify_quota_str.strip()
+        verify_size_gb = _parse_zfs_size(verify_quota_str) / (1024 ** 3)
+
+        if abs(verify_size_gb - new_quota_gb) > 0.1:
+            # Rollback to old quota
+            _run_cmd(["sudo", "zfs", "set", f"quota={int(current_size_gb)}G", dataset])
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Quota verification failed: expected {new_quota_gb}GB, got {verify_size_gb}GB")
+            return jsonify(error="Quota verification failed, rolled back to original"), 500
+
+    log_event(request_id, client_ip, storage_uid, "upgrade_success", f"Upgraded from {int(current_size_gb)}GB to {new_quota_gb}GB ({'zvol' if is_zvol else 'dataset'})")
     return jsonify({
         "ok": True,
         "storageUid": storage_uid,
-        "previousQuotaGb": int(current_quota_gb),
+        "previousQuotaGb": int(current_size_gb),
         "newQuotaGb": new_quota_gb,
+        "storageType": "zvol" if is_zvol else "dataset",
     }), 200
 
 
@@ -981,6 +1041,537 @@ def _parse_zfs_size(value: str) -> int:
         "E": 1024 ** 6,
     }
     return int(number * multipliers.get(unit, 1))
+
+
+# ---------------------------------------------------------------------------
+# Migration endpoints (snapshot → send → finalize → cleanup)
+# ---------------------------------------------------------------------------
+
+@app.route("/migrate-snapshot", methods=["POST"])
+def migrate_snapshot():
+    """
+    Create a ZFS snapshot for consistent point-in-time migration transfer.
+    Called on SOURCE node.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_xxx" }
+
+    If a @migrate snapshot already exists (from a prior failed migration),
+    it is destroyed first before creating a fresh one.
+
+    Response:
+      {
+        "ok": true,
+        "snapshotName": "datapool/users/u_xxx@migrate",
+        "usedBytes": 12345678,
+        "snapshotReferencedBytes": 67890,
+        "storageType": "zvol" | "dataset"
+      }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Check dataset/zvol exists
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Dataset not found")
+        return jsonify(error="Dataset not found"), 404
+
+    # Detect type
+    ok_type, ds_type = _run_cmd(["zfs", "get", "-H", "-o", "value", "type", dataset])
+    if not ok_type:
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to detect dataset type")
+        return jsonify(error="Failed to detect dataset type"), 500
+    is_zvol = ds_type.strip() == "volume"
+    storage_type = "zvol" if is_zvol else "dataset"
+
+    migrate_log(f"Creating migration snapshot for {dataset} (type={storage_type})")
+
+    # Get current used bytes
+    if is_zvol:
+        # For zvol: use df -B1 on the mount point (real ext4 usage)
+        mount_path = f"/datapool/users/{storage_uid}"
+        ok_df, df_out = _run_cmd(["df", "-B1", mount_path])
+        if not ok_df or not df_out.strip():
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to get zvol usage via df")
+            return jsonify(error="Failed to get zvol usage via df"), 500
+        df_lines = df_out.strip().split("\n")
+        if len(df_lines) < 2:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Unexpected df output")
+            return jsonify(error="Unexpected df output"), 500
+        df_parts = df_lines[1].split()
+        if len(df_parts) < 4:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Unexpected df output format")
+            return jsonify(error="Unexpected df output format"), 500
+        try:
+            used_bytes = int(df_parts[2])
+        except ValueError:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to parse df used bytes")
+            return jsonify(error="Failed to parse df used bytes"), 500
+    else:
+        # For dataset: zfs get used
+        ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", dataset])
+        if not ok_used:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to get dataset used bytes")
+            return jsonify(error="Failed to get dataset used bytes"), 500
+        used_bytes = _parse_zfs_size(used_str.strip())
+
+    # Create snapshot (destroy first if exists from prior failed migration)
+    snapshot_name = f"{dataset}@migrate"
+    ok_snap, _ = _run_cmd(["zfs", "list", "-t", "snapshot", snapshot_name])
+    if ok_snap:
+        migrate_log(f"Snapshot {snapshot_name} already exists from prior migration, destroying first")
+        ok_destroy, destroy_err = _run_cmd(["sudo", "zfs", "destroy", snapshot_name])
+        if not ok_destroy:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", f"Failed to destroy existing snapshot: {destroy_err}")
+            return jsonify(error=f"Failed to destroy existing snapshot: {destroy_err}"), 500
+
+    ok, out = _run_cmd(["sudo", "zfs", "snapshot", snapshot_name])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", f"Failed to create snapshot: {out}")
+        return jsonify(error=f"Failed to create snapshot: {out}"), 500
+
+    migrate_log(f"Created snapshot {snapshot_name}")
+
+    # Get snapshot referenced bytes
+    ok_ref, ref_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "referenced", snapshot_name])
+    if not ok_ref:
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to get snapshot referenced bytes")
+        return jsonify(error="Failed to get snapshot referenced bytes"), 500
+    snapshot_referenced_bytes = _parse_zfs_size(ref_str.strip())
+
+    log_event(request_id, client_ip, storage_uid, "migrate_snapshot_success")
+    return jsonify({
+        "ok": True,
+        "snapshotName": snapshot_name,
+        "usedBytes": used_bytes,
+        "snapshotReferencedBytes": snapshot_referenced_bytes,
+        "storageType": storage_type,
+    }), 200
+
+
+@app.route("/migrate-send", methods=["POST"])
+def migrate_send():
+    """
+    Stream a ZFS snapshot to the target node via zfs send | ssh zfs receive.
+    Called on SOURCE node.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_xxx", "targetIp": "10.10.100.88", "targetUser": "zenith" }
+
+    Response:
+      { "ok": true, "durationSec": 45.2, "snapshotName": "datapool/users/u_xxx@migrate" }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+    target_ip = data.get("targetIp") or ""
+    target_user = data.get("targetUser", "zenith")
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Validate targetIp
+    if not IP_PATTERN.match(target_ip):
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", "Invalid targetIp format")
+        return jsonify(error="Invalid targetIp format"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+    snapshot_name = f"{dataset}@migrate"
+
+    # Verify snapshot exists
+    ok, _ = _run_cmd(["zfs", "list", "-t", "snapshot", snapshot_name])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", "Snapshot not found")
+        return jsonify(error="Snapshot not found — run /migrate-snapshot first"), 404
+
+    # Get snapshot size for timeout calculation
+    ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", snapshot_name])
+    if not ok_used:
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", "Failed to get snapshot size")
+        return jsonify(error="Failed to get snapshot size"), 500
+    snapshot_used_bytes = _parse_zfs_size(used_str.strip())
+    used_gb = snapshot_used_bytes / (1024 ** 3)
+
+    # Calculate timeout: max(300, used_gb * 30) seconds
+    timeout = max(300, int(used_gb * 30))
+    migrate_log(f"Sending {snapshot_name} to {target_user}@{target_ip} (size={used_gb:.2f}GB, timeout={timeout}s)")
+
+    # Execute the send/receive pipeline
+    cmd = (
+        f"sudo ionice -c2 -n7 zfs send -c {snapshot_name} | "
+        f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "
+        f"-c aes128-gcm@openssh.com "
+        f"{target_user}@{target_ip} "
+        f"sudo zfs receive -F {dataset}"
+    )
+
+    start_time = time.time()
+    try:
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+        )
+        duration = round(time.time() - start_time, 2)
+    except subprocess.TimeoutExpired:
+        duration = round(time.time() - start_time, 2)
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", f"Send/receive timed out ({timeout}s)")
+        return jsonify(error=f"Send/receive timed out ({timeout}s)"), 504
+    except Exception as e:
+        duration = round(time.time() - start_time, 2)
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", str(e))
+        return jsonify(error=f"Send/receive failed: {str(e)}"), 500
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", f"Send/receive pipeline failed: {stderr}")
+        return jsonify(error=f"Send/receive pipeline failed: {stderr}"), 500
+
+    migrate_log(f"Send/receive complete for {snapshot_name} ({duration}s)")
+    log_event(request_id, client_ip, storage_uid, "migrate_send_success")
+    return jsonify({
+        "ok": True,
+        "durationSec": duration,
+        "snapshotName": snapshot_name,
+    }), 200
+
+
+@app.route("/migrate-finalize", methods=["POST"])
+def migrate_finalize():
+    """
+    Set up the received dataset/zvol on the TARGET node for use.
+    Called on TARGET node.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_xxx", "newQuotaGb": 10, "storageBackend": "zfs_zvol" }
+
+    Steps for zvol:
+      - Resize zvol, resize ext4, mount, fix permissions, remove lost+found,
+        add fstab entry, set up NVMe-oF target, verify mount
+    Steps for dataset:
+      - Set quota, verify mount, fix permissions
+
+    Response:
+      {
+        "ok": true,
+        "mountOk": true,
+        "usedBytes": 12345,
+        "permissionsOk": true,
+        "nvmeTarget": "10.10.100.88:4420"   // only for zvol
+      }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+    new_quota_gb = data.get("newQuotaGb", 10)
+    storage_backend = data.get("storageBackend", "zfs_zvol")
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Validate storageBackend
+    if storage_backend not in ("zfs_dataset", "zfs_zvol"):
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", "Invalid storageBackend")
+        return jsonify(error="storageBackend must be 'zfs_dataset' or 'zfs_zvol'"), 400
+
+    new_quota_gb = int(new_quota_gb)
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Verify dataset/zvol was received
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", "Dataset not found on target")
+        return jsonify(error="Dataset not found on target — was it received?"), 404
+
+    # Detect type
+    ok_type, ds_type = _run_cmd(["zfs", "get", "-H", "-o", "value", "type", dataset])
+    if not ok_type:
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", "Failed to detect dataset type")
+        return jsonify(error="Failed to detect dataset type"), 500
+    is_zvol = ds_type.strip() == "volume"
+    storage_type = "zvol" if is_zvol else "dataset"
+
+    migrate_log(f"Finalizing migration for {dataset} (type={storage_type})")
+
+    # Remove the @migrate snapshot on target (receive creates it)
+    snapshot_name = f"{dataset}@migrate"
+    ok_snap, _ = _run_cmd(["zfs", "list", "-t", "snapshot", snapshot_name])
+    if ok_snap:
+        ok_destroy, destroy_err = _run_cmd(["sudo", "zfs", "destroy", snapshot_name])
+        if not ok_destroy:
+            migrate_log(f"Warning: failed to destroy snapshot {snapshot_name}: {destroy_err}")
+        else:
+            migrate_log(f"Destroyed migration snapshot {snapshot_name}")
+
+    if is_zvol:
+        # Resize zvol
+        ok, out = _run_cmd(["sudo", "zfs", "set", f"volsize={new_quota_gb}G", dataset], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"Failed to set volsize: {out}")
+            return jsonify(error=f"Failed to set volsize: {out}"), 500
+
+        # Wait for block device
+        time.sleep(1)
+
+        # Resize ext4
+        zvol_dev = f"/dev/zvol/{dataset}"
+        ok, out = _run_cmd(["sudo", "resize2fs", zvol_dev], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"resize2fs failed: {out}")
+            return jsonify(error=f"resize2fs failed: {out}"), 500
+
+        # Mount
+        mount_path = f"/datapool/users/{storage_uid}"
+        ok, out = _run_cmd(["sudo", "mkdir", "-p", mount_path])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"Failed to create mount point: {out}")
+            return jsonify(error=f"Failed to create mount point: {out}"), 500
+
+        ok_mount, mount_out = _run_cmd(["sudo", "mount", zvol_dev, mount_path], timeout=15)
+        if not ok_mount:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"Failed to mount zvol: {mount_out}")
+            return jsonify(error=f"Failed to mount zvol: {mount_out}"), 500
+
+        # Fix permissions
+        _run_cmd(["sudo", "chown", "-R", "1000:1000", mount_path])
+        _run_cmd(["sudo", "chmod", "-R", "u+rwX", mount_path])
+
+        # Remove lost+found
+        _run_cmd(["sudo", "rm", "-rf", f"{mount_path}/lost+found"])
+
+        # Add fstab entry (check if not already present)
+        fstab_line = f"{zvol_dev} {mount_path} ext4 defaults 0 0"
+        grep_pattern = f"{zvol_dev} {mount_path} "
+        ok, _ = _run_cmd([
+            "sudo", "bash", "-lc",
+            f"grep -q '{grep_pattern}' {FSTAB_PATH} 2>/dev/null || echo '{fstab_line}' >> {FSTAB_PATH}"
+        ])
+        if not ok:
+            migrate_log(f"Warning: failed to add fstab entry for {mount_path}")
+
+        # Set up NVMe-oF target
+        nvme_target = None
+        if STORAGE_IP:
+            nvme_err = setup_nvmeof_target(storage_uid, zvol_dev)
+            if nvme_err:
+                log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"NVMe-oF setup failed: {nvme_err}")
+                return jsonify(error=f"NVMe-oF target setup failed: {nvme_err}"), 500
+            _add_nvmet_target_record(storage_uid, zvol_dev)
+            nvme_target = f"{STORAGE_IP}:{NVMET_PORT_NUM}"
+        else:
+            migrate_log("Warning: STORAGE_IP not set, skipping NVMe-oF target setup")
+
+        # Verify mount
+        ok_mount_verify, _ = _run_cmd(["mountpoint", "-q", mount_path])
+        mount_ok = ok_mount_verify
+
+        # Get used bytes for response
+        used_bytes = 0
+        ok_df, df_out = _run_cmd(["df", "-B1", mount_path])
+        if ok_df and df_out.strip():
+            df_lines = df_out.strip().split("\n")
+            if len(df_lines) >= 2:
+                df_parts = df_lines[1].split()
+                if len(df_parts) >= 4:
+                    try:
+                        used_bytes = int(df_parts[2])
+                    except ValueError:
+                        pass
+
+        response = {
+            "ok": True,
+            "mountOk": mount_ok,
+            "usedBytes": used_bytes,
+            "permissionsOk": True,
+            "storageType": storage_type,
+        }
+        if nvme_target:
+            response["nvmeTarget"] = nvme_target
+
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_success")
+        return jsonify(response), 200
+
+    else:
+        # Dataset path
+        # Set quota
+        ok, out = _run_cmd(["sudo", "zfs", "set", f"quota={new_quota_gb}G", dataset], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"Failed to set quota: {out}")
+            return jsonify(error=f"Failed to set quota: {out}"), 500
+
+        # Verify mount
+        ok_mp, mp_val = _run_cmd(["zfs", "get", "-H", "-o", "value", "mountpoint", dataset])
+        mountpoint = mp_val.strip() if ok_mp else f"/{dataset}"
+
+        # Fix permissions
+        _run_cmd(["sudo", "chown", "1000:1000", mountpoint])
+
+        # Get used bytes
+        ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", dataset])
+        used_bytes = _parse_zfs_size(used_str.strip()) if ok_used else 0
+
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_success")
+        return jsonify({
+            "ok": True,
+            "mountOk": True,
+            "usedBytes": used_bytes,
+            "permissionsOk": True,
+            "storageType": storage_type,
+        }), 200
+
+
+@app.route("/migrate-cleanup", methods=["POST"])
+def migrate_cleanup():
+    """
+    Idempotent cleanup for migration rollback scenarios.
+    Called on SOURCE or TARGET node.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_xxx", "action": "destroy_snapshot" | "destroy_all" }
+
+    - destroy_snapshot: Just removes @migrate snapshot if it exists
+    - destroy_all: Full deprovision — NVMe-oF teardown, unmount, remove fstab, zfs destroy -f
+
+    Always succeeds (idempotent) — logs warnings for individual step failures but doesn't error.
+    Response: { "ok": true }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+    action = data.get("action", "destroy_snapshot")
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "migrate_cleanup_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Validate action
+    if action not in ("destroy_snapshot", "destroy_all"):
+        return jsonify(error="action must be 'destroy_snapshot' or 'destroy_all'"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+    snapshot_name = f"{dataset}@migrate"
+
+    migrate_log(f"Cleanup action={action} for {dataset}")
+
+    if action == "destroy_snapshot":
+        # Just remove the @migrate snapshot if it exists
+        ok_snap, _ = _run_cmd(["zfs", "list", "-t", "snapshot", snapshot_name])
+        if ok_snap:
+            ok_destroy, destroy_err = _run_cmd(["sudo", "zfs", "destroy", snapshot_name])
+            if not ok_destroy:
+                migrate_log(f"Warning: failed to destroy snapshot {snapshot_name}: {destroy_err}")
+            else:
+                migrate_log(f"Destroyed snapshot {snapshot_name}")
+        else:
+            migrate_log(f"Snapshot {snapshot_name} does not exist, nothing to clean up")
+
+    elif action == "destroy_all":
+        # Full deprovision — NVMe-oF teardown, unmount, remove fstab, zfs destroy -f
+
+        # 1. NVMe-oF teardown (ignore errors)
+        nvme_err = teardown_nvmeof_target(storage_uid)
+        if nvme_err:
+            migrate_log(f"Warning: NVMe-oF teardown failed: {nvme_err}")
+        _remove_nvmet_target_record(storage_uid)
+
+        # 2. Unmount (ignore errors)
+        mount_path = f"/datapool/users/{storage_uid}"
+        ok_mount, _ = _run_cmd(["mountpoint", "-q", mount_path])
+        if ok_mount:
+            ok_umount, umount_err = _run_cmd(["sudo", "umount", mount_path], timeout=15)
+            if not ok_umount:
+                migrate_log(f"Warning: failed to unmount {mount_path}: {umount_err}")
+            else:
+                migrate_log(f"Unmounted {mount_path}")
+
+        # 3. Remove fstab entry (ignore errors)
+        ok, _ = _run_cmd([
+            "sudo", "bash", "-lc",
+            f"sed -i '\\|/datapool/users/{storage_uid} |d' {FSTAB_PATH}"
+        ])
+        if not ok:
+            migrate_log(f"Warning: failed to clean fstab for {storage_uid}")
+
+        # 4. ZFS destroy -f (handles snapshots too)
+        ok, out = _run_cmd(["sudo", "zfs", "destroy", "-f", dataset], timeout=30)
+        if not ok:
+            migrate_log(f"Warning: zfs destroy failed: {out}")
+        else:
+            migrate_log(f"Destroyed dataset {dataset}")
+
+        # 5. Remove mount point directory
+        _run_cmd(["sudo", "rmdir", mount_path])
+
+    log_event(request_id, client_ip, storage_uid, "migrate_cleanup_success")
+    return jsonify(ok=True), 200
 
 
 @app.route("/storage/usage/<storage_uid>", methods=["GET"])

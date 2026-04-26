@@ -12,6 +12,7 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  HttpException,
   BadRequestException,
   NotFoundException,
   ServiceUnavailableException,
@@ -21,6 +22,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { IsString, IsNotEmpty, IsInt, Min, Max, Length } from 'class-validator';
 import { StorageService } from './storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NodeService } from '../node/node.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuditService } from '../audit/audit.service';
 import { randomBytes } from 'crypto';
@@ -66,6 +68,7 @@ export class StorageController {
     private readonly storageService: StorageService,
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly nodeService: NodeService,
   ) {}
 
   /**
@@ -84,6 +87,24 @@ export class StorageController {
     }
 
     return volumes[0].storage_uid;
+  }
+
+  /**
+   * Helper method to check if user's storage is currently migrating.
+   * Throws 409 CONFLICT when a migration is in progress.
+   */
+  private async checkMigrationStatus(userId: string): Promise<void> {
+    const migrating = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM user_storage_volumes
+      WHERE user_id = ${userId}::uuid AND status = 'migrating'
+      LIMIT 1
+    `;
+    if (migrating.length > 0) {
+      throw new HttpException(
+        'Storage migration in progress. File operations are temporarily disabled.',
+        HttpStatus.CONFLICT,
+      );
+    }
   }
 
   /**
@@ -123,6 +144,7 @@ export class StorageController {
     @Req() req: { user: { id: string } },
   ) {
     const userId = req.user.id;
+    await this.checkMigrationStatus(userId);
     const storageUid = await this.getUserStorageUid(userId);
     const files = await this.storageService.getFiles(storageUid, path || '/');
 
@@ -227,6 +249,7 @@ export class StorageController {
   @Post('files/upload')
   async uploadFiles(@Req() req: FastifyRequest & { user: { id: string } }) {
     const userId = req.user.id;
+    await this.checkMigrationStatus(userId);
     const storageUid = await this.getUserStorageUid(userId);
 
     // Parse multipart from Fastify request
@@ -567,10 +590,10 @@ export class StorageController {
   async deleteStorageVolume(@Req() req: FastifyRequest & { user: { id: string } }) {
     const userId = req.user.id;
 
-    // 1. Find active volume
-    const volumes = await this.prisma.$queryRaw<{ id: string; storage_uid: string }[]>`
-      SELECT id, storage_uid FROM user_storage_volumes
-      WHERE user_id = ${userId}::uuid AND status = 'active'
+    // 1. Find active or migrating volume
+    const volumes = await this.prisma.$queryRaw<{ id: string; storage_uid: string; status: string }[]>`
+      SELECT id, storage_uid, status FROM user_storage_volumes
+      WHERE user_id = ${userId}::uuid AND status IN ('active', 'migrating')
       ORDER BY created_at DESC
       LIMIT 1
     `;
@@ -580,6 +603,13 @@ export class StorageController {
     }
 
     const volume = volumes[0];
+
+    if (volume.status === 'migrating') {
+      throw new HttpException(
+        'Cannot delete storage while migration is in progress.',
+        HttpStatus.CONFLICT,
+      );
+    }
 
     // 2. Set status to 'wiping' (prevents concurrent operations)
     await this.prisma.$executeRaw`
@@ -759,6 +789,8 @@ export class StorageController {
 
   /**
    * Upgrade storage volume quota.
+   * If the current node has enough space, performs an in-place ZFS upgrade.
+   * If the current node is full, migrates the volume to a new node with the upgraded quota.
    */
   @Patch('volumes/:id')
   @HttpCode(HttpStatus.OK)
@@ -770,11 +802,11 @@ export class StorageController {
     const userId = req.user.id;
     const { newQuotaGb } = dto;
 
-    // 1. Find the volume and verify ownership
-    const volumes = await this.prisma.$queryRaw<StorageVolumeRow[]>`
-      SELECT id, name, storage_uid, quota_bytes, used_bytes, status
+    // 1. Find the volume and verify ownership (include 'migrating' so we can return 409)
+    const volumes = await this.prisma.$queryRaw<(StorageVolumeRow & { node_id: string | null; storage_backend: string })[]>`
+      SELECT id, name, storage_uid, quota_bytes, used_bytes, status, node_id, storage_backend
       FROM user_storage_volumes
-      WHERE id = ${id}::uuid AND user_id = ${userId}::uuid AND status = 'active'
+      WHERE id = ${id}::uuid AND user_id = ${userId}::uuid AND status IN ('active', 'migrating')
       LIMIT 1
     `;
 
@@ -783,6 +815,13 @@ export class StorageController {
     }
 
     const volume = volumes[0];
+
+    if (volume.status === 'migrating') {
+      throw new HttpException(
+        'Cannot upgrade storage while migration is in progress. Please try again later.',
+        HttpStatus.CONFLICT,
+      );
+    }
     const currentQuotaGb = Number(volume.quota_bytes) / (1024 * 1024 * 1024);
 
     // 2. Validate upgrade request
@@ -812,94 +851,374 @@ export class StorageController {
       );
     }
 
-    // 4. Check host space availability
-    const spaceInfo = await this.storageService.getHostSpace();
-    if (spaceInfo) {
-      const requiredGb = newQuotaGb - Math.floor(currentQuotaGb);
-      if (spaceInfo.availableGb < requiredGb) {
+    // 4. Check node-specific space availability
+    const additionalGb = newQuotaGb - Math.floor(currentQuotaGb);
+    const currentNodeId = volume.node_id;
+
+    // If no nodeId, fall back to legacy behavior
+    if (!currentNodeId) {
+      // Legacy: use the old getHostSpace check
+      const spaceInfo = await this.storageService.getHostSpace();
+      if (spaceInfo && spaceInfo.availableGb < additionalGb) {
         throw new BadRequestException(
-          `Insufficient host storage space. Available: ${spaceInfo.availableGb.toFixed(1)}GB, Required: ${requiredGb}GB`,
+          `Insufficient host storage space. Available: ${spaceInfo.availableGb.toFixed(1)}GB, Required: ${additionalGb}GB`,
         );
       }
+
+      // Perform in-place upgrade (legacy path)
+      const upgradeResult = await this.storageService.upgradeStorageQuota(volume.storage_uid, newQuotaGb);
+      if (!upgradeResult.ok) {
+        throw new InternalServerErrorException(
+          `Storage upgrade failed: ${upgradeResult.error}. Your storage is unchanged.`,
+        );
+      }
+
+      // Update database (same as existing logic)
+      const newQuotaBytes = BigInt(newQuotaGb) * BigInt(1024) ** BigInt(3);
+      const previousQuotaBytes = volume.quota_bytes;
+      const extensionBytes = newQuotaBytes - previousQuotaBytes;
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+          INSERT INTO storage_extensions (id, user_id, storage_volume_id, extension_type, previous_quota_bytes, new_quota_bytes, extension_bytes, amount_cents, currency, created_at)
+          VALUES (
+            gen_random_uuid()::uuid,
+            ${userId}::uuid,
+            ${volume.id}::uuid,
+            'user_upgrade',
+            ${previousQuotaBytes},
+            ${newQuotaBytes},
+            ${extensionBytes},
+            0,
+            'INR',
+            NOW()
+          )
+        `;
+        await tx.$executeRaw`
+          UPDATE user_storage_volumes
+          SET quota_bytes = ${newQuotaBytes}, updated_by = ${userId}::uuid, updated_at = NOW()
+          WHERE id = ${volume.id}::uuid
+        `;
+      });
+
+      // Audit log
+      try {
+        await this.auditService.log({
+          userId,
+          action: 'filestore.upgrade',
+          category: 'storage',
+          status: 'success',
+          details: {
+            volumeId: volume.id,
+            name: volume.name,
+            storageUid: volume.storage_uid,
+            previousQuotaGb: Math.floor(currentQuotaGb),
+            newQuotaGb,
+          },
+          ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+          userAgent: req.headers?.['user-agent'] || undefined,
+        });
+      } catch { /* don't break flow */ }
+
+      const pricePerGbMonth = 7.00;
+      const monthlyEstimate = newQuotaGb * pricePerGbMonth;
+      const hourlyRate = (newQuotaGb * 700) / 730 / 100;
+
+      return {
+        id: volume.id,
+        name: volume.name,
+        storageUid: volume.storage_uid,
+        quotaGb: newQuotaGb,
+        usedGb: Number(volume.used_bytes) / (1024 * 1024 * 1024),
+        status: 'active',
+        allocationType: 'user_created',
+        previousQuotaGb: Math.floor(currentQuotaGb),
+        monthlyEstimate,
+        hourlyRate,
+        migrated: false,
+      };
     }
 
-    // 5. Perform ZFS upgrade on host
-    const upgradeResult = await this.storageService.upgradeStorageQuota(volume.storage_uid, newQuotaGb);
+    // Multi-node path: check space on the specific node
+    const nodeSpace = await this.storageService.checkNodeSpace(currentNodeId, additionalGb);
 
-    if (!upgradeResult.ok) {
+    if (nodeSpace.hasSpace) {
+      // ========================================================
+      // BRANCH A — IN-PLACE UPGRADE (current node has space)
+      // ========================================================
+
+      const upgradeResult = await this.storageService.upgradeStorageQuota(volume.storage_uid, newQuotaGb);
+
+      if (!upgradeResult.ok) {
+        throw new InternalServerErrorException(
+          `Storage upgrade failed: ${upgradeResult.error}. Your storage is unchanged.`,
+        );
+      }
+
+      const newQuotaBytes = BigInt(newQuotaGb) * BigInt(1024) ** BigInt(3);
+      const previousQuotaBytes = volume.quota_bytes;
+      const extensionBytes = newQuotaBytes - previousQuotaBytes;
+
+      await this.prisma.$transaction(async (tx) => {
+        // Create extension record
+        await tx.$executeRaw`
+          INSERT INTO storage_extensions (id, user_id, storage_volume_id, extension_type, previous_quota_bytes, new_quota_bytes, extension_bytes, amount_cents, currency, created_at)
+          VALUES (
+            gen_random_uuid()::uuid,
+            ${userId}::uuid,
+            ${volume.id}::uuid,
+            'user_upgrade',
+            ${previousQuotaBytes},
+            ${newQuotaBytes},
+            ${extensionBytes},
+            0,
+            'INR',
+            NOW()
+          )
+        `;
+
+        // Update volume quota
+        await tx.$executeRaw`
+          UPDATE user_storage_volumes
+          SET quota_bytes = ${newQuotaBytes}, updated_by = ${userId}::uuid, updated_at = NOW()
+          WHERE id = ${volume.id}::uuid
+        `;
+      });
+
+      // Audit log
+      try {
+        await this.auditService.log({
+          userId,
+          action: 'filestore.upgrade',
+          category: 'storage',
+          status: 'success',
+          details: {
+            volumeId: volume.id,
+            name: volume.name,
+            storageUid: volume.storage_uid,
+            previousQuotaGb: Math.floor(currentQuotaGb),
+            newQuotaGb,
+            method: 'in_place',
+          },
+          ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+          userAgent: req.headers?.['user-agent'] || undefined,
+        });
+      } catch { /* don't break flow */ }
+
+      const pricePerGbMonth = 7.00;
+      const monthlyEstimate = newQuotaGb * pricePerGbMonth;
+      const hourlyRate = (newQuotaGb * 700) / 730 / 100;
+
+      return {
+        id: volume.id,
+        name: volume.name,
+        storageUid: volume.storage_uid,
+        quotaGb: newQuotaGb,
+        usedGb: Number(volume.used_bytes) / (1024 * 1024 * 1024),
+        status: 'active',
+        allocationType: 'user_created',
+        previousQuotaGb: Math.floor(currentQuotaGb),
+        monthlyEstimate,
+        hourlyRate,
+        migrated: false,
+      };
+    }
+
+    // ========================================================
+    // BRANCH B — MIGRATE TO NEW NODE (current node full)
+    // ========================================================
+
+    // Set volume status to 'migrating' to prevent concurrent operations
+    await this.prisma.$executeRaw`
+      UPDATE user_storage_volumes
+      SET status = 'migrating'::"StorageVolumeStatus", updated_at = NOW()
+      WHERE id = ${volume.id}::uuid
+    `;
+
+    try {
+      // Find a target node with enough space
+      let targetNode: Awaited<ReturnType<typeof this.nodeService.selectStorageNode>>;
+      try {
+        targetNode = await this.nodeService.selectStorageNode(newQuotaGb);
+      } catch {
+        // No node found — revert status
+        await this.prisma.$executeRaw`
+          UPDATE user_storage_volumes
+          SET status = 'active'::"StorageVolumeStatus", updated_at = NOW()
+          WHERE id = ${volume.id}::uuid
+        `;
+        throw new BadRequestException(
+          'Insufficient storage space across all nodes. Cannot upgrade at this time.',
+        );
+      }
+
+      // Guard: target should not be the same as source
+      if (targetNode.id === currentNodeId) {
+        await this.prisma.$executeRaw`
+          UPDATE user_storage_volumes
+          SET status = 'active'::"StorageVolumeStatus", updated_at = NOW()
+          WHERE id = ${volume.id}::uuid
+        `;
+        throw new BadRequestException(
+          'Current node is the only available node but lacks sufficient space. Cannot upgrade at this time.',
+        );
+      }
+
+      // Look up source node for migration parameters
+      const sourceNode = await this.prisma.node.findUnique({ where: { id: currentNodeId } });
+      if (!sourceNode) {
+        await this.prisma.$executeRaw`
+          UPDATE user_storage_volumes
+          SET status = 'active'::"StorageVolumeStatus", updated_at = NOW()
+          WHERE id = ${volume.id}::uuid
+        `;
+        throw new InternalServerErrorException('Source node not found in database');
+      }
+
+      const storageBackend = volume.storage_backend || 'zfs_zvol';
+
+      // Execute migration
+      const migrationResult = await this.storageService.migrateStorage(
+        volume.storage_uid,
+        {
+          id: sourceNode.id,
+          ipManagement: sourceNode.ipManagement ?? undefined,
+          ipCompute: sourceNode.ipCompute ?? undefined,
+          ipStorage: sourceNode.ipStorage ?? undefined,
+          storageProvisionPort: sourceNode.storageProvisionPort,
+        },
+        {
+          id: targetNode.id,
+          ipManagement: targetNode.ipManagement ?? undefined,
+          ipCompute: targetNode.ipCompute ?? undefined,
+          ipStorage: targetNode.ipStorage ?? undefined,
+          storageProvisionPort: targetNode.storageProvisionPort,
+        },
+        newQuotaGb,
+        storageBackend,
+      );
+
+      if (!migrationResult.ok) {
+        // Revert status on migration failure
+        await this.prisma.$executeRaw`
+          UPDATE user_storage_volumes
+          SET status = 'active'::"StorageVolumeStatus", updated_at = NOW()
+          WHERE id = ${volume.id}::uuid
+        `;
+        throw new InternalServerErrorException(
+          `Storage migration failed: ${migrationResult.error}. Your storage is unchanged on the current node.`,
+        );
+      }
+
+      // Migration succeeded — update database in transaction
+      const newQuotaBytes = BigInt(newQuotaGb) * BigInt(1024) ** BigInt(3);
+      const previousQuotaBytes = volume.quota_bytes;
+      const extensionBytes = newQuotaBytes - previousQuotaBytes;
+
+      await this.prisma.$transaction(async (tx) => {
+        // Update volume: new node, new quota, active status
+        await tx.$executeRaw`
+          UPDATE user_storage_volumes
+          SET node_id = ${targetNode.id}::uuid,
+              quota_bytes = ${newQuotaBytes},
+              status = 'active'::"StorageVolumeStatus",
+              updated_by = ${userId}::uuid,
+              updated_at = NOW()
+          WHERE id = ${volume.id}::uuid
+        `;
+
+        // Create extension record tracking migration upgrade
+        await tx.$executeRaw`
+          INSERT INTO storage_extensions (id, user_id, storage_volume_id, extension_type, previous_quota_bytes, new_quota_bytes, extension_bytes, amount_cents, currency, created_at)
+          VALUES (
+            gen_random_uuid()::uuid,
+            ${userId}::uuid,
+            ${volume.id}::uuid,
+            'migration_upgrade',
+            ${previousQuotaBytes},
+            ${newQuotaBytes},
+            ${extensionBytes},
+            0,
+            'INR',
+            NOW()
+          )
+        `;
+      });
+
+      // Best-effort: Deprovision source volume on the old node
+      try {
+        const sourceBaseUrl = `http://${sourceNode.ipManagement || sourceNode.ipCompute}:${sourceNode.storageProvisionPort}`;
+        const secret = process.env.USER_STORAGE_PROVISION_SECRET;
+        await fetch(`${sourceBaseUrl}/deprovision`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(secret ? { 'X-Provision-Secret': secret } : {}),
+          },
+          body: JSON.stringify({ storageUid: volume.storage_uid, storageBackend }),
+          signal: AbortSignal.timeout(30000),
+        });
+      } catch (deprovisionErr) {
+        const msg = deprovisionErr instanceof Error ? deprovisionErr.message : String(deprovisionErr);
+        // Log warning but don't fail — the migration already succeeded
+        console.warn(`Source deprovision warning for ${volume.storage_uid}: ${msg}`);
+      }
+
+      // Audit log for migration
+      try {
+        await this.auditService.log({
+          userId,
+          action: 'filestore.migrate',
+          category: 'storage',
+          status: 'success',
+          details: {
+            volumeId: volume.id,
+            name: volume.name,
+            storageUid: volume.storage_uid,
+            previousQuotaGb: Math.floor(currentQuotaGb),
+            newQuotaGb,
+            sourceNodeId: sourceNode.id,
+            targetNodeId: targetNode.id,
+            durationSec: migrationResult.durationSec,
+          },
+          ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
+          userAgent: req.headers?.['user-agent'] || undefined,
+        });
+      } catch { /* don't break flow */ }
+
+      const pricePerGbMonth = 7.00;
+      const monthlyEstimate = newQuotaGb * pricePerGbMonth;
+      const hourlyRate = (newQuotaGb * 700) / 730 / 100;
+
+      return {
+        id: volume.id,
+        name: volume.name,
+        storageUid: volume.storage_uid,
+        quotaGb: newQuotaGb,
+        usedGb: Number(volume.used_bytes) / (1024 * 1024 * 1024),
+        status: 'active',
+        allocationType: 'user_created',
+        previousQuotaGb: Math.floor(currentQuotaGb),
+        monthlyEstimate,
+        hourlyRate,
+        migrated: true,
+        nodeId: targetNode.id,
+        durationSec: migrationResult.durationSec,
+      };
+    } catch (error) {
+      // If we get here with a NestJS exception, re-throw it
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      // Unexpected error — ensure status is reverted
+      await this.prisma.$executeRaw`
+        UPDATE user_storage_volumes
+        SET status = 'active'::"StorageVolumeStatus", updated_at = NOW()
+        WHERE id = ${volume.id}::uuid
+      `.catch(() => { /* best effort */ });
       throw new InternalServerErrorException(
-        `Storage upgrade failed: ${upgradeResult.error}. Your storage is unchanged.`,
+        `Unexpected error during storage upgrade: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-
-    // 6. Update database in transaction
-    const newQuotaBytes = BigInt(newQuotaGb) * BigInt(1024) ** BigInt(3);
-    const previousQuotaBytes = volume.quota_bytes;
-    const extensionBytes = newQuotaBytes - previousQuotaBytes;
-
-    await this.prisma.$transaction(async (tx) => {
-      // Create extension record
-      await tx.$executeRaw`
-        INSERT INTO storage_extensions (id, user_id, storage_volume_id, extension_type, previous_quota_bytes, new_quota_bytes, extension_bytes, amount_cents, currency, created_at)
-        VALUES (
-          gen_random_uuid()::uuid,
-          ${userId}::uuid,
-          ${volume.id}::uuid,
-          'user_upgrade',
-          ${previousQuotaBytes},
-          ${newQuotaBytes},
-          ${extensionBytes},
-          0,
-          'INR',
-          NOW()
-        )
-      `;
-
-      // Update volume quota
-      await tx.$executeRaw`
-        UPDATE user_storage_volumes
-        SET quota_bytes = ${newQuotaBytes}, updated_at = NOW()
-        WHERE id = ${volume.id}::uuid
-      `;
-    });
-
-    // 7. Audit log
-    try {
-      await this.auditService.log({
-        userId,
-        action: 'filestore.upgrade',
-        category: 'storage',
-        status: 'success',
-        details: {
-          volumeId: volume.id,
-          name: volume.name,
-          storageUid: volume.storage_uid,
-          previousQuotaGb: Math.floor(currentQuotaGb),
-          newQuotaGb,
-        },
-        ipAddress: req.ip || (req.headers?.['x-forwarded-for'] as string) || undefined,
-        userAgent: req.headers?.['user-agent'] || undefined,
-      });
-    } catch {
-      // Don't let audit failures break the main flow
-    }
-
-    // 8. Calculate billing info
-    const pricePerGbMonth = 7.00;
-    const monthlyEstimate = newQuotaGb * pricePerGbMonth;
-    const hourlyRate = (newQuotaGb * 700) / 730 / 100;
-
-    return {
-      id: volume.id,
-      name: volume.name,
-      storageUid: volume.storage_uid,
-      quotaGb: newQuotaGb,
-      usedGb: Number(volume.used_bytes) / (1024 * 1024 * 1024),
-      status: 'active',
-      allocationType: 'user_created',
-      previousQuotaGb: Math.floor(currentQuotaGb),
-      monthlyEstimate,
-      hourlyRate,
-    };
   }
 }

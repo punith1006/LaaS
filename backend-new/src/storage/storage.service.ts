@@ -860,4 +860,192 @@ export class StorageService {
       return { ok: false, error: msg };
     }
   }
+
+  // ============================================================================
+  // NODE SPACE CHECK: Verify a specific node has enough space for an upgrade
+  // ============================================================================
+
+  /**
+   * Check whether a specific node has enough available storage space
+   * for the requested additional quota, respecting the node's headroom.
+   */
+  async checkNodeSpace(nodeId: string, requiredGb: number): Promise<{
+    hasSpace: boolean;
+    availableGb: number;
+    headroomGb: number;
+  }> {
+    const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
+
+    if (!node) {
+      this.logger.warn(`Node not found for space check: nodeId=${nodeId}`);
+      return { hasSpace: false, availableGb: 0, headroomGb: 0 };
+    }
+
+    const ip = node.ipManagement || node.ipCompute;
+    if (!ip) {
+      this.logger.warn(`No IP available for node ${node.hostname}`);
+      return { hasSpace: false, availableGb: 0, headroomGb: node.storageHeadroomGb };
+    }
+
+    const url = `http://${ip}:${node.storageProvisionPort}/host-space`;
+    const headers = this.getAuthHeaders();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        this.logger.warn(`Host space check failed for node ${node.hostname}: HTTP ${res.status}`);
+        return { hasSpace: false, availableGb: 0, headroomGb: node.storageHeadroomGb };
+      }
+
+      const data = await res.json() as { availableGb: number; totalGb: number };
+      const hasSpace = data.availableGb >= requiredGb + node.storageHeadroomGb;
+
+      if (!hasSpace) {
+        this.logger.debug(
+          `Node ${node.hostname}: insufficient space — available=${data.availableGb}GB, need=${requiredGb}GB + ${node.storageHeadroomGb}GB headroom`,
+        );
+      }
+
+      return {
+        hasSpace,
+        availableGb: data.availableGb,
+        headroomGb: node.storageHeadroomGb,
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Host space check error for node ${node.hostname}: ${msg}`);
+      return { hasSpace: false, availableGb: 0, headroomGb: node.storageHeadroomGb };
+    }
+  }
+
+  // ============================================================================
+  // MIGRATE: Snapshot → send → finalize with rollback on failure
+  // ============================================================================
+
+  /**
+   * Migrate a storage volume from one node to another.
+   * Steps: snapshot on source → send to target → finalize on target.
+   * On any failure, cleans up both target and source snapshots.
+   */
+  async migrateStorage(
+    storageUid: string,
+    sourceNode: { id: string; ipManagement?: string; ipCompute?: string; ipStorage?: string; storageProvisionPort: number },
+    targetNode: { id: string; ipManagement?: string; ipCompute?: string; ipStorage?: string; storageProvisionPort: number },
+    newQuotaGb: number,
+    storageBackend: string,
+  ): Promise<{ ok: boolean; error?: string; durationSec?: number }> {
+    const secret = process.env[SECRET_ENV];
+    const sourceBaseUrl = `http://${sourceNode.ipManagement || sourceNode.ipCompute}:${sourceNode.storageProvisionPort}`;
+
+    try {
+      // Step 1: Snapshot on source
+      this.logger.log(`Migration step 1 — snapshot for ${storageUid} on source node`);
+      const snapshotRes = await fetch(`${sourceBaseUrl}/migrate-snapshot`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(secret ? { 'X-Provision-Secret': secret } : {}),
+        },
+        body: JSON.stringify({ storageUid }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!snapshotRes.ok) {
+        const errData = await snapshotRes.json().catch(() => ({ error: `HTTP ${snapshotRes.status}` })) as { error?: string };
+        throw new Error(`Snapshot failed: ${errData.error || `HTTP ${snapshotRes.status}`}`);
+      }
+      const snapshotData = await snapshotRes.json() as { usedBytes?: number; snapshotName?: string };
+
+      // Step 2: Send to target (use ipStorage for 10GbE speed, fallback to ipCompute)
+      const targetTransferIp = targetNode.ipStorage || targetNode.ipCompute || targetNode.ipManagement;
+      const usedGb = (snapshotData.usedBytes || 0) / (1024 ** 3);
+      const sendTimeout = Math.max(300, Math.ceil(usedGb * 30)) * 1000; // ms
+
+      this.logger.log(
+        `Migration step 2 — send ${storageUid} to targetIp=${targetTransferIp} (used=${usedGb.toFixed(1)}GB, timeout=${sendTimeout / 1000}s)`,
+      );
+      const sendRes = await fetch(`${sourceBaseUrl}/migrate-send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(secret ? { 'X-Provision-Secret': secret } : {}),
+        },
+        body: JSON.stringify({ storageUid, targetIp: targetTransferIp, targetUser: 'zenith' }),
+        signal: AbortSignal.timeout(sendTimeout),
+      });
+      if (!sendRes.ok) {
+        const errData = await sendRes.json().catch(() => ({ error: `HTTP ${sendRes.status}` })) as { error?: string };
+        throw new Error(`Send failed: ${errData.error || `HTTP ${sendRes.status}`}`);
+      }
+      const sendData = await sendRes.json() as { durationSec?: number; receivedBytes?: number };
+
+      // Step 3: Finalize on target
+      const targetBaseUrl = `http://${targetNode.ipManagement || targetNode.ipCompute}:${targetNode.storageProvisionPort}`;
+      this.logger.log(`Migration step 3 — finalize ${storageUid} on target node`);
+      const finalizeRes = await fetch(`${targetBaseUrl}/migrate-finalize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(secret ? { 'X-Provision-Secret': secret } : {}),
+        },
+        body: JSON.stringify({ storageUid, newQuotaGb, storageBackend }),
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!finalizeRes.ok) {
+        const errData = await finalizeRes.json().catch(() => ({ error: `HTTP ${finalizeRes.status}` })) as { error?: string };
+        throw new Error(`Finalize failed: ${errData.error || `HTTP ${finalizeRes.status}`}`);
+      }
+
+      this.logger.log(
+        `Migration succeeded for ${storageUid}: source=${sourceNode.id} -> target=${targetNode.id} duration=${sendData.durationSec ?? '?'}s`,
+      );
+      return { ok: true, durationSec: sendData.durationSec };
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Migration failed for ${storageUid}: ${errMsg}`);
+
+      // ROLLBACK: Clean target (destroy everything that was received)
+      try {
+        const targetBaseUrl = `http://${targetNode.ipManagement || targetNode.ipCompute}:${targetNode.storageProvisionPort}`;
+        await fetch(`${targetBaseUrl}/migrate-cleanup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(secret ? { 'X-Provision-Secret': secret } : {}),
+          },
+          body: JSON.stringify({ storageUid, action: 'destroy_all' }),
+          signal: AbortSignal.timeout(30000),
+        });
+      } catch (cleanupErr) {
+        const msg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+        this.logger.warn(`Target cleanup failed: ${msg}`);
+      }
+
+      // ROLLBACK: Clean source snapshot
+      try {
+        await fetch(`${sourceBaseUrl}/migrate-cleanup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(secret ? { 'X-Provision-Secret': secret } : {}),
+          },
+          body: JSON.stringify({ storageUid, action: 'destroy_snapshot' }),
+          signal: AbortSignal.timeout(30000),
+        });
+      } catch (cleanupErr) {
+        const msg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+        this.logger.warn(`Source snapshot cleanup failed: ${msg}`);
+      }
+
+      return { ok: false, error: errMsg };
+    }
+  }
 }

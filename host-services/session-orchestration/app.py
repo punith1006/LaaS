@@ -355,35 +355,49 @@ def verify_local_zfs(storage_uid: str, storage_backend: str = 'zfs_dataset') -> 
     
     For zfs_dataset: checks directory at /datapool/users/{uid}.
     For zfs_zvol: checks block device at /dev/zvol/datapool/users/{uid},
-    mounts to /mnt/local-zvol/{uid} if not already mounted.
+    mounts to /datapool/users/{uid} if not already mounted (provision-managed path).
     
     Returns the mount path on success, raises Exception on failure.
     """
     if storage_backend == 'zfs_zvol':
-        # Zvol: block device needs to be mounted
+        # Zvol: block device needs to be mounted at provision-managed path
         zvol_dev = f"/dev/zvol/datapool/users/{storage_uid}"
-        mount_path = f"/mnt/local-zvol/{storage_uid}"
-        
+        mount_path = f"/datapool/users/{storage_uid}"
+
         # Check block device exists
         if not os.path.exists(zvol_dev):
             raise Exception(f"[LOCAL-ZVOL] Block device not found: {zvol_dev}")
-        
-        # Mount if not already mounted
-        os.makedirs(mount_path, exist_ok=True)
+
+        # Ensure mount directory exists (use sudo since /datapool may be root-owned)
+        if not os.path.exists(mount_path):
+            result = subprocess.run(
+                ["sudo", "mkdir", "-p", mount_path],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                raise Exception(f"[LOCAL-ZVOL] Failed to create mount path: {result.stderr}")
+
         if not os.path.ismount(mount_path):
             logger.info(f"[LOCAL-ZVOL] Mounting {zvol_dev} to {mount_path}")
             result = subprocess.run(
-                ["mount", zvol_dev, mount_path],
+                ["sudo", "mount", zvol_dev, mount_path],
                 capture_output=True, text=True, timeout=15
             )
             if result.returncode != 0:
                 raise Exception(f"[LOCAL-ZVOL] Mount failed: {result.stderr}")
-        
+
         # Verify ownership
         stat_info = os.stat(mount_path)
         if stat_info.st_uid != 1000:
-            raise Exception(f"[LOCAL-ZVOL] Owner UID is {stat_info.st_uid}, expected 1000")
-        
+            # Try to fix ownership
+            subprocess.run(
+                ["sudo", "chown", "-R", "1000:1000", mount_path],
+                capture_output=True, text=True, timeout=10
+            )
+            stat_info = os.stat(mount_path)
+            if stat_info.st_uid != 1000:
+                raise Exception(f"[LOCAL-ZVOL] Owner UID is {stat_info.st_uid}, expected 1000")
+
         logger.info(f"[LOCAL-ZVOL] Verified: {mount_path}")
         return mount_path
     else:
@@ -1271,16 +1285,10 @@ def launch_session_worker(
         if storage_transport == "nvmeof_tcp" and storage_uid and nvme_subsystem:
             cleanup_nvmeof_storage(storage_uid, nvme_subsystem)
         # Cleanup local zvol mount if it was set up
+        # NOTE: /datapool/users/{uid} is provision-managed, do NOT unmount it here
         if storage_transport == "local_zfs" and storage_backend == "zfs_zvol" and storage_uid:
-            zvol_mount = f"/mnt/local-zvol/{storage_uid}"
-            if os.path.ismount(zvol_mount):
-                logger.info(f"[CLEANUP-ERR] Unmounting local zvol {zvol_mount}")
-                subprocess.run(["umount", zvol_mount], capture_output=True, timeout=15)
-            if os.path.isdir(zvol_mount) and not os.path.ismount(zvol_mount):
-                try:
-                    os.rmdir(zvol_mount)
-                except Exception:
-                    pass
+            zvol_mount = f"/datapool/users/{storage_uid}"
+            logger.info(f"[CLEANUP-ERR] Local zvol at {zvol_mount} is provision-managed, skipping unmount")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1641,23 +1649,11 @@ def stop_session(name: str):
         else:
             logger.info(f"[CLEANUP-3] NVMe-oF storage cleanup complete for {name}")
     
-    # Step 4: Local zvol unmount (if applicable)
+    # Step 4: Local zvol cleanup (if applicable)
+    # NOTE: /datapool/users/{uid} is provision-managed, do NOT unmount it here
     if storage_transport == "local_zfs" and storage_backend == "zfs_zvol" and storage_uid:
-        zvol_mount = f"/mnt/local-zvol/{storage_uid}"
-        if os.path.ismount(zvol_mount):
-            logger.info(f"[CLEANUP-ZVOL] Unmounting local zvol at {zvol_mount}")
-            ok, out = _run_cmd(["umount", zvol_mount], timeout=15)
-            if not ok:
-                logger.warning(f"[CLEANUP-ZVOL] Primary unmount failed, trying lazy: {out}")
-                ok, out = _run_cmd(["umount", "-l", zvol_mount], timeout=15)
-                if not ok:
-                    errors.append(f"zvol unmount failed: {out}")
-            # Clean up mount directory
-            if not os.path.ismount(zvol_mount):
-                try:
-                    os.rmdir(zvol_mount)
-                except OSError:
-                    pass
+        zvol_mount = f"/datapool/users/{storage_uid}"
+        logger.info(f"[CLEANUP-ZVOL] Local zvol at {zvol_mount} is provision-managed, skipping unmount")
     
     # Clean up event tracking
     with session_events_lock:

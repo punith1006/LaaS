@@ -46,6 +46,7 @@ enum SessionType {
 enum StorageVolumeStatus {
   provisioning
   active
+  migrating
   wiping
   wiped
   error

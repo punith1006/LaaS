@@ -1201,6 +1201,7 @@ rm ~/provision-user-storage.sh
 
 
 # sudo sed -i 's/\r$//' /usr/local/bin/provision-user-storage.sh (small fix)
+# sed -i 's/\r$//' ~/storage-provision/app.py
 
 # Properly delete the nvme pool!!
 # 1. Unlink from port (already done, but verify)
@@ -1217,3 +1218,89 @@ sudo rmdir /sys/kernel/config/nvmet/subsystems/laas-u_6bfc4b915f59a8dffd509b27
 
 # 5. Now destroy the zvol
 sudo zfs destroy -f datapool/users/u_6bfc4b915f59a8dffd509b27
+
+
+
+
+
+
+
+
+
+# For File Migration during upgrades!! Setup without password using ssh !
+# 10.99
+# Generate key (skip if ~/.ssh/id_ed25519 already exists)
+
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -C "zenith@10.99-zfs-migration"
+
+# Copy to 10.88 over storage network
+ssh-copy-id -i ~/.ssh/id_ed25519 zenith@10.10.100.88
+
+# Add SSH config for performance
+cat >> ~/.ssh/config <<'EOF'
+Host 10.10.100.88
+    User zenith
+    IdentityFile ~/.ssh/id_ed25519
+    Ciphers aes128-gcm@openssh.com
+    Compression no
+    StrictHostKeyChecking no
+EOF
+chmod 600 ~/.ssh/config
+
+# Test
+ssh zenith@10.10.100.88 "echo ok"
+
+# 10.88
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -C "zenith@10.88-zfs-migration"
+
+ssh-copy-id -i ~/.ssh/id_ed25519 zenith@10.10.100.99
+
+cat >> ~/.ssh/config <<'EOF'
+Host 10.10.100.99
+    User zenith
+    IdentityFile ~/.ssh/id_ed25519
+    Ciphers aes128-gcm@openssh.com
+    Compression no
+    StrictHostKeyChecking no
+EOF
+chmod 600 ~/.ssh/config
+
+# Test
+ssh zenith@10.10.100.99 "echo ok"
+
+
+# 3.
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -C "zenith@10.88-zfs-migration"
+
+ssh-copy-id -i ~/.ssh/id_ed25519 zenith@10.10.100.99
+
+cat >> ~/.ssh/config <<'EOF'
+Host 10.10.100.99
+    User zenith
+    IdentityFile ~/.ssh/id_ed25519
+    Ciphers aes128-gcm@openssh.com
+    Compression no
+    StrictHostKeyChecking no
+EOF
+chmod 600 ~/.ssh/config
+
+# Test
+ssh zenith@10.10.100.99 "echo ok"
+
+
+# 4. Full Pipeline Test (from 10.99)
+# Create test zvol
+sudo zfs create -V 500M datapool/users/u_test_migrate
+sudo zfs snapshot datapool/users/u_test_migrate@test1
+
+# Test the full send/receive pipeline
+sudo zfs send datapool/users/u_test_migrate@test1 | ssh zenith@10.10.100.88 "sudo zfs receive -F datapool/users/u_test_migrate"
+
+# Verify on target
+ssh zenith@10.10.100.88 "sudo zfs list datapool/users/u_test_migrate"
+
+# Cleanup both sides
+ssh zenith@10.10.100.88 "sudo zfs destroy -r datapool/users/u_test_migrate"
+sudo zfs destroy -r datapool/users/u_test_migrate
+
+echo "Pipeline test complete!"
