@@ -221,15 +221,16 @@ async function main() {
     });
   }
 
-  // Seed the RTX 4090 compute node
-  const node = await prisma.node.upsert({
+  // Seed the RTX 4090 compute nodes
+  const node01 = await prisma.node.upsert({
     where: { hostname: 'laas-node-01' },
     update: {},
     create: {
       hostname: 'laas-node-01',
       displayName: 'LaaS Node 01 — RTX 4090',
+      ipManagement: '100.88.57.107',
       ipCompute: '192.168.10.99',
-      ipStorage: '192.168.10.99',
+      ipStorage: '10.10.100.99',
       cpuModel: 'AMD Ryzen 9 7950X3D',
       totalVcpu: 16,
       totalMemoryMb: 65536,          // 64 GB
@@ -255,7 +256,43 @@ async function main() {
       },
     },
   });
-  console.log(`  Node seeded: ${node.hostname} (${node.gpuModel})`);
+  console.log(`  Node seeded: ${node01.hostname} (${node01.gpuModel})`);
+
+  const node02 = await prisma.node.upsert({
+    where: { hostname: 'laas-node-02' },
+    update: {},
+    create: {
+      hostname: 'laas-node-02',
+      displayName: 'LaaS Node 02 — RTX 4090',
+      ipManagement: '100.94.157.114',
+      ipCompute: '192.168.10.88',
+      ipStorage: '10.10.100.88',
+      cpuModel: 'AMD Ryzen 9 7950X3D',
+      totalVcpu: 16,
+      totalMemoryMb: 65536,          // 64 GB
+      totalGpuVramMb: 24576,         // 24 GB (24564 MiB ≈ 24576 MB)
+      gpuModel: 'RTX 4090',
+      nvmeTotalGb: 2000,             // 2TB NVMe
+      allocatedVcpu: 0,
+      allocatedMemoryMb: 0,
+      allocatedGpuVramMb: 0,
+      maxConcurrentSessions: 8,      // Max theoretical (all Spark)
+      status: 'healthy',
+      currentSessionCount: 0,
+      metadata: {
+        reservedVcpu: 2,              // OS/Docker/MPS reserved
+        reservedMemoryMb: 10240,      // 10 GB reserved
+        reservedGpuVramMb: 1024,      // ~1 GB reserved for MPS daemon
+        allocatableVcpu: 14,
+        allocatableMemoryMb: 55296,   // 54 GB
+        allocatableGpuVramMb: 23552,  // 23 GB
+        smTotal: 128,
+        cudaArch: 'sm_89',
+        driverVersion: '565.x',
+      },
+    },
+  });
+  console.log(`  Node seeded: ${node02.hostname} (${node02.gpuModel})`);
 
   console.log('Seeded roles and public org:', publicOrg.slug);
   console.log('Seeded LaaS Academy org:', laasAcademyOrg.slug);

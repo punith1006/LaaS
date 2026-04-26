@@ -1199,3 +1199,21 @@ rm ~/provision-user-storage.sh
 
 
 
+
+# sudo sed -i 's/\r$//' /usr/local/bin/provision-user-storage.sh (small fix)
+
+# Properly delete the nvme pool!!
+# 1. Unlink from port (already done, but verify)
+sudo rmdir /sys/kernel/config/nvmet/ports/1/subsystems/laas-u_6bfc4b915f59a8dffd509b27 2>/dev/null
+
+# 2. Disable the namespace
+echo 0 | sudo tee /sys/kernel/config/nvmet/subsystems/laas-u_6bfc4b915f59a8dffd509b27/namespaces/1/enable
+
+# 3. Remove the namespace directory
+sudo rmdir /sys/kernel/config/nvmet/subsystems/laas-u_6bfc4b915f59a8dffd509b27/namespaces/1
+
+# 4. Remove the subsystem directory
+sudo rmdir /sys/kernel/config/nvmet/subsystems/laas-u_6bfc4b915f59a8dffd509b27
+
+# 5. Now destroy the zvol
+sudo zfs destroy -f datapool/users/u_6bfc4b915f59a8dffd509b27

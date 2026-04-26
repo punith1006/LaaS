@@ -356,7 +356,7 @@ export class AuthService {
         create: {
           userId: user.id,
           collegeName: matchedUniversity!.name,
-          isOnboardingComplete: true,
+          isOnboardingComplete: false,
         },
       });
     }
@@ -634,11 +634,11 @@ export class AuthService {
         },
       });
 
-      // Create UserProfile for new OAuth users with onboarding complete
+      // Create UserProfile for new OAuth users with onboarding incomplete
       await this.prisma.userProfile.create({
         data: {
           userId: user.id,
-          isOnboardingComplete: true,
+          isOnboardingComplete: false,
         },
       });
 

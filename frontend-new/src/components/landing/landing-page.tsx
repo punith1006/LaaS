@@ -991,7 +991,7 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
             {/* Waitlist status indicator for enrolled users — hide on mobile */}
             {!isMobile && waitlistStatus?.enrolled && (
               <Link
-                href="/waitlist"
+                href="/home"
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -1059,7 +1059,7 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
         )}
         {/* Hide "Get Started" button for users already enrolled in waitlist */}
         {!(isAuthenticated && waitlistStatus?.enrolled) && (
-          <Link href={isAuthenticated ? "/waitlist" : "/signup"}
+          <Link href={isAuthenticated ? "/home" : "/signup"}
             style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "0.8rem" : "0.875rem", fontWeight: 600, color: "#fff", textDecoration: "none", padding: isMobile ? "6px 12px" : "7px 20px", backgroundColor: ACCENT, borderRadius: 6, border: `1px solid ${ACCENT}`, transition: "all 0.15s", boxShadow: `0 0 20px ${ACCENT_GLOW}` }}
             onMouseEnter={e => (e.currentTarget.style.backgroundColor = ACCENT_DARK)}
             onMouseLeave={e => (e.currentTarget.style.backgroundColor = ACCENT)}>
@@ -1111,7 +1111,7 @@ function Nav({ isDark, onToggle, isAuthenticated, userName, waitlistStatus, wait
           </div>
         )}
         {isAuthenticated && waitlistStatus?.enrolled && (
-          <Link href="/waitlist" onClick={() => setMobileMenuOpen(false)}
+          <Link href="/home" onClick={() => setMobileMenuOpen(false)}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 8px", borderBottom: "1px solid var(--borderColor-default)", textDecoration: "none" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, color: "var(--fgColor-default)" }}>#{waitlistStatus.position} of {waitlistStatus.totalCount} in waitlist</span>
@@ -2400,8 +2400,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
               Built for the ones who build what&apos;s next — GPU power that scales with your ambition, not your budget.
             </p>
             <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 12, flexWrap: "wrap", marginBottom: 20, animation: "fadeUp 0.4s ease 0.5s both" }}>
-              <Link href="/waitlist"
-                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.95rem", fontWeight: 700, borderRadius: 8, border: `1px solid ${ACCENT}`, textDecoration: "none", boxShadow: `0 4px 24px ${ACCENT_GLOW}`, transition: "all 0.2s" }}
+              <Link href="/signup"
                   onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-2px)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
                   Launch GPU Instance →
@@ -2530,7 +2529,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
               ))}
             </div>
             <div style={{ marginTop: 32 }}>
-              <Link href="/waitlist"
+              <Link href="/signup"
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 26px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "0.9rem", fontWeight: 600, borderRadius: 7, textDecoration: "none", transition: "all 0.2s" }}
                 onMouseEnter={e => (e.currentTarget.style.background = ACCENT_DARK)}
                 onMouseLeave={e => (e.currentTarget.style.background = ACCENT)}>
@@ -2671,7 +2670,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
               </div>
 
               <div style={{ marginTop: 36 }}>
-                <Link href="/waitlist"
+                <Link href="/signup"
                   style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "14px 32px", background: "#4f6ef7", color: "#ffffff", fontFamily: "var(--font-sans)", fontSize: "1rem", fontWeight: 700, borderRadius: 12, textDecoration: "none", boxShadow: "0 8px 24px rgba(79,110,247,0.35), inset 0 1px 2px rgba(255,255,255,0.2)", transition: "all 0.2s" }}
                   onMouseEnter={e => { e.currentTarget.style.background = "#3a56d4"; e.currentTarget.style.transform = "translateY(-2px)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = "#4f6ef7"; e.currentTarget.style.transform = "translateY(0)"; }}>
@@ -2808,8 +2807,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated?: boolean }) 
           <h2 style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "clamp(1.6rem, 7vw, 2.4rem)" : "clamp(2.2rem, 5vw, 3.8rem)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 20, lineHeight: 1.15, textShadow: "0 4px 30px rgba(0,0,0,0.8)" }}>Ready to launch your first GPU session?</h2>
           <p style={{ fontFamily: "var(--font-sans)", fontSize: isMobile ? "0.9rem" : "clamp(0.9rem, 1.5vw, 1.1rem)", color: "rgba(255,255,255,0.85)", marginBottom: 40, lineHeight: 1.6, maxWidth: 640, margin: "0 auto 40px" }}>Stop waiting. Start training. Harness the raw power of the KSRCE RTX 5090 fleet and scale your research from zero to state-of-the-art in under 30 seconds.</p>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-            <Link href="/waitlist"
-              style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 40px", background: ACCENT, color: "#fff", fontFamily: "var(--font-sans)", fontSize: "1.1rem", fontWeight: 700, borderRadius: 10, textDecoration: "none", boxShadow: `0 6px 30px rgba(79,110,247,0.6)`, transition: "all 0.2s" }}
+            <Link href="/signup"
               onMouseEnter={e => { e.currentTarget.style.background = ACCENT_DARK; e.currentTarget.style.transform = "translateY(-3px)"; }}
               onMouseLeave={e => { e.currentTarget.style.background = ACCENT; e.currentTarget.style.transform = "translateY(0)"; }}>
               Ignite Your Session →

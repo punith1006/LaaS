@@ -494,7 +494,7 @@ export class StorageController {
           'active',
           NOW(),
           ${provisionedNodeId}::uuid,
-          ${provisionedBackend},
+          ${provisionedBackend}::"StorageBackend",
           NOW(),
           NOW()
         )

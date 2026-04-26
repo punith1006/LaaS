@@ -570,6 +570,9 @@ export async function createStorageVolume(
     allocationType: 'user_created',
     provisionedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
+    nodeId: null,
+    node: null,
+    storageBackend: 'zfs_zvol',
   };
 }
 

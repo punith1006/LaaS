@@ -902,3 +902,17 @@ NFS mount going stale during session launch
 Storage node going offline mid-session (user data inaccessible)
 Docker committed images stranded on wrong node (the biggest UX risk)
 uid/gid mismatch between nodes
+
+
+
+
+
+
+
+# Maybe (option)
+The smart selection approach is better — ZFS datasets for local, zvols only for cross-node NVMe-oF. Here's why:
+Thin provisioning — Datasets only consume pool space as data is written. With your pools at 33-38GB, you don't want a 5GB zvol immediately reserving 5GB from the pool when the user has stored nothing yet.
+Native ZFS features — Datasets get quota enforcement, compression, snapshots natively. Zvols add an unnecessary ext4 layer on top of ZFS when storage is local.
+Simpler lifecycle — No mkfs.ext4, no fstab entries, no mount management, no lost+found cleanup. Just zfs create -o quota=5G and it's done — exactly how it worked before.
+Cross-node still works — When a user's compute session runs on a different node from their storage, the backend provisions a zvol + NVMe-oF export. This is the only case that needs block devices.
+The decision logic is straightforward: if storage node == compute node → zfs_dataset, else → zfs_zvol + NVMe-oF. Since you currently only have 2 nodes, most early users will likely land on the same node for both, so they get the clean dataset experience you're used to.Want me to implement this? The changes would be in the backend storage service (selection logic) and the provision script (branching on backend type)

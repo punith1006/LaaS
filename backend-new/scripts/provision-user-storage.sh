@@ -76,7 +76,7 @@ if [[ "$AVAIL_BYTES" -lt "$REQUIRED_BYTES" ]]; then
   exit 2
 fi
 
-# --- 4) Idempotent: existing dataset/zvol — do not modify or destroy ---
+# --- 4) Idempotent: existing dataset/zvol â€” do not modify or destroy ---
 if zfs list -H "$TARGET_DATASET" &>/dev/null; then
   echo "Dataset already exists for $STORAGE_UID" >&2
   exit 0
@@ -84,7 +84,7 @@ fi
 
 if [[ "$STORAGE_BACKEND" == "zfs_dataset" ]]; then
   # ======================================================================
-  # ZFS DATASET PATH (default, quota-based — original production path)
+  # ZFS DATASET PATH (default, quota-based â€” original production path)
   # ======================================================================
 
   # --- 5) Create dataset with fixed quota (only write operation) ---
@@ -175,7 +175,7 @@ else
     exit 3
   fi
 
-  # --- 8z) Create temp mount, set ownership, unmount ---
+  # --- 8z) Create temp mount, set ownership ---
   TEMP_MOUNT="/tmp/zvol-init-${STORAGE_UID}"
   mkdir -p "$TEMP_MOUNT"
   if ! mount "$ZVOL_DEV" "$TEMP_MOUNT"; then
@@ -189,14 +189,40 @@ else
     rmdir "$TEMP_MOUNT" 2>/dev/null || true
     exit 3
   fi
+  # Unmount from temp location (will remount at persistent path below)
   umount "$TEMP_MOUNT"
   rmdir "$TEMP_MOUNT" 2>/dev/null || true
 
-  # --- 9z) Final check: zvol block device exists ---
+  # --- 9z) Mount zvol persistently at /datapool/users/<uid> ---
+  # This is the same path that ZFS datasets auto-mount to, so all existing
+  # code (file browser, usage endpoints) works for both backends.
+  PERSISTENT_MOUNT="/datapool/users/${STORAGE_UID}"
+  mkdir -p "$PERSISTENT_MOUNT"
+  if ! mount "$ZVOL_DEV" "$PERSISTENT_MOUNT"; then
+    echo "Failed to mount zvol $ZVOL_DEV at $PERSISTENT_MOUNT" >&2
+    exit 3
+  fi
+
+  # Fix permissions: ext4 creates lost+found as root:root 700
+  chown -R 1000:1000 "$PERSISTENT_MOUNT" || true
+  chmod -R u+rwX "$PERSISTENT_MOUNT" || true
+  rm -rf "${PERSISTENT_MOUNT}/lost+found" || true
+
+  # --- 10z) Add fstab entry so mount survives reboots ---
+  FSTAB_LINE="${ZVOL_DEV} ${PERSISTENT_MOUNT} ext4 defaults,nofail 0 2"
+  if ! grep -qF "$PERSISTENT_MOUNT" /etc/fstab 2>/dev/null; then
+    echo "$FSTAB_LINE" >> /etc/fstab
+  fi
+
+  # --- 11z) Final checks: block device exists and persistent mount is live ---
   if [ ! -b "$ZVOL_DEV" ]; then
     echo "Zvol block device $ZVOL_DEV not found after setup" >&2
     exit 3
   fi
+  if ! mountpoint -q "$PERSISTENT_MOUNT" 2>/dev/null; then
+    echo "Persistent mount $PERSISTENT_MOUNT is not active" >&2
+    exit 3
+  fi
 
-  echo "Created ${REQUIRED_QUOTA_GB}GB zvol for $STORAGE_UID at $ZVOL_DEV"
+  echo "Created ${REQUIRED_QUOTA_GB}GB zvol for $STORAGE_UID at $ZVOL_DEV (mounted at $PERSISTENT_MOUNT)"
 fi

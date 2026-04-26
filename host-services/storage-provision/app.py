@@ -44,6 +44,7 @@ NVMET_CONFIGFS = "/sys/kernel/config/nvmet"
 NVMET_PORT_PATH = f"{NVMET_CONFIGFS}/ports/1"
 NVMET_PORT_NUM = 4420
 NVMET_TARGETS_FILE = "/etc/laas/nvmet-targets.json"
+NVMET_TARGETS_FILE_FALLBACK = os.path.expanduser("~/storage-provision/nvmet-targets.json")
 NVME_LOG_PREFIX = "[NVME-TARGET]"
 
 
@@ -122,7 +123,7 @@ def setup_nvmeof_target(storage_uid: str, zvol_path: str) -> Optional[str]:
     Returns None on success, else error string.
     """
     if not STORAGE_IP:
-        return "STORAGE_IP environment variable not set — cannot configure NVMe-oF target"
+        return "STORAGE_IP environment variable not set â€” cannot configure NVMe-oF target"
 
     subsystem_name = f"laas-{storage_uid}"
     subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
@@ -230,28 +231,34 @@ def teardown_nvmeof_target(storage_uid: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def _load_nvmet_targets() -> dict:
-    """Load saved NVMe-oF targets from JSON file."""
-    if not os.path.isfile(NVMET_TARGETS_FILE):
-        return {"targets": {}}
-    try:
-        with open(NVMET_TARGETS_FILE, "r") as f:
-            data = json.load(f)
-        if "targets" not in data:
-            data["targets"] = {}
-        return data
-    except (json.JSONDecodeError, OSError) as e:
-        nvme_log(f"Warning: failed to load {NVMET_TARGETS_FILE}: {e}")
-        return {"targets": {}}
+    """Load saved NVMe-oF targets from JSON file (primary or fallback)."""
+    for path in (NVMET_TARGETS_FILE, NVMET_TARGETS_FILE_FALLBACK):
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            if "targets" not in data:
+                data["targets"] = {}
+            return data
+        except (json.JSONDecodeError, OSError) as e:
+            nvme_log(f"Warning: failed to load {path}: {e}")
+            continue
+    return {"targets": {}}
 
 
 def _save_nvmet_targets(data: dict):
-    """Save NVMe-oF targets to JSON file (creates /etc/laas/ if needed)."""
-    try:
-        os.makedirs(os.path.dirname(NVMET_TARGETS_FILE), exist_ok=True)
-        with open(NVMET_TARGETS_FILE, "w") as f:
-            json.dump(data, f, indent=2)
-    except OSError as e:
-        nvme_log(f"Warning: failed to save {NVMET_TARGETS_FILE}: {e}")
+    """Save NVMe-oF targets to JSON file (primary with fallback to user-writable location)."""
+    for path in (NVMET_TARGETS_FILE, NVMET_TARGETS_FILE_FALLBACK):
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                json.dump(data, f, indent=2)
+            return
+        except OSError as e:
+            nvme_log(f"Warning: failed to save {path}: {e}")
+            continue
+    nvme_log("Warning: failed to save NVMe-oF targets to any location")
 
 
 def _add_nvmet_target_record(storage_uid: str, zvol_path: str):
@@ -283,7 +290,7 @@ def rebuild_nvmet_targets_on_startup():
     This handles the case where configfs was lost after a reboot.
     """
     if not STORAGE_IP:
-        nvme_log("STORAGE_IP not set — skipping NVMe-oF target rebuild")
+        nvme_log("STORAGE_IP not set â€” skipping NVMe-oF target rebuild")
         return
 
     data = _load_nvmet_targets()
@@ -292,7 +299,7 @@ def rebuild_nvmet_targets_on_startup():
         nvme_log("No saved NVMe-oF targets to rebuild")
         return
 
-    nvme_log(f"Rebuilding {len(targets)} NVMe-oF target(s) from {NVMET_TARGETS_FILE}")
+    nvme_log(f"Rebuilding {len(targets)} NVMe-oF target(s) from persistence file")
     for subsystem_name, info in targets.items():
         storage_uid = info.get("storage_uid", "")
         zvol_path = info.get("zvol_path", "")
@@ -512,7 +519,7 @@ def provision():
     # Zvol backend requires STORAGE_IP for NVMe-oF target
     if storage_backend == "zfs_zvol" and not STORAGE_IP:
         log_event(request_id, client_ip, storage_uid, "failed", "STORAGE_IP not set for zvol backend")
-        return jsonify(error="STORAGE_IP env not configured — required for NVMe-oF target setup"), 500
+        return jsonify(error="STORAGE_IP env not configured â€” required for NVMe-oF target setup"), 500
 
     # Convert to integer for ZFS commands
     quota_gb_int = int(quota_gb)
@@ -611,7 +618,7 @@ def cleanup_nfs_for(storage_uid: str) -> Optional[str]:
     """
     mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
 
-    # Unmount (ignore errors — may not be mounted)
+    # Unmount (ignore errors â€” may not be mounted)
     _run_cmd(["sudo", "umount", mountpoint], timeout=15)
 
     # Remove exports line
@@ -676,20 +683,36 @@ def deprovision():
     # Check if dataset/zvol exists (idempotent: if not found, return success)
     ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
     if not ok:
-        # Dataset doesn't exist — already deprovisioned
+        # Dataset doesn't exist â€” already deprovisioned
         # Still clean up NVMe-oF persistence record if it exists
         if storage_backend == "zfs_zvol":
             _remove_nvmet_target_record(storage_uid)
         log_event(request_id, client_ip, storage_uid, "deprovision_success", "Dataset already absent")
         return jsonify(ok=True), 200
 
-    # If zfs_zvol: tear down NVMe-oF target first
+    # If zfs_zvol: tear down NVMe-oF target first, then unmount the persistent zvol mount
     if storage_backend == "zfs_zvol":
         nvme_log(f"Deprovisioning zvol-backed storage for {storage_uid}")
         nvme_err = teardown_nvmeof_target(storage_uid)
         if nvme_err:
             log_event(request_id, client_ip, storage_uid, "deprovision_failed", f"NVMe-oF teardown failed: {nvme_err}")
             return jsonify(error=f"NVMe-oF target teardown failed: {nvme_err}"), 500
+
+        # Unmount the zvol from /datapool/users/{uid} before destroying
+        zvol_mount = f"/datapool/users/{storage_uid}"
+        ok_mount, _ = _run_cmd(["mountpoint", "-q", zvol_mount])
+        if ok_mount:
+            ok_umount, umount_err = _run_cmd(["sudo", "umount", zvol_mount], timeout=15)
+            if not ok_umount:
+                log_event(request_id, client_ip, storage_uid, "deprovision_failed", f"Failed to unmount zvol: {umount_err}")
+                return jsonify(error=f"Failed to unmount zvol at {zvol_mount}: {umount_err}"), 500
+            nvme_log(f"Unmounted zvol from {zvol_mount}")
+
+        # Remove fstab entry for this zvol mount
+        _run_cmd([
+            "sudo", "bash", "-lc",
+            f"sed -i '\|/datapool/users/{storage_uid} |d' {FSTAB_PATH}"
+        ])
 
     # If NFS automount enabled and dataset backend, clean up NFS first
     if storage_backend == "zfs_dataset" and NFS_AUTOMOUNT_ENABLED:
@@ -708,13 +731,16 @@ def deprovision():
     # Verify destruction
     ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
     if ok:
-        # Dataset still exists after destroy — unexpected
+        # Dataset still exists after destroy â€” unexpected
         log_event(request_id, client_ip, storage_uid, "deprovision_failed", "Dataset still exists after destroy")
         return jsonify(error="Dataset destruction verification failed"), 500
 
     # Clean up persistence / mount point
     if storage_backend == "zfs_zvol":
         _remove_nvmet_target_record(storage_uid)
+        # Remove the empty mount point directory
+        zvol_mount = f"/datapool/users/{storage_uid}"
+        _run_cmd(["sudo", "rmdir", zvol_mount])
         nvme_log(f"Deprovision complete for zvol {storage_uid}")
     elif NFS_AUTOMOUNT_ENABLED:
         mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
@@ -987,26 +1013,66 @@ def get_storage_usage(storage_uid: str):
 
     dataset = f"datapool/users/{storage_uid}"
 
-    # Get used bytes
-    ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", dataset])
-    if not ok_used or not used_str.strip():
-        return jsonify(error=f"Dataset not found or inaccessible: {dataset}"), 404
-    used_str = used_str.strip()
+    # Determine dataset type (filesystem vs volume/zvol)
+    ok_type, ds_type = _run_cmd(["zfs", "get", "-H", "-o", "value", "type", dataset])
+    is_zvol = ok_type and ds_type.strip() == "volume"
 
-    # Parse used bytes (zfs returns e.g. "24K", "5.23G", or bytes as integer)
-    used_bytes = _parse_zfs_size(used_str)
+    if is_zvol:
+        mount_path = f"/datapool/users/{storage_uid}"
+        zvol_dev = f"/dev/zvol/{dataset}"
 
-    # Get quota bytes
-    ok_quota, quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
-    if not ok_quota or not quota_str.strip():
-        return jsonify(error=f"Could not get quota for {dataset}"), 404
-    quota_str = quota_str.strip()
+        # Ensure zvol is mounted before querying df (on-demand mount if needed)
+        ok_mount, _ = _run_cmd(["mountpoint", "-q", mount_path])
+        if not ok_mount:
+            if os.path.exists(zvol_dev):
+                os.makedirs(mount_path, exist_ok=True)
+                ok_mnt, mnt_err = _run_cmd(["sudo", "mount", zvol_dev, mount_path], timeout=15)
+                if not ok_mnt:
+                    return jsonify(error=f"Zvol not mounted and on-demand mount failed: {mnt_err}"), 503
+            else:
+                return jsonify(error=f"Zvol not found: {dataset}"), 404
 
-    # Parse quota — "none" means no quota set, treat as 0
-    if quota_str.lower() == "none":
-        quota_bytes = 0
+        # Get actual filesystem usage from df (block size = 1 byte)
+        ok_df, df_out = _run_cmd(["df", "-B1", mount_path])
+        if not ok_df or not df_out.strip():
+            return jsonify(error=f"Failed to get filesystem usage for zvol: {dataset}"), 500
+
+        df_lines = df_out.strip().split("\n")
+        if len(df_lines) < 2:
+            return jsonify(error=f"Unexpected df output for zvol: {dataset}"), 500
+
+        # Parse: Filesystem  1B-blocks  Used  Available  Use%  Mounted on
+        df_parts = df_lines[1].split()
+        if len(df_parts) < 4:
+            return jsonify(error=f"Unexpected df output for zvol: {dataset}"), 500
+
+        try:
+            quota_bytes = int(df_parts[1])  # total capacity
+            used_bytes = int(df_parts[2])   # actual used
+        except ValueError:
+            return jsonify(error=f"Failed to parse df output for zvol: {dataset}"), 500
     else:
-        quota_bytes = _parse_zfs_size(quota_str)
+        # Standard filesystem dataset path
+        # Get used bytes
+        ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", dataset])
+        if not ok_used or not used_str.strip():
+            return jsonify(error=f"Dataset not found or inaccessible: {dataset}"), 404
+        used_str = used_str.strip()
+
+        # Parse used bytes (zfs returns e.g. "24K", "5.23G", or bytes as integer)
+        used_bytes = _parse_zfs_size(used_str)
+
+        # Get quota bytes
+        ok_quota, quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+        if not ok_quota or not quota_str.strip():
+            return jsonify(error=f"Could not get quota for {dataset}"), 404
+        quota_str = quota_str.strip()
+
+        # Parse quota â€” "none" means no quota set, treat as 0
+        if quota_str.lower() == "none":
+            quota_bytes = 0
+        else:
+            quota_bytes = _parse_zfs_size(quota_str)
 
     # Calculate derived values
     used_gb = round(used_bytes / (1024 ** 3), 4)
@@ -1021,6 +1087,7 @@ def get_storage_usage(storage_uid: str):
         "quotaGb": quota_gb,
         "usagePercent": usage_percent,
         "zfsDataset": dataset,
+        "isZvol": is_zvol,
     }), 200
 
 
@@ -1050,7 +1117,20 @@ def list_files(storage_uid: str):
 
     # Build the base path
     base_path = f"/datapool/users/{storage_uid}"
-    
+
+    # If the base path doesn't exist, try on-demand mounting for zvols
+    if not os.path.exists(base_path):
+        zvol_dev = f"/dev/zvol/datapool/users/{storage_uid}"
+        if os.path.exists(zvol_dev):
+            # Zvol block device exists but isn't mounted â€” mount it now
+            try:
+                os.makedirs(base_path, exist_ok=True)
+                subprocess.run(["sudo", "mount", zvol_dev, base_path], check=True, timeout=15)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+                return jsonify(error=f"Failed to mount zvol on-demand: {e}"), 503
+        else:
+            return jsonify(error=f"Storage not found: {base_path}"), 404
+
     # Get optional subdirectory path
     subpath = request.args.get("path", "/").strip()
     if subpath and subpath != "/":
@@ -1079,6 +1159,9 @@ def list_files(storage_uid: str):
     files = []
     try:
         for entry_name in os.listdir(target_path):
+            # Skip system directories
+            if entry_name == 'lost+found':
+                continue
             entry_path = os.path.join(target_path, entry_name)
             try:
                 stat_info = os.stat(entry_path)
@@ -1372,6 +1455,6 @@ if __name__ == "__main__":
         print(f"{NVME_LOG_PREFIX} STORAGE_IP={STORAGE_IP}, NVMe-oF target support enabled", flush=True)
         rebuild_nvmet_targets_on_startup()
     else:
-        print(f"{NVME_LOG_PREFIX} STORAGE_IP not set — NVMe-oF target support disabled", flush=True)
+        print(f"{NVME_LOG_PREFIX} STORAGE_IP not set â€” NVMe-oF target support disabled", flush=True)
     port = int(os.environ.get("PORT", "9999"))
     app.run(host="0.0.0.0", port=port, threaded=True)

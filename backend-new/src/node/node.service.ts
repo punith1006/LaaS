@@ -261,7 +261,8 @@ export class NodeService {
     const secret = process.env.USER_STORAGE_PROVISION_SECRET;
 
     for (const node of healthyNodes) {
-      const url = `http://${node.ipManagement}:${node.storageProvisionPort}/host-space`;
+      const ip = node.ipManagement || node.ipCompute;
+      const url = `http://${ip}:${node.storageProvisionPort}/host-space`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -320,10 +321,12 @@ export class NodeService {
   // ============================================================================
 
   getSessionOrchestrationUrl(node: Node): string {
-    return `http://${node.ipManagement}:${node.sessionOrchestrationPort}`;
+    const ip = node.ipManagement || node.ipCompute;
+    return `http://${ip}:${node.sessionOrchestrationPort}`;
   }
 
   getStorageProvisionUrl(node: Node): string {
-    return `http://${node.ipManagement}:${node.storageProvisionPort}`;
+    const ip = node.ipManagement || node.ipCompute;
+    return `http://${ip}:${node.storageProvisionPort}`;
   }
 }

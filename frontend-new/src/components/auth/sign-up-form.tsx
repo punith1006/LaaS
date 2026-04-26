@@ -209,17 +209,13 @@ export function SignUpForm() {
         </Link>
       </p>
 
-      <div className="flex flex-col items-center gap-1">
-        <div
-          aria-disabled="true"
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-900 bg-neutral-900 px-4 py-2.5 text-sm text-white"
-          style={{ opacity: 0.45, cursor: "not-allowed", pointerEvents: "none" }}
-        >
-          <GraduationCap className="h-4 w-4" />
-          <span>Sign in with your institution</span>
-        </div>
-        <span className="text-xs text-neutral-400">Coming soon</span>
-      </div>
+      <Link
+        href="/institution"
+        className="flex items-center justify-center gap-2 rounded-lg border border-neutral-900 bg-neutral-900 px-4 py-2.5 text-sm text-white transition-colors hover:border-neutral-200 hover:bg-neutral-50 hover:text-neutral-700"
+      >
+        <GraduationCap className="h-4 w-4" />
+        <span>Sign in with your institution</span>
+      </Link>
 
       <FooterLinks />
 

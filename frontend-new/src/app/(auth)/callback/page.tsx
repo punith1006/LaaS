@@ -67,17 +67,15 @@ function CallbackContent() {
         }
         
         saveTokens(responseData);
-
-        // Check for return-to URL (e.g., waitlist page OAuth flow)
-        const returnTo = sessionStorage.getItem('oauth_return_to');
-        if (returnTo) {
-          sessionStorage.removeItem('oauth_return_to');
-          router.push(returnTo);
-          return;
-        }
-
         toast.success("Signed in successfully");
-        router.replace("/waitlist");
+        
+        // Check if onboarding is complete and redirect accordingly
+        const isOnboardingComplete = responseData.isOnboardingComplete ?? true;
+        if (isOnboardingComplete) {
+          router.replace("/home");
+        } else {
+          router.replace("/signup/onboarding");
+        }
       } catch (e) {
         toast.error(
           e instanceof Error ? e.message : "Authentication failed",
