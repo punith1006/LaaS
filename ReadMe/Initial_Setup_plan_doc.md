@@ -1177,3 +1177,25 @@ sudo rmdir /sys/kernel/config/nvmet/subsystems/laas-test
 
 # Destroy the test zvol
 sudo zfs destroy datapool/nvme-test
+
+
+
+# Post Multi-Node change and NvME-oF update
+# 10.99
+scp C:\Users\Punith\LaaS\host-services\session-orchestration\app.py zenith@100.88.57.107:~/session-orchestration/app.py
+scp C:\Users\Punith\LaaS\host-services\storage-provision\app.py zenith@100.88.57.107:~/storage-provision/app.py
+scp C:\Users\Punith\LaaS\backend-new\scripts\provision-user-storage.sh zenith@100.88.57.107:~/provision-user-storage.sh
+
+# 10.88
+scp C:\Users\Punith\LaaS\host-services\session-orchestration\app.py zenith@100.94.157.114:~/session-orchestration/app.py
+scp C:\Users\Punith\LaaS\host-services\storage-provision\app.py zenith@100.94.157.114:~/storage-provision/app.py
+scp C:\Users\Punith\LaaS\backend-new\scripts\provision-user-storage.sh zenith@100.94.157.114:~/provision-user-storage.sh
+
+# On both
+sudo cp ~/provision-user-storage.sh /usr/local/bin/provision-user-storage.sh
+sudo chown root:root /usr/local/bin/provision-user-storage.sh
+sudo chmod 755 /usr/local/bin/provision-user-storage.sh
+rm ~/provision-user-storage.sh
+
+
+

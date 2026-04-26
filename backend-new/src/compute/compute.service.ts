@@ -411,14 +411,21 @@ export class ComputeService {
 
         // 7. If stateful storage, check user has active File Store and determine transport
         let nfsMountPath: string | null = null;
-        let storageVolume: { id: string; storageUid: string; nfsExportPath: string | null; nodeId: string | null; node: { id: string; ipStorage: string | null; nvmeOfPort: number } | null } | null = null;
+        let storageVolume: { id: string; storageUid: string; storageBackend: string; nfsExportPath: string | null; nodeId: string | null; node: { id: string; ipStorage: string | null; nvmeOfPort: number } | null } | null = null;
         let storageTransport: 'local_zfs' | 'nvmeof_tcp' | null = null;
         let storageNodeId: string | null = null;
 
         if (dto.storageType === 'stateful') {
           storageVolume = await tx.userStorageVolume.findFirst({
             where: { userId, status: 'active' },
-            include: { node: { select: { id: true, ipStorage: true, nvmeOfPort: true } } },
+            select: {
+              id: true,
+              storageUid: true,
+              storageBackend: true,
+              nfsExportPath: true,
+              nodeId: true,
+              node: { select: { id: true, ipStorage: true, nvmeOfPort: true } },
+            },
           });
           if (!storageVolume) {
             throw new BadRequestException(
@@ -428,13 +435,23 @@ export class ComputeService {
           nfsMountPath = storageVolume.nfsExportPath;
           storageNodeId = storageVolume.nodeId;
 
-          // Determine storage transport based on node co-location
+          // Determine storage transport based on node co-location and backend type
           if (storageNodeId && storageNodeId === node.id) {
-            storageTransport = 'local_zfs'; // Same node - direct ZFS bind mount
+            // Same node — always local_zfs (works for both datasets and zvols)
+            storageTransport = 'local_zfs';
           } else if (storageNodeId) {
-            storageTransport = 'nvmeof_tcp'; // Cross-node - NVMe-oF over 10GbE
+            // Cross-node — only zvols can use NVMe-oF
+            if (storageVolume?.storageBackend === 'zfs_zvol') {
+              storageTransport = 'nvmeof_tcp';
+            } else {
+              // Legacy zfs_dataset cross-node: fall back to NFS
+              storageTransport = null; // null = orchestrator uses NFS fallback
+              this.logger.warn(
+                `Cross-node session with legacy zfs_dataset volume ${storageVolume?.storageUid} — falling back to NFS`,
+              );
+            }
           } else {
-            storageTransport = null; // Legacy NFS fallback
+            storageTransport = null; // No storage node assigned — NFS fallback
           }
         }
 
@@ -563,6 +580,7 @@ export class ComputeService {
           hami_sm_percent: config.hamiSmPercent ?? 17,
           storage_type: dto.storageType,
           storage_uid: dto.storageType === 'stateful' ? (storageVolume?.storageUid ?? user.storageUid) : null,
+          storage_backend: storageVolume?.storageBackend ?? 'zfs_dataset',
           node_hostname: node.hostname,
           // Multi-node storage transport params — only include when truthy;
           // orchestrator treats missing/null as NFS fallback automatically
@@ -1515,10 +1533,11 @@ export class ComputeService {
         try {
           const vol = await this.prisma.userStorageVolume.findFirst({
             where: { userId, status: 'active', nodeId: sess.storageNodeId },
-            select: { storageUid: true },
+            select: { storageUid: true, storageBackend: true },
           });
           if (vol) {
             cleanupPayload.storage_uid = vol.storageUid;
+            cleanupPayload.storage_backend = vol.storageBackend ?? 'zfs_dataset';
             if (sess.storageTransport === 'nvmeof_tcp') {
               cleanupPayload.nvme_subsystem = `laas-${vol.storageUid}`;
             }

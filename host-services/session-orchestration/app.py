@@ -166,7 +166,7 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# In-memory session metadata: container_name -> {storage_transport, storage_uid, nvme_subsystem}
+# In-memory session metadata: container_name -> {storage_transport, storage_uid, nvme_subsystem, storage_backend}
 session_metadata: Dict[str, Dict[str, Any]] = {}
 session_metadata_lock = threading.Lock()
 
@@ -350,17 +350,51 @@ def setup_nvmeof_storage(
         raise
 
 
-def verify_local_zfs(storage_uid: str) -> str:
-    """Verify local ZFS dataset exists and is accessible.
-    Returns the dataset path on success, raises Exception on failure.
+def verify_local_zfs(storage_uid: str, storage_backend: str = 'zfs_dataset') -> str:
+    """Verify local ZFS storage (dataset or zvol) and return mount path.
+    
+    For zfs_dataset: checks directory at /datapool/users/{uid}.
+    For zfs_zvol: checks block device at /dev/zvol/datapool/users/{uid},
+    mounts to /mnt/local-zvol/{uid} if not already mounted.
+    
+    Returns the mount path on success, raises Exception on failure.
     """
-    dataset_path = f"/datapool/users/{storage_uid}"
-    if not os.path.isdir(dataset_path):
-        raise Exception(f"Local ZFS dataset path not found: {dataset_path}")
-    stat_info = os.stat(dataset_path)
-    if stat_info.st_uid != 1000:
-        raise Exception(f"ZFS dataset owner UID is {stat_info.st_uid}, expected 1000")
-    return dataset_path
+    if storage_backend == 'zfs_zvol':
+        # Zvol: block device needs to be mounted
+        zvol_dev = f"/dev/zvol/datapool/users/{storage_uid}"
+        mount_path = f"/mnt/local-zvol/{storage_uid}"
+        
+        # Check block device exists
+        if not os.path.exists(zvol_dev):
+            raise Exception(f"[LOCAL-ZVOL] Block device not found: {zvol_dev}")
+        
+        # Mount if not already mounted
+        os.makedirs(mount_path, exist_ok=True)
+        if not os.path.ismount(mount_path):
+            logger.info(f"[LOCAL-ZVOL] Mounting {zvol_dev} to {mount_path}")
+            result = subprocess.run(
+                ["mount", zvol_dev, mount_path],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode != 0:
+                raise Exception(f"[LOCAL-ZVOL] Mount failed: {result.stderr}")
+        
+        # Verify ownership
+        stat_info = os.stat(mount_path)
+        if stat_info.st_uid != 1000:
+            raise Exception(f"[LOCAL-ZVOL] Owner UID is {stat_info.st_uid}, expected 1000")
+        
+        logger.info(f"[LOCAL-ZVOL] Verified: {mount_path}")
+        return mount_path
+    else:
+        # Dataset: existing behavior — directory at /datapool/users/{uid}
+        dataset_path = f"/datapool/users/{storage_uid}"
+        if not os.path.isdir(dataset_path):
+            raise Exception(f"Local ZFS dataset path not found: {dataset_path}")
+        stat_info = os.stat(dataset_path)
+        if stat_info.st_uid != 1000:
+            raise Exception(f"ZFS dataset owner UID is {stat_info.st_uid}, expected 1000")
+        return dataset_path
 
 
 def cleanup_nvmeof_storage(
@@ -406,6 +440,7 @@ def store_session_metadata(
     storage_transport: Optional[str],
     storage_uid: Optional[str],
     nvme_subsystem: Optional[str],
+    storage_backend: Optional[str] = None,
 ) -> None:
     """Store session metadata for cleanup on shutdown."""
     with session_metadata_lock:
@@ -413,6 +448,7 @@ def store_session_metadata(
             "storage_transport": storage_transport,
             "storage_uid": storage_uid,
             "nvme_subsystem": nvme_subsystem,
+            "storage_backend": storage_backend,
         }
 
 
@@ -721,6 +757,7 @@ def build_docker_command(
     tier_slug: str,
     node_hostname: str,
     storage_transport: Optional[str] = None,
+    mount_path: Optional[str] = None,
 ) -> List[str]:
     """Build the complete docker run command."""
     
@@ -848,8 +885,10 @@ def build_docker_command(
     
     # Volume mounts - User storage (stateful only)
     if storage_type == "stateful" and storage_uid:
-        # Resolve mount path based on storage transport
-        if storage_transport == "local_zfs":
+        # Use the resolved mount_path if provided, otherwise resolve from transport
+        if mount_path:
+            resolved_path = mount_path
+        elif storage_transport == "local_zfs":
             resolved_path = f"/datapool/users/{storage_uid}"
         elif storage_transport == "nvmeof_tcp":
             resolved_path = f"/mnt/nvme/{storage_uid}"  # Already mounted by setup_nvmeof_storage()
@@ -932,6 +971,7 @@ def launch_session_worker(
     storage_node_ip: Optional[str] = None,
     nvme_port: int = 4420,
     nvme_subsystem: Optional[str] = None,
+    storage_backend: Optional[str] = None,
 ) -> None:
     """Background worker thread to handle the multi-step session launch."""
     
@@ -939,6 +979,7 @@ def launch_session_worker(
     display_number: Optional[int] = None
     cpuset: Optional[str] = None
     password: str = ""
+    mount_path: Optional[str] = None
     
     try:
         # Step 1: Scheduling - validate params
@@ -1039,12 +1080,13 @@ def launch_session_worker(
                     return
             
             elif storage_transport == "local_zfs":
-                # Same-node ZFS storage verification
-                emit_event(container_name, "validating_mount", f"Verifying local ZFS dataset for {storage_uid}...")
+                # Same-node ZFS storage verification (dataset or zvol)
+                backend_label = "zvol" if storage_backend == "zfs_zvol" else "dataset"
+                emit_event(container_name, "validating_mount", f"Verifying local ZFS {backend_label} for {storage_uid}...")
                 try:
-                    dataset_path = verify_local_zfs(storage_uid)
+                    mount_path = verify_local_zfs(storage_uid, storage_backend or 'zfs_dataset')
                     complete_event(container_name, "validating_mount",
-                                   f"Local ZFS dataset verified: {dataset_path}")
+                                   f"Local ZFS {backend_label} verified: {mount_path}")
                 except Exception as e:
                     fail_session(container_name, "validating_mount", f"Local ZFS verification failed: {e}")
                     return
@@ -1071,12 +1113,12 @@ def launch_session_worker(
                 complete_event(container_name, "validating_mount", f"NFS mount validated: {mount_path}")
             
             # Store session metadata for cleanup
-            store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem)
+            store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem, storage_backend)
         else:
             emit_event(container_name, "validating_mount", "Ephemeral session - skipping mount validation")
             complete_event(container_name, "validating_mount", "Ephemeral session - no persistent storage")
             # Store metadata even for ephemeral (for consistent cleanup)
-            store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem)
+            store_session_metadata(container_name, storage_transport, storage_uid, nvme_subsystem, storage_backend)
         
         # Generate password
         password = generate_password(16)
@@ -1118,6 +1160,7 @@ def launch_session_worker(
             tier_slug=tier_slug,
             node_hostname=node_hostname,
             storage_transport=storage_transport,
+            mount_path=mount_path,
         )
         
         ok, out = _run_cmd(docker_cmd, timeout=60)
@@ -1227,6 +1270,17 @@ def launch_session_worker(
         # Cleanup NVMe-oF storage if it was set up
         if storage_transport == "nvmeof_tcp" and storage_uid and nvme_subsystem:
             cleanup_nvmeof_storage(storage_uid, nvme_subsystem)
+        # Cleanup local zvol mount if it was set up
+        if storage_transport == "local_zfs" and storage_backend == "zfs_zvol" and storage_uid:
+            zvol_mount = f"/mnt/local-zvol/{storage_uid}"
+            if os.path.ismount(zvol_mount):
+                logger.info(f"[CLEANUP-ERR] Unmounting local zvol {zvol_mount}")
+                subprocess.run(["umount", zvol_mount], capture_output=True, timeout=15)
+            if os.path.isdir(zvol_mount) and not os.path.ismount(zvol_mount):
+                try:
+                    os.rmdir(zvol_mount)
+                except Exception:
+                    pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1295,6 +1349,15 @@ def validate_launch_request(data: Dict[str, Any]) -> Tuple[bool, str]:
             return False, "storage_node_ip is required when storage_transport is 'nvmeof_tcp'"
         if not data.get("nvme_subsystem"):
             return False, "nvme_subsystem is required when storage_transport is 'nvmeof_tcp'"
+    
+    # Validate storage_backend if provided
+    storage_backend = data.get("storage_backend")
+    if storage_backend is not None and storage_backend not in ("zfs_dataset", "zfs_zvol"):
+        return False, f"Invalid storage_backend: {storage_backend} (must be 'zfs_dataset', 'zfs_zvol', or null)"
+    
+    # storage_backend only applies to local_zfs transport
+    if storage_backend and storage_transport != "local_zfs":
+        return False, f"storage_backend '{storage_backend}' only applies when storage_transport is 'local_zfs'"
     
     return True, ""
 
@@ -1365,7 +1428,8 @@ def launch_session():
         "storage_transport": "local_zfs" | "nvmeof_tcp" | null (optional, null=NFS fallback),
         "storage_node_ip": "10.10.100.99" (required if nvmeof_tcp),
         "nvme_port": 4420 (optional, default 4420),
-        "nvme_subsystem": "laas-u_abc123" (required if nvmeof_tcp)
+        "nvme_subsystem": "laas-u_abc123" (required if nvmeof_tcp),
+        "storage_backend": "zfs_dataset" | "zfs_zvol" | null (optional, only for local_zfs, default zfs_dataset)
     }
     """
     request_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
@@ -1409,6 +1473,7 @@ def launch_session():
     storage_node_ip = data.get("storage_node_ip")      # 10GbE IP for nvmeof_tcp
     nvme_port = data.get("nvme_port", 4420)             # NVMe-oF port
     nvme_subsystem = data.get("nvme_subsystem")         # e.g., "laas-u_abc123"
+    storage_backend = data.get("storage_backend")       # "zfs_dataset" | "zfs_zvol" | null
     
     # Generate container name
     container_name = f"laas-{session_id[:8]}"
@@ -1432,7 +1497,7 @@ def launch_session():
             container_name, session_id, user_email, tier_slug,
             vcpu, memory_mb, vram_mb, hami_sm_percent,
             storage_type, storage_uid, node_hostname,
-            storage_transport, storage_node_ip, nvme_port, nvme_subsystem,
+            storage_transport, storage_node_ip, nvme_port, nvme_subsystem, storage_backend,
         ),
         daemon=True
     )
@@ -1543,23 +1608,29 @@ def stop_session(name: str):
     logger.info(f"[CLEANUP-1] Stopping container {name}...")
     ok, out = _run_cmd(["docker", "stop", "-t", "30", name], timeout=45)
     if not ok:
-        errors.append(f"docker stop: {out}")
-        log_event(request_id, client_ip, name, "stop_failed", "", out)
-        return jsonify(error=f"docker stop failed: {out}"), 500
-    
-    # Step 2: Docker remove
+        # Try docker kill as fallback
+        logger.warning(f"[CLEANUP-DOCKER] docker stop {name} failed, trying kill: {out}")
+        ok2, out2 = _run_cmd(["docker", "kill", name], timeout=15)
+        if not ok2:
+            errors.append(f"docker stop: {out}")
+            log_event(request_id, client_ip, name, "stop_failed", "", out)
+            return jsonify(error=f"Failed to stop container: {out}"), 500
+
+    # Step 2: Docker remove (best effort - don't block cleanup)
     logger.info(f"[CLEANUP-2] Removing container {name}...")
     ok, out = _run_cmd(["docker", "rm", name], timeout=15)
     if not ok:
-        errors.append(f"docker rm: {out}")
-        log_event(request_id, client_ip, name, "remove_failed", "", out)
-        return jsonify(error=f"docker rm failed: {out}"), 500
+        errors.append(f"docker rm failed: {out}")
+        logger.warning(f"[CLEANUP-DOCKER] docker rm {name} failed: {out}")
+
+    # Always proceed to storage cleanup regardless of docker rm result
     
     # Step 3: NVMe-oF storage cleanup (if applicable)
     meta = pop_session_metadata(name)
     storage_transport = meta.get("storage_transport")
     storage_uid = meta.get("storage_uid")
     nvme_subsystem = meta.get("nvme_subsystem")
+    storage_backend = meta.get("storage_backend")
     
     if storage_transport == "nvmeof_tcp" and storage_uid and nvme_subsystem:
         logger.info(f"[CLEANUP-3] Cleaning up NVMe-oF storage for {name}...")
@@ -1569,6 +1640,24 @@ def stop_session(name: str):
             logger.warning(f"[CLEANUP-WARN] NVMe-oF cleanup had errors: {nvme_errors}")
         else:
             logger.info(f"[CLEANUP-3] NVMe-oF storage cleanup complete for {name}")
+    
+    # Step 4: Local zvol unmount (if applicable)
+    if storage_transport == "local_zfs" and storage_backend == "zfs_zvol" and storage_uid:
+        zvol_mount = f"/mnt/local-zvol/{storage_uid}"
+        if os.path.ismount(zvol_mount):
+            logger.info(f"[CLEANUP-ZVOL] Unmounting local zvol at {zvol_mount}")
+            ok, out = _run_cmd(["umount", zvol_mount], timeout=15)
+            if not ok:
+                logger.warning(f"[CLEANUP-ZVOL] Primary unmount failed, trying lazy: {out}")
+                ok, out = _run_cmd(["umount", "-l", zvol_mount], timeout=15)
+                if not ok:
+                    errors.append(f"zvol unmount failed: {out}")
+            # Clean up mount directory
+            if not os.path.ismount(zvol_mount):
+                try:
+                    os.rmdir(zvol_mount)
+                except OSError:
+                    pass
     
     # Clean up event tracking
     with session_events_lock:

@@ -314,9 +314,11 @@ export class AuthService {
         const quotaBytes = BigInt(INSTITUTION_QUOTA_GB) * BigInt(1024) ** BigInt(3);
         const zfsDatasetPath = `datapool/users/${storageUid}`;
         const nfsExportPath = `/mnt/nfs/users/${storageUid}`;
+        const nodeId = result.nodeId ?? null;
+        const storageBackend = result.storageBackend ?? 'zfs_dataset';
 
         await this.prisma.$queryRaw`
-          INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at, price_per_gb_cents_month)
+          INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at, price_per_gb_cents_month, node_id, storage_backend)
           VALUES (
             gen_random_uuid()::uuid,
             ${user.id}::uuid,
@@ -332,7 +334,9 @@ export class AuthService {
             NOW(),
             NOW(),
             NOW(),
-            0
+            0,
+            ${nodeId}::uuid,
+            ${storageBackend}::"StorageBackend"
           )
         `;
       } else {
@@ -696,9 +700,11 @@ export class AuthService {
           const quotaBytes = BigInt(INSTITUTION_QUOTA_GB) * BigInt(1024) ** BigInt(3);
           const zfsDatasetPath = `datapool/users/${user.storageUid}`;
           const nfsExportPath = `/mnt/nfs/users/${user.storageUid}`;
+          const nodeId = result.nodeId ?? null;
+          const storageBackend = result.storageBackend ?? 'zfs_dataset';
 
           await this.prisma.$queryRaw`
-            INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at, price_per_gb_cents_month)
+            INSERT INTO user_storage_volumes (id, user_id, name, storage_uid, zfs_dataset_path, nfs_export_path, os_choice, quota_bytes, used_bytes, allocation_type, status, provisioned_at, created_at, updated_at, price_per_gb_cents_month, node_id, storage_backend)
             VALUES (
               gen_random_uuid()::uuid,
               ${user.id}::uuid,
@@ -714,7 +720,9 @@ export class AuthService {
               NOW(),
               NOW(),
               NOW(),
-              0
+              0,
+              ${nodeId}::uuid,
+              ${storageBackend}::"StorageBackend"
             )
           `;
         } else {
