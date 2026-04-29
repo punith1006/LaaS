@@ -1,0 +1,393 @@
+Perfect! Now I have gathered comprehensive information about the LaaS frontend. Let me create a detailed structured report.
+LaaS Frontend Comprehensive Analysis Report
+Objective
+Provide a complete technical analysis of the LaaS (Lab as a Service) frontend architecture, including pages, components, state management, API integration, and current implementation status.
+1. FRONTEND ARCHITECTURE
+Technology Stack
+Framework: Next.js 15.1.0 (App Router, React 19)
+Styling: Tailwind CSS 4.0 with CSS Variables for theming
+UI Components: shadcn/ui (Radix UI primitives) + custom components
+Form Handling: React Hook Form + Zod validation
+State Management: Zustand 5.0.2 (for signup flow persistence)
+Icons: Lucide React 0.468.0
+Notifications: Sonner (toast notifications)
+Motion: Framer Motion 12.38.0
+Charts: Recharts 3.8.0
+Fonts: Outfit (variable weight) and Geist Mono from Google Fonts
+Key Files:
+c:\Users\Punith\LaaS\frontend\package.json - Dependencies and scripts
+c:\Users\Punith\LaaS\frontend\next.config.ts - Next.js configuration
+c:\Users\Punith\LaaS\frontend\tsconfig.json - TypeScript config with path aliases (@/*)
+Next.js App Structure
+The frontend uses Next.js App Router with the following directory organization:
+plaintext
+src/app/
+├── (auth)/              # Authentication routes (grouped layout)
+│   ├── signin/          # Sign-in page
+│   ├── signup/          # Sign-up page (multi-step)
+│   │   ├── details/
+│   │   ├── verify/
+│   │   └── onboarding/
+│   ├── callback/        # OAuth callback handler
+│   ├── institution/
+│   ├── logout/
+│   └── layout.tsx       # Auth layout (2-column design)
+├── (console)/           # Protected routes (requires auth)
+│   ├── home/            # Dashboard with Home/Billing tabs
+│   ├── instances/       # GPU compute session manager
+│   ├── storage/         # Storage management
+│   ├── billing/         # Billing & credits page
+│   └── layout.tsx       # Console layout with sidebar
+├── dashboard/           # Legacy/alternate layout
+├── layout.tsx           # Root layout (dark mode script, fonts)
+└── page.tsx             # Landing page (routes to signin/home based on auth)
+Page Purposes:
+Landing (/): Unauthenticated users see landing page; authenticated users redirected to /home
+Sign-In (/signin): Email + password login with OAuth buttons
+Sign-Up (/signup): Multi-step registration (email → details → OTP verification → onboarding)
+OAuth Callback (/callback): Handles Keycloak SSO authentication
+Home (/home): Main dashboard with greeting, zero-credit banner, Home/Billing tabs
+Billing (/billing): Dedicated billing page with Usage & Payment History tabs, Add Credits button
+Instances (/instances): GPU session manager - list, launch, and control compute sessions
+Storage (/storage): File storage interface with browser, upload, download, create folders
+2. COMPONENT HIERARCHY & ORGANIZATION
+Location: c:\Users\Punith\LaaS\frontend\src\components
+Auth Components (auth/)
+sign-in-form.tsx - Email/password login form with validation
+sign-up-form.tsx (221 lines) - Multi-step signup with email/password + policy agreements
+onboarding-form.tsx (23.6KB) - Profession, expertise, use-case survey
+otp-input.tsx - 6-digit code input widget
+otp-verification.tsx - OTP verification flow
+password-strength-indicator.tsx - Real-time password validation feedback
+policy-checkbox.tsx - Individual policy agreement checkbox
+policy-modal.tsx - Full policy content modal (Acceptable Use, User Content Disclaimer, Console TOS)
+oauth-buttons.tsx - Keycloak/OAuth provider buttons
+institution-selector.tsx - Institution detection for SSO users
+left-panel.tsx - Auth layout left side (images + messaging)
+right-panel-shell.tsx - Auth layout right side wrapper
+footer-links.tsx - Legal links in auth flows
+Shell & Navigation
+app-shell.tsx (565 lines) - Main app container with header, sidebar, theme toggle
+Proactive token refresh (refreshes if <2 min remaining)
+Platform health monitoring (polls every 30s)
+Sign-out modal with active instance checking
+Support modal trigger
+Credit balance display
+sidebar-nav.tsx (262 lines) - Navigation menu structure
+Sections: HOME, THE HUB (Templates), MANAGE (Instances/Storage), ACCOUNT (Profile/SSH Keys/API Keys/Billing)
+Line-based icons (Lambda.ai style)
+Active state tracking
+Home Components (home/)
+home-tab-content.tsx (25.8KB) - Dashboard overview (quick stats, recent activity, storage status)
+billing-tab-content.tsx (68.4KB) - Usage overview, credit balance, billing charts, spend limits
+Billing Components (billing/)
+add-credits-modal.tsx (14.7KB) - Razorpay payment integration modal
+payment-history-tab.tsx (19.9KB) - Payment/invoice history with download capability
+order-detail-view.tsx (18.0KB) - Individual transaction detail view
+Support Components (support/)
+support-modal.tsx (24.2KB) - Support ticket submission form (category, subject, description)
+dropdown.tsx (8.0KB) - Support category dropdown component
+UI Components (ui/)
+Headless shadcn/ui components:
+button.tsx - Customizable button with variants
+input.tsx - Text input field
+label.tsx - Form label
+checkbox.tsx - Checkbox input
+dialog.tsx - Modal/dialog container
+select.tsx - Dropdown select
+command.tsx - Command palette/searchable select
+popover.tsx - Floating popover
+separator.tsx - Divider line
+Landing Components (landing/)
+landing-page.tsx (1726 lines, mostly commented) - Marketing landing page (currently mostly commented out)
+Other Components
+sign-out-modal.tsx (5.6KB) - Confirmation modal for sign-out
+icons/ - Custom icon components
+3. STATE MANAGEMENT
+Zustand Store (stores/signup-store.ts)
+Purpose: Persist signup form data across multi-step flow using session storageStructure:
+typescript
+interface SignupState {
+  email: string;
+  password: string;
+  agreedPolicies: Record<PolicySlug, boolean>;  // 3 policies
+  firstName: string;
+  lastName: string;
+  currentStep: 1 | 2 | 3;
+  onboardingData: OnboardingData;               // Profession, expertise, domains, etc.
+  institution: InstitutionInfo | null;           // For SSO institution detection
+}
+Actions:
+setStep1() - Store email, password, policies
+setStep2() - Store names
+setPolicy() - Update individual policy agreement
+setOnboardingData() - Store survey responses
+setInstitution() - Store detected institution
+reset() - Clear all data
+hasStep1Data() / hasEmail() - Helper checks
+Storage: Session storage (cleared on tab close), not persisted across browser restarts
+Local/Session Token Storage (lib/token.ts)
+localStorage: laas_access_token, laas_refresh_token, laas_id_token
+Functions:
+saveTokens() - Store auth tokens
+getAccessToken() / getRefreshToken() / getIdToken() - Retrieve tokens
+clearTokens() - Logout (clear all tokens)
+isAuthenticated() - Check if valid token exists
+getTokenExpiresIn() - Calculate milliseconds until JWT expiration
+isTokenExpired() - Check if token expired or will expire in <30s
+Component-Level State
+React hooks (useState, useEffect) for:
+UI state (modals, tabs, dark mode)
+Loading/error states
+Form field values
+Pagination (payment history)
+4. API INTEGRATION
+Location: c:\Users\Punith\LaaS\frontend\src\lib\api.ts (1254 lines)
+Base Configuration
+typescript
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";  // http://localhost:3001
+Core API Wrapper: apiFetch()
+Features:
+Automatic Bearer token injection in Authorization header
+Proactive token refresh: Checks if token expires in <30s before request and refreshes
+Reactive 401 handling: On 401 response, refreshes token once and retries
+Deduplication: Prevents concurrent refresh requests via mutex pattern
+Fallback: On refresh failure, clears tokens and redirects to /signin
+API Endpoints by Category
+Authentication (/api/auth/)
+POST /login - Email/password sign-in → returns { accessToken, refreshToken, expiresIn }
+POST /check-email - Validates email, detects institution SSO → { available, institution? }
+POST /send-otp - Send OTP to email
+POST /resend-otp - Resend OTP
+POST /verify-otp - Verify code + register (creates account) → tokens
+POST /refresh - Refresh expired token
+GET /me - Get current user profile (with cache-busting timestamp)
+POST /forgot-password - Password reset
+POST /storage-retry - Retry failed storage provisioning
+User Profile (/api/auth/)
+typescript
+interface User {
+  id, email, firstName, lastName, emailVerifiedAt, authType
+  storageProvisioningStatus?: "pending" | "provisioned" | "failed" | null
+  storageProvisioningError?: string | null
+  storageQuotaGb?: number | null
+}
+Dashboard (/api/dashboard/)
+GET /home → HomeDashboardData (user info, storage stats, quick stats, recent activity)
+GET /billing → BillingData (plan, usage, credits, spend history, hourly spend data)
+GET /health → PlatformHealth (overall status: operational/degraded/outage + service list)
+GET /activity?days=30 → Activity logs
+Compute/Instances (/api/compute/)
+GET /configs → ComputeConfigsResponse (available GPU configurations + resource summary)
+POST /sessions → LaunchSessionResponse (launch a GPU instance)
+Storage (/api/storage/)
+GET /volumes → Array of StorageVolume (list user's storage)
+GET /volumes/check-name/{name} → { available: boolean }
+POST /volumes → Create storage volume
+DELETE /volumes/{id} → Delete storage
+DELETE /volumes → Delete user's file store
+GET /volumes/active-sessions-check → { hasActiveSessions, sessionCount, sessions[] }
+GET /volumes/host-space-check → { availableGb, totalGb, availableBytes }
+PATCH /volumes/{id} → Upgrade storage quota
+GET /status → Storage health status
+GET /files?path=/ → List files/folders
+POST /files/mkdir → Create folder
+POST /files/upload → Upload files (multipart form-data)
+GET /files/download?file=... → Download file
+DELETE /files?file=... → Delete file/folder
+Billing & Payments (/api/payment/)
+POST /create-order → Create Razorpay order → { orderId, amount, keyId, transactionId }
+POST /verify → Verify payment signature → { success, newBalance }
+GET /transactions?page=1&limit=10 → PaginatedTransactions
+GET /transactions/{id} → TransactionDetail (with invoice details)
+GET /invoice/{id}/download → PDF blob
+Onboarding (/api/user/)
+POST /onboarding → Save user profile (profession, expertise, domains, use cases, country)
+GET /onboarding-status → Check onboarding completion status
+Spend Limits (/api/billing/)
+GET /spend-limit → Current spend limit settings
+PATCH /spend-limit → Update spend limit (enable/disable, amount, period)
+Support (/api/support/)
+POST /tickets → Submit support ticket → { ticketId, status, createdAt }
+POST /tickets/list → Get user's support tickets
+Mock Mode
+When API_BASE is not configured, endpoints return mock data with realistic delays (400-1500ms) for development/testing.
+5. AUTHENTICATION FLOW
+Sign-In Flow
+User enters email + password on /signin
+signIn() sends POST /api/auth/login with credentials
+Backend returns { accessToken, refreshToken, expiresIn }
+Tokens saved to localStorage
+User redirected to /home
+Sign-Up Flow (Multi-Step)
+Step 1 (/signup): Email + password + policy agreements
+checkEmail() validates email and detects institution
+Data stored in Zustand (session storage)
+Redirect to /signup/details
+Step 2 (/signup/details): First/last name
+Data stored in Zustand
+Redirect to /signup/verify
+Step 3 (/signup/verify): OTP verification
+User receives OTP via email
+verifyOtp() sends code + registration data (email, password, names, policies)
+Backend creates account and returns tokens
+Redirect to /home or onboarding flow
+OAuth/Keycloak Flow
+User clicks OAuth provider button on /signin or /signup
+Frontend stores idpHint in session storage
+Redirects to Keycloak authorization endpoint
+User authenticates with provider (institution SSO or external IdP)
+Keycloak redirects back to /callback with authorization code
+Frontend exchanges code → POST /api/auth/oauth/callback with { code, redirectUri, idpHint }
+Backend exchanges code with Keycloak, returns tokens
+Frontend saves tokens and redirects to /home
+Token Refresh Strategy
+Proactive: App-shell polls every 30s and refreshes if token expires in <2 min
+Reactive: On any API 401, refreshes once and retries request
+Deduplication: Mutex prevents concurrent refresh calls
+Protected Routes
+Console layout ((console)/*) checks for access token on mount in /app/(console)/layout.tsx
+If no token, redirects to /signin
+Root page (/) uses server-side cookie check to route unauthenticated users to landing page
+6. STYLING & THEMING
+CSS Architecture
+Location: c:\Users\Punith\LaaS\frontend\src\app\globals.cssDesign System: Utilitarian minimalism inspired by Lambda.ai
+Base colors: Beige/neutral with dark mode support
+Light: #F0EFE2 (bg), #0B0B0B (fg)
+Dark: #0B0B0B (bg), #F0EFE2 (fg)
+Accent: #6236F4 (purple/blue)
+Warning/Alert: Orange/red for critical states
+CSS Variables (Root Theme)
+css
+--shell-bg: #F0EFE2               /* Main background */
+--shell-border: #BFBEB4           /* Borders */
+--fgColor-default: #0B0B0B        /* Text */
+--fgColor-muted: #636363          /* Secondary text */
+--fgColor-accent: #6236F4         /* Links/highlights */
+--shell-header-height: 72px
+--shell-sidebar-width: 256px
+--text-base: 1.0625rem            /* 17px body text */
+--text-xl: 1.875rem               /* 30px titles */
+Dark Mode Implementation
+Blocking Script in <head>: Reads localStorage.darkMode before React hydrates to prevent flash
+Toggle: app-shell.tsx toggles document.documentElement.classList.add/remove('dark')
+Storage: Persisted to localStorage.darkMode
+Media Queries: CSS variables change on .dark class (no @media prefers-color-scheme)
+Transitions: All theme properties have 0.15-0.3s ease transitions
+Fonts
+Primary: Outfit (Google Font, variable weight 400-700) for UI and headings
+Mono: Geist Mono for code/technical content
+Antialiasing: -webkit-font-smoothing: antialiased
+Tailwind Configuration
+Content paths: ./src/pages/, ./src/components/, ./src/app/
+Base color: Neutral with extended CSS variables
+Plugins: None (pure vanilla Tailwind + CSS variables)
+Components.json: shadcn/ui with new-york style, Lucide icons, CSS variables enabled
+7. CURRENT IMPLEMENTATION STATUS
+Fully Implemented & Complete
+✅ Authentication: Sign-in, sign-up (multi-step), OAuth/Keycloak, logout
+✅ Token Management: Proactive refresh, reactive 401 handling, JWT expiration checking
+✅ Theme System: Dark/light mode with localStorage persistence and no-flash blocking script
+✅ App Shell: Header, sidebar, theme toggle, credit balance display, health status
+✅ Home Dashboard: Greeting, zero-credit banner, user profile display, Home/Billing tabs
+✅ Billing Page: Usage overview, payment history, add credits modal (Razorpay integration)
+✅ Payment Integration: Razorpay payment flow, invoice download, transaction history
+✅ Storage Management: File browser, upload, download, create folders, delete files, quotas
+✅ Policy System: 3-tier policy agreements (Acceptable Use, User Content Disclaimer, Console TOS) with modals
+✅ Form Validation: Zod schemas for email, password, names, OTP with real-time feedback
+✅ Support Modal: Ticket submission with category/subject/description
+✅ Platform Health: Monitoring endpoint with operational/degraded/outage status
+Partially Implemented
+⚠️ Instances Page (51.8KB): Large page component exists but likely incomplete
+Session listing, filtering, cost calculation implemented
+Launch interface probably needs completion
+Real-time session status updates may need work
+⚠️ Onboarding Form: Multi-field survey form exists but completion status unclear
+⚠️ Landing Page (1726 lines): Mostly commented out; needs uncommented/tested if needed
+Placeholder/Not Implemented
+❌ Templates Hub (sidebar navigation item, no page)
+❌ Profile Page (mentioned in sidebar, no implementation)
+❌ SSH Keys Management (sidebar item, no page)
+❌ API Keys Management (sidebar item, no page)
+❌ Institution Management (institution-selector component exists but full flow unclear)
+Known TODOs in Code
+app-shell.tsx line 111: "TODO: Replace with actual API call to check active instances"
+Currently placeholder returning false
+8. KEY ARCHITECTURAL DECISIONS
+Authentication
+Token Storage: LocalStorage (accessible to XSS, but no sensitive data in JWT payload)
+Strategy: Proactive refresh before expiration + reactive on 401 (belt-and-suspenders)
+Deduplication: Mutex pattern prevents thundering herd on concurrent 401s
+API Communication
+Centralized Wrapper: apiFetch() handles all auth logic, retry logic, and error mapping
+Error Handling: Maps array error messages from backend, shows user-friendly toasts
+Mock Mode: Fallback mock data when API_BASE not configured (dev-friendly)
+Routing
+Protected Routes: Layout-level auth check (console layout) + route-level redirects
+Root Routing: Server-side cookie check in root page.tsx (better UX, no client-side redirect flash)
+Grouped Layouts: Auth routes use (auth) and console routes use (console) for layout isolation
+State Management
+Minimal Zustand: Only used for signup flow (cross-step persistence)
+Component State: React hooks for UI state (modals, tabs, forms)
+No Redux/Context: Lightweight approach suitable for current scope
+Styling
+CSS Variables Over Tailwind: Core colors/sizing via CSS custom properties for dynamic theming
+No CSS-in-JS: Pure CSS + Tailwind (faster, no runtime overhead)
+Responsive: Mobile-first (mobile-optimized auth layout with desktop enhancements)
+9. ENVIRONMENT & CONFIGURATION
+Location: c:\Users\Punith\LaaS\frontend\.env.local
+plaintext
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8080
+NEXT_PUBLIC_KEYCLOAK_REALM=laas
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=laas-frontend
+NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_SP1QApxGfvidCd
+Build Artifacts: c:\Users\Punith\LaaS\frontend\next.config.ts
+React strict mode enabled
+No custom middleware or rewrites
+10. PUBLIC ASSETS
+Location: c:\Users\Punith\LaaS\frontend\public/images
+side-light-1.png (300KB) - Auth layout left panel light theme image 1
+side-light-2.png (800KB) - Auth layout left panel light theme image 2
+side-dark-1.png (596KB) - Auth layout left panel dark theme image 1
+side-dark-2.png (401KB) - Auth layout left panel dark theme image 2
+ubuntu-logo.png (13KB) - Ubuntu branding asset
+11. VALIDATION & FORM RULES
+Location: c:\Users\Punith\LaaS\frontend\src/lib/validations.tsPassword Requirements (synced with backend):
+Minimum 8 characters
+At least 1 number
+At least 1 lowercase letter
+At least 1 uppercase letter
+Only allowed special characters: !@#$%^&*()_+-=[]{};':"\\|,.<>/?~ and space
+Email: Standard RFC 5322 validation via ZodOTP: Exactly 6 digitsNames: 1-100 characters each
+12. DEPENDENCIES AUDIT
+Critical Dependencies:
+next@15.1.0 - Latest stable
+react@19.0.0 - Latest major
+typescript@5.7.3 - Current stable
+tailwindcss@4.0.0 - Latest major (breaking changes, check compatibility)
+Notable Observations:
+All @radix-ui packages are current (~1.0-2.0 range)
+Form ecosystem (react-hook-form + zod + resolvers) is modern
+Zustand is lightweight and doesn't require Redux middleware
+No axios/fetch libraries needed (using native fetch with apiFetch wrapper)
+13. RISKS & CAVEATS
+Security Considerations:
+LocalStorage token storage is vulnerable to XSS (use httpOnly cookies in production)
+NEXT_PUBLIC* env vars are exposed to client (but Razorpay key is test mode)
+No CSRF token implementation visible (check backend)
+Performance:
+Large storage page (114KB) may benefit from pagination/virtualization
+Instances page (51.8KB) similar concern
+No code splitting hints visible (Next.js should auto-split at route level)
+Missing Error Boundaries: No React error boundaries to catch component crashesBrowser Compatibility: No polyfills visible; assumes modern browser (ES2017+)
+SUMMARY
+The LaaS frontend is a modern, well-structured Next.js application with:
+Solid authentication infrastructure (multi-step signup, OAuth, token refresh)
+Clean component hierarchy following Next.js best practices
+Comprehensive API integration layer with automatic token management
+Modern theming system with dark mode support
+Most core features implemented (billing, storage, compute instances)
+A few placeholder areas (templates, profile, SSH/API keys) still pending
+Strengths: Clear routing structure, centralized API handling, good state management discipline
+Areas for Enhancement: Error boundaries, larger page optimization, full instancespage completion, production auth hardening (httpOnly cookies)

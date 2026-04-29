@@ -1,0 +1,918 @@
+Objective
+Analyze the current LaaS single-node architecture (Machine 1: 192.168.10.99) and determine the full scope of changes required to extend to a two-node setup where Machine 2 (192.168.10.88) serves as a compute+storage node while UI/Backend/Database remain on Machine 1. The report identifies all database, backend, orchestration, storage, frontend, and infrastructure changes needed, along with complexity and risk assessment.
+A. Database Changes Required
+Location: c:\Users\Punith\LaaS\backend-new\prisma\schema.prisma
+Current State
+The Node model (lines 783-822) exists with fields for infrastructure tracking:
+hostname, ipManagement, ipCompute, ipStorage
+Resource tracking: totalVcpu, totalMemoryMb, totalGpuVramMb, allocatedVcpu, allocatedMemoryMb, allocatedGpuVramMb
+Status: healthy, degraded, offline, maintenance, draining
+The UserStorageVolume model (lines 662-697) tracks user storage but lacks a storageNodeId field to specify which node hosts the dataset. Currently, all storage is implicitly on Node 1.The Session model (lines 976-1065) tracks session execution but lacks a storageNodeId field to record which node served storage for audit/debugging.The seed file (c:\Users\Punith\LaaS\backend-new\prisma\seed.ts, lines 224-258) currently seeds only one node: laas-node-01 (192.168.10.99).
+Changes Required
+1. Add storageNodeId to UserStorageVolume:
+sql
+ALTER TABLE "UserStorageVolume"
+ADD COLUMN "storageNodeId" UUID REFERENCES "Node"("id") ON DELETE RESTRICT;
+2. Add storageNodeId to Session:
+sql
+ALTER TABLE "Session"
+ADD COLUMN "storageNodeId" UUID REFERENCES "Node"("id") ON DELETE RESTRICT;
+3. Backfill existing records (migration script):
+sql
+UPDATE "UserStorageVolume"
+SET "storageNodeId" = (SELECT id FROM "Node" WHERE hostname = 'laas-node-01')
+WHERE "storageNodeId" IS NULL;
+4. Seed laas-node-02 in the database:
+typescript
+// In seed.ts after line 258:
+const node2 = await prisma.node.upsert({
+  where: { hostname: 'laas-node-02' },
+  update: {},
+  create: {
+    hostname: 'laas-node-02',
+    displayName: 'LaaS Node 02 — Compute Node',
+    ipCompute: '192.168.10.88',
+    ipStorage: '192.168.10.88',
+    cpuModel: 'TBD',
+    totalVcpu: 8,           // Placeholder, update after actual hardware inspection
+    totalMemoryMb: 16384,   // Placeholder
+    totalGpuVramMb: 0,      // No GPU initially
+    gpuModel: null,
+    nvmeTotalGb: 500,
+    status: 'offline',      // Set to 'healthy' after validation
+    maxConcurrentSessions: 4,
+    currentSessionCount: 0,
+    metadata: {
+      reservedVcpu: 2,
+      reservedMemoryMb: 4096,
+      allocatableVcpu: 6,
+      allocatableMemoryMb: 12288,
+    },
+  },
+});
+Complexity Assessment
+Effort: Low (2-3 hours)
+Risk: Low — columns are nullable and backward-compatible; existing functionality unaffected until storageNodeId is explicitly used
+Migration: Straightforward schema addition + single backfill query
+B. Backend Changes Required
+Locations:
+c:\Users\Punith\LaaS\backend-new\src\compute\compute.service.ts
+c:\Users\Punith\LaaS\backend-new\src\storage\storage.service.ts
+New: orchestration call pathway
+B.1 Compute Service (compute.service.ts)
+Current Node Selection (Lines 310-316):
+typescript
+const node = await tx.node.findFirst({ where: { status: 'healthy' } });
+if (!node) {
+  throw new ServiceUnavailableException('No healthy compute nodes available');
+}
+Issue: Uses only the first healthy node (typically Node 1). No multi-node scoring or selection logic.Required Changes:
+Implement multi-node scoring algorithm (add new method after line 108):
+typescript
+private async selectComputeNode(requiredVcpu: number, requiredMemoryMb: number, requiredVramMb: number): Promise<Node> {
+  const healthyNodes = await this.prisma.node.findMany({
+    where: { status: 'healthy' }
+  });
+  
+  if (healthyNodes.length === 0) {
+    throw new ServiceUnavailableException('No healthy compute nodes available');
+  }
+  
+  // Score each node: (availableCPU * 0.3) + (availableRAM * 0.4) + (availableVRAM * 0.3)
+  const scoredNodes = await Promise.all(
+    healthyNodes.map(async (node) => {
+      const activeSessions = await this.prisma.session.findMany({
+        where: { nodeId: node.id, status: { in: RESOURCE_CONSUMING_STATUSES as any[] } },
+        include: { computeConfig: true }
+      });
+      
+      const usedResources = {
+        vcpu: activeSessions.reduce((sum, s) => sum + (s.allocatedVcpu ?? s.computeConfig.vcpu), 0),
+        memoryMb: activeSessions.reduce((sum, s) => sum + (s.allocatedMemoryMb ?? s.computeConfig.memoryMb), 0),
+        vramMb: activeSessions.reduce((sum, s) => sum + (s.allocatedGpuVramMb ?? s.computeConfig.gpuVramMb), 0),
+      };
+      
+      const metadata = node.metadata as Record<string, unknown> | null;
+      const allocatable = {
+        vcpu: (metadata?.allocatableVcpu as number) ?? node.totalVcpu - 2,
+        memoryMb: (metadata?.allocatableMemoryMb as number) ?? node.totalMemoryMb - 10240,
+        vramMb: (metadata?.allocatableGpuVramMb as number) ?? node.totalGpuVramMb - 1024,
+      };
+      
+      const available = {
+        vcpu: allocatable.vcpu - usedResources.vcpu,
+        memoryMb: allocatable.memoryMb - usedResources.memoryMb,
+        vramMb: allocatable.vramMb - usedResources.vramMb,
+      };
+      
+      const score = (available.vcpu * 0.3) + (available.memoryMb * 0.4) + (available.vramMb * 0.3);
+      
+      return { node, available, score };
+    })
+  );
+  
+  scoredNodes.sort((a, b) => b.score - a.score);
+  const selectedNode = scoredNodes[0];
+  
+  if (selectedNode.available.vcpu < requiredVcpu || 
+      selectedNode.available.memoryMb < requiredMemoryMb || 
+      selectedNode.available.vramMb < requiredVramMb) {
+    throw new ConflictException('Insufficient resources on all nodes');
+  }
+  
+  return selectedNode.node;
+}
+Lookup storage node and pass to orchestrator (modify lines 310-316):
+typescript
+// 3. Get best compute node using weighted scoring
+const computeNode = await this.selectComputeNode(
+  config.vcpu,
+  config.memoryMb,
+  config.gpuVramMb
+);
+
+// 3b. Get storage node for user (if stateful)
+let storageNode = null;
+if (dto.storageType === 'stateful') {
+  const userStorageVolume = await tx.userStorageVolume.findUnique({
+    where: { userId },
+    include: { storageNode: true }
+  });
+  if (!userStorageVolume || !userStorageVolume.storageNode) {
+    throw new ServiceUnavailableException('User storage not found');
+  }
+  storageNode = userStorageVolume.storageNode;
+}
+Pass both node IPs to orchestrator (modify lines 300-316, the callOrchestration call):
+typescript
+const orchResponse = (await this.callOrchestration(
+  '/sessions/launch',
+  'POST',
+  {
+    session_id: session.id,
+    user_id: userId,
+    user_email: user.email,
+    tier_slug: config.slug,
+    vcpu: config.vcpu,
+    memory_mb: config.memoryMb,
+    vram_mb: config.gpuVramMb,
+    hami_sm_percent: config.hamiSmPercent ?? 17,
+    storage_type: dto.storageType,
+    storage_uid: dto.storageType === 'stateful' ? user.storageUid : null,
+    compute_node_ip: computeNode.ipCompute,        // NEW
+    storage_node_ip: storageNode?.ipStorage || computeNode.ipStorage,  // NEW
+    node_hostname: computeNode.hostname,
+  },
+)) as { containerName: string; launchId: string; sessionId: string };
+Store storageNodeId in session (modify session creation transaction, after line 380):
+typescript
+// In the session creation block:
+const session = await tx.session.create({
+  data: {
+    userId,
+    organizationId: dto.organizationId || undefined,
+    computeConfigId: config.id,
+    nodeId: computeNode.id,
+    storageNodeId: storageNode?.id || computeNode.id,  // NEW
+    sessionType: config.sessionType,
+    storageMode: dto.storageType === 'stateful' ? 'stateful' : 'ephemeral',
+    instanceName: dto.instanceName,
+    status: 'pending',
+    createdBy: userId,
+  },
+  include: { computeConfig: true },
+});
+B.2 Storage Service (storage.service.ts)
+Current State (Lines 33-67):
+Storage provisioning sends all provision requests to a single configured URL:
+typescript
+const provisionUrl = process.env[URL_ENV];
+// Calls to `http://configured.url/provision`
+Required Changes:
+Implement storage node selection by available space (add new method):
+typescript
+private async selectStorageNodeByAvailableSpace(): Promise<Node> {
+  const healthyStorageNodes = await this.prisma.node.findMany({
+    where: { status: 'healthy' },
+    orderBy: { nvmeTotalGb: 'desc' }
+  });
+  
+  if (healthyStorageNodes.length === 0) {
+    throw new ServiceUnavailableException('No storage nodes available');
+  }
+  
+  // Round-robin or select node with most available ZFS space
+  // For POC, use first (or implement actual ZFS space query via orchestrator)
+  return healthyStorageNodes[0];
+}
+Route provision calls to correct node (modify lines 54-55):
+typescript
+async provisionUserQuota(
+  storageUid: string,
+  userId: string,
+  quotaGb: number = DEFAULT_QUOTA_GB,
+): Promise<ProvisionResult> {
+  if (!storageUid || !storageUid.startsWith('u_')) {
+    const msg = `Invalid storageUid for provisioning: ${storageUid}`;
+    this.logger.warn(msg);
+    return { ok: false, error: msg };
+  }
+
+  const validQuota = Math.max(1, Math.min(50, quotaGb));
+  
+  // NEW: Select storage node
+  let storageNode: Node;
+  try {
+    storageNode = await this.selectStorageNodeByAvailableSpace();
+  } catch (err) {
+    return { ok: false, error: 'No storage nodes available' };
+  }
+  
+  // NEW: Route to correct provisioner
+  const provisionUrl = `http://${storageNode.ipStorage}:5001/provision`;
+  result = await this.callProvisionUrl(provisionUrl, storageUid, validQuota);
+  
+  // NEW: If successful, record storageNodeId
+  if (result.ok) {
+    const userStorageVolume = await this.prisma.userStorageVolume.create({
+      data: {
+        userId,
+        storageUid,
+        storageNodeId: storageNode.id,  // NEW
+        name: 'default',
+        status: 'active',
+        quotaBytes: BigInt(quotaGb) * BigInt(1024) ** BigInt(3),
+        // ... other fields
+      },
+    });
+  }
+
+  return result;
+}
+Route deprovision calls using storageNodeId (add/modify deprovision method):
+typescript
+async deprovisionUserStorage(userId: string): Promise<ProvisionResult> {
+  const userStorageVolume = await this.prisma.userStorageVolume.findUnique({
+    where: { userId },
+    include: { storageNode: true }
+  });
+  
+  if (!userStorageVolume || !userStorageVolume.storageNode) {
+    return { ok: false, error: 'Storage volume not found' };
+  }
+  
+  // Route to the correct node's provisioner
+  const deprovisionUrl = `http://${userStorageVolume.storageNode.ipStorage}:5001/deprovision`;
+  
+  // Call deprovision endpoint on that node
+  return await this.callProvisionUrl(
+    deprovisionUrl,
+    userStorageVolume.storageUid,
+    0  // signal deprovision
+  );
+}
+Complexity Assessment
+Effort: Medium (14-20 hours)
+Risk: Medium — node selection algorithm is new logic; must handle edge cases (all nodes down, storage node offline); requires thorough testing with multi-node scenarios
+Critical: Error handling for storage node being unreachable; fallback strategy needed
+C. Session Orchestrator Changes
+Location: c:\Users\Punith\LaaS\host-services\session-orchestration\app.py
+Current State
+Lines 41-47: Configuration variables:
+python
+HOST_IP = os.environ.get("HOST_IP", "192.168.10.92")
+SELKIES_IMAGE = os.environ.get("SELKIES_IMAGE", "ghcr.io/selkies-project/nvidia-egl-desktop:latest")
+NFS_MOUNT_ROOT = os.environ.get("NFS_MOUNT_ROOT", "/mnt/nfs/users")
+Lines 830-859: Mount validation logic assumes local storage only:
+python
+# Currently only checks if mount exists locally at /mnt/nfs/users/<uid>
+mount_path = f"{NFS_MOUNT_ROOT}/{storage_uid}"
+if not os.path.exists(mount_path):
+    fail_session(...)
+Lines 450-464: Docker image lookup:
+python
+def get_user_image(storage_uid: Optional[str]) -> str:
+    # Checks local Docker daemon for laas-user-<uid>:latest
+Required Changes
+1. Accept compute and storage node IPs from backend (modify endpoint /sessions/launch, around line 600):Add parameter extraction (after existing parameter parsing):
+python
+@app.route('/sessions/launch', methods=['POST'])
+def sessions_launch():
+    # ... existing code ...
+    
+    compute_node_ip = request.json.get('compute_node_ip', HOST_IP)
+    storage_node_ip = request.json.get('storage_node_ip', HOST_IP)
+    storage_uid = request.json.get('storage_uid')
+    storage_type = request.json.get('storage_type')
+    
+    # Validate
+    if storage_type == 'stateful' and storage_node_ip != HOST_IP:
+        # Remote storage — mount via NFS
+        ...
+2. Implement remote NFS mount logic (add new function before line 830):
+python
+def mount_remote_storage(storage_node_ip: str, storage_uid: str, mount_path: str) -> Optional[str]:
+    """
+    Mount user storage from a remote node via NFS.
+    Returns None on success, or error string on failure.
+    """
+    if not storage_uid or not STORAGE_UID_PATTERN.match(storage_uid):
+        return f"Invalid storage_uid: {storage_uid}"
+    
+    # Ensure mountpoint exists
+    os.makedirs(mount_path, exist_ok=True)
+    
+    # Check if already mounted
+    result = subprocess.run(['mount'], capture_output=True, text=True)
+    mounts = result.stdout
+    if f" {mount_path} " in f" {mounts} ":
+        logger.info(f"Storage already mounted at {mount_path}")
+        return None
+    
+    # Mount via NFS4
+    nfs_source = f"{storage_node_ip}:/datapool/users/{storage_uid}"
+    mount_opts = "rw,sync,proto=tcp,vers=4.1,rsize=131072,wsize=131072,hard,intr"
+    
+    try:
+        result = subprocess.run(
+            ["mount", "-t", "nfs4", "-o", mount_opts, nfs_source, mount_path],
+            capture_output=True, text=True, timeout=20
+        )
+        if result.returncode != 0:
+            return f"NFS mount failed: {result.stderr.strip()}"
+        
+        logger.info(f"Mounted {nfs_source} at {mount_path}")
+        return None
+    except subprocess.TimeoutExpired:
+        return "NFS mount timed out (>20s)"
+    except Exception as e:
+        return f"NFS mount error: {str(e)}"
+3. Add pre-flight writable validation (in launch_session_worker, around line 856):
+python
+# Step 4: Validate NFS mount (stateful sessions only)
+if storage_type == "stateful":
+    emit_event(container_name, "validating_mount", f"Verifying storage access for {storage_uid}...")
+    if not storage_uid or not STORAGE_UID_PATTERN.match(storage_uid):
+        fail_session(container_name, "validating_mount", f"Invalid storage_uid format: {storage_uid}")
+        return
+    
+    mount_path = f"{NFS_MOUNT_ROOT}/{storage_uid}"
+    
+    # If storage is on a different node, mount it first
+    if storage_node_ip != HOST_IP:
+        mount_err = mount_remote_storage(storage_node_ip, storage_uid, mount_path)
+        if mount_err:
+            fail_session(container_name, "validating_mount", f"Failed to mount remote storage: {mount_err}")
+            return
+    
+    # Verify mount exists and is writable (same as before, but now may be NFS mount)
+    if not os.path.exists(mount_path):
+        fail_session(container_name, "validating_mount", f"Storage mount not found: {mount_path}")
+        return
+    
+    if not os.path.isdir(mount_path):
+        fail_session(container_name, "validating_mount", f"Mount path is not a directory: {mount_path}")
+        return
+    
+    # Pre-flight: write test
+    test_file = os.path.join(mount_path, f".laas-write-test-{session_id[:8]}")
+    try:
+        with open(test_file, "w") as f:
+            f.write("ok")
+        os.remove(test_file)
+        complete_event(container_name, "validating_mount", f"Storage validated: {mount_path}")
+    except (IOError, OSError) as e:
+        fail_session(container_name, "validating_mount", f"Storage not writable: {e}")
+        return
+else:
+    emit_event(container_name, "validating_mount", "Ephemeral session - skipping mount validation")
+    complete_event(container_name, "validating_mount", "Ephemeral session - no persistent storage")
+4. Container downstream logic unchanged:
+The rest of the build_docker_command and container launch (lines 865+) use volume_path variable regardless of whether it's local or NFS-mounted. No changes needed.
+Complexity Assessment
+Effort: Medium (6-8 hours)
+Risk: Medium — NFS mounting is a new operation; network latency, mount failures, permission issues all must be handled gracefully
+Critical: Mount/unmount lifecycle management; handling of stale mounts; timeout tuning for slow networks
+D. Docker Commit Cross-Node Problem
+Location: c:\Users\Punith\LaaS\host-services\session-orchestration\app.py lines 450-507
+Current Implementation
+get_user_image() (lines 450-464):
+python
+def get_user_image(storage_uid: Optional[str]) -> str:
+    if storage_uid:
+        user_image = f"laas-user-{storage_uid}:latest"
+        try:
+            result = subprocess.run(["docker", "image", "inspect", user_image], ...)
+            if result.returncode == 0:
+                logger.info(f"Using committed user image: {user_image}")
+                return user_image
+        except Exception as e:
+            logger.warning(f"Error checking user image {user_image}: {e}")
+    return SELKIES_IMAGE
+commit_container_state() (lines 467-507):
+python
+def commit_container_state(container_name: str, storage_uid: Optional[str]) -> bool:
+    if not storage_uid:
+        logger.warning(f"No storage_uid for {container_name}, skipping commit")
+        return False
+
+    user_image = f"laas-user-{storage_uid}:latest"
+    try:
+        result = subprocess.run(
+            ["docker", "commit", "--change", "LABEL laas.committed=true",
+             "--change", f"LABEL laas.storage_uid={storage_uid}",
+             container_name, user_image],
+            capture_output=True, text=True, timeout=120
+        )
+        # Saves to local Docker daemon only
+The Problem
+Node 1 commits a user's container state → saves laas-user-<uid>:latest to local Docker daemon on Node 1
+Node 2 later needs to launch the same user's container
+get_user_image() on Node 2 queries Node 2's local Docker daemon → image not found (it's on Node 1)
+Falls back to base Selkies image → user loses all installed packages, system configs, and persisted state
+This is a critical failure for the stateful desktop paradigm.
+Option 1: NFS-Backed Image Export/Import (POC)
+Effort: Medium (16-24 hours)
+Pros: No external infrastructure (registry), uses existing NFS storage
+Cons: Slow (full tar on each session end/start); image tars grow to 2-10GB; increased NFS loadImplementation:On session stop (any node):
+python
+def commit_container_state_with_export(container_name: str, storage_uid: Optional[str]) -> bool:
+    if not storage_uid:
+        return False
+
+    user_image = f"laas-user-{storage_uid}:latest"
+    
+    try:
+        # 1. Commit to local Docker
+        logger.info(f"Committing {container_name} → {user_image}...")
+        result = subprocess.run(
+            ["docker", "commit", "--change", "LABEL laas.committed=true",
+             "--change", f"LABEL laas.storage_uid={storage_uid}",
+             container_name, user_image],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0:
+            logger.error(f"Docker commit failed: {result.stderr}")
+            return False
+        
+        # 2. Export to user's NFS-mounted storage
+        # Mount user's storage first if not already mounted
+        mount_path = f"{NFS_MOUNT_ROOT}/{storage_uid}"
+        if not os.path.ismount(mount_path):
+            # This would only happen if remote node; handle gracefully
+            logger.warning(f"User storage not mounted at {mount_path}, skipping export")
+            return True  # Commit succeeded locally; export is best-effort
+        
+        # 3. Create .system directory for Docker images
+        system_dir = os.path.join(mount_path, '.system')
+        os.makedirs(system_dir, exist_ok=True)
+        
+        # 4. Export image to tar file
+        image_tar_path = os.path.join(system_dir, 'container-image.tar')
+        logger.info(f"Exporting {user_image} → {image_tar_path}...")
+        
+        result = subprocess.run(
+            ["docker", "save", "-o", image_tar_path, user_image],
+            capture_output=True, text=True, timeout=600  # 10 min timeout for large images
+        )
+        if result.returncode != 0:
+            logger.error(f"Docker export failed: {result.stderr}")
+            return False
+        
+        logger.info(f"Successfully exported {user_image} to {image_tar_path}")
+        return True
+        
+    except subprocess.TimeoutExpired:
+        logger.error(f"Docker commit/export timed out for {container_name}")
+        return False
+    except Exception as e:
+        logger.error(f"Docker commit/export error: {e}")
+        return False
+On session start (any node):
+python
+def get_user_image_with_import(storage_uid: Optional[str]) -> str:
+    if not storage_uid:
+        return SELKIES_IMAGE
+    
+    user_image = f"laas-user-{storage_uid}:latest"
+    
+    # 1. Check if image already exists in local Docker daemon
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", user_image],
+            capture_output=True, timeout=10
+        )
+        if result.returncode == 0:
+            logger.info(f"Using local committed image: {user_image}")
+            return user_image
+    except Exception:
+        pass
+    
+    # 2. Try to import from user's NFS storage
+    mount_path = f"{NFS_MOUNT_ROOT}/{storage_uid}"
+    image_tar_path = os.path.join(mount_path, '.system', 'container-image.tar')
+    
+    if os.path.exists(image_tar_path):
+        try:
+            logger.info(f"Importing {user_image} from {image_tar_path}...")
+            result = subprocess.run(
+                ["docker", "load", "-i", image_tar_path],
+                capture_output=True, text=True, timeout=600
+            )
+            if result.returncode == 0:
+                logger.info(f"Successfully imported {user_image}")
+                return user_image
+            else:
+                logger.error(f"Docker import failed: {result.stderr}")
+        except subprocess.TimeoutExpired:
+            logger.error(f"Docker import timed out")
+        except Exception as e:
+            logger.error(f"Docker import error: {e}")
+    
+    # 3. Fallback to base image
+    logger.info(f"No saved image found; using base {SELKIES_IMAGE}")
+    return SELKIES_IMAGE
+Trade-offs:
+Added 30-60s per session start/stop for export/import
+NFS storage usage increases with each commit (images not cleaned up)
+Single-copy on NFS (not replicated); node hosting storage failure = image loss
+Acceptable for POC/testing; migrate to Docker Registry for production
+Option 2: Docker Registry (Harbor / Private Registry)
+Effort: Large (28-40 hours including registry setup + push/pull logic)
+Pros: Production-grade, layer deduplication, pull-on-demand efficiency, standard Docker workflow
+Cons: Requires dedicated registry infrastructure, storage for all user images, authentication setupImplementation outline:
+Deploy Harbor or Docker Registry on a persistent backend (could be on Node 1)
+On session stop: docker push <registry>/laas-user-<uid>:latest
+On session start: docker pull <registry>/laas-user-<uid>:latest (or base image if first launch)
+Requires image cleanup policy (prevent unlimited growth)
+Option 3: Session Affinity (Not Recommended)
+Effort: Trivial (1-2 hours)
+Cons: Defeats multi-node purpose; no failover; not recommended
+E. Storage Provisioner Changes
+Location: c:\Users\Punith\LaaS\host-services\storage-provision\app.py
+Current State
+Lines 35-38:
+python
+NFS_AUTOMOUNT_ENABLED = os.environ.get("ENABLE_NFS_AUTOMOUNT", "false").lower() == "true"
+NFS_EXPORT_CLIENT = os.environ.get("NFS_EXPORT_CLIENT", "127.0.0.1")
+NFS_MOUNT_ROOT = os.environ.get("NFS_MOUNT_ROOT", "/mnt/nfs/users")
+EXPORTS_PATH = "/etc/exports"
+Lines 81-99:
+python
+def _ensure_exports_line(storage_uid: str) -> Optional[str]:
+    export_line = f"/datapool/users/{storage_uid}  {NFS_EXPORT_CLIENT}(rw,sync,no_subtree_check,no_root_squash)"
+    # Adds single-client export entry to /etc/exports
+Issue: Currently exports to a single client IP (NFS_EXPORT_CLIENT). Multi-node setup requires exporting to both Node 1 and Node 2.
+Required Changes
+1. Support multiple NFS export clients (modify line 36):
+python
+NFS_EXPORT_CLIENTS = os.environ.get('NFS_EXPORT_CLIENTS', '127.0.0.1')
+# e.g., "192.168.10.99,192.168.10.88"
+2. Update export line generation (modify _ensure_exports_line(), lines 81-99):
+python
+def _ensure_exports_line(storage_uid: str) -> Optional[str]:
+    """Ensure /etc/exports has export entries for all configured clients."""
+    
+    # Parse comma-separated client IPs
+    client_ips = [ip.strip() for ip in NFS_EXPORT_CLIENTS.split(',')]
+    
+    # Build export line with all clients
+    export_entries = []
+    for client_ip in client_ips:
+        export_entries.append(f"{client_ip}(rw,sync,no_subtree_check,no_root_squash)")
+    
+    export_line = f"/datapool/users/{storage_uid}  {' '.join(export_entries)}"
+    
+    grep_pattern = f"^/datapool/users/{storage_uid} "
+    ok, _ = _run_cmd([
+        "sudo", "bash", "-lc",
+        f"grep -q '{grep_pattern}' {EXPORTS_PATH} 2>/dev/null || echo '{export_line}' >> {EXPORTS_PATH}",
+    ])
+    if not ok:
+        return f"Failed to update {EXPORTS_PATH} for {storage_uid}"
+
+    ok, _ = _run_cmd(["sudo", "exportfs", "-ra"])
+    if not ok:
+        return "Failed to reload NFS exports (exportfs -ra)"
+    return None
+3. Node 2 deployment: Each node runs its own provisioner instance on port :5001Configuration on Node 2:
+bash
+export PROVISION_SECRET=<same-as-node1>
+export NFS_EXPORT_CLIENTS="192.168.10.99,192.168.10.88"
+export NFS_MOUNT_ROOT="/mnt/nfs/users"
+python3 app.py  # Runs on :5001
+Configuration on Node 1 (update if needed):
+bash
+export PROVISION_SECRET=<value>
+export NFS_EXPORT_CLIENTS="192.168.10.99,192.168.10.88"  # Include both nodes
+export NFS_MOUNT_ROOT="/mnt/nfs/users"
+python3 app.py  # Runs on :5001
+Complexity Assessment
+Effort: Low (2-3 hours)
+Risk: Low — straightforward environment variable and export line generation change
+Note: Each node provisioner is independent; no inter-node communication required
+F. Frontend Changes
+Location: c:\Users\Punith\LaaS\frontend-new/ (Next.js application)
+Current State
+UI displays session list with basic information (instance name, status, uptime, cost).
+Required Changes
+Minimal/None for MVP:
+Multi-node operation is fully transparent to the UI; backend handles node selection
+No UI logic changes required
+Optional enhancements (cosmetic, non-critical):
+Show which compute node a session is running on (e.g., badge "Node 1" / "Node 2")
+Show which storage node hosts a user's data (in profile or instance details)
+Health indicator showing node status (for admin dashboard)
+Example UI additions (1-2 hours effort, optional):
+Session card: Add small node badge below instance name
+Session details panel: Add "Compute Node" and "Storage Node" fields
+Admin dashboard: Add node status table with resource utilization
+Complexity Assessment
+Effort: Trivial for MVP (0 hours); 1-2 hours for optional enhancements
+Risk: None — UI changes are purely informational, do not affect core functionality
+G. Infrastructure / DevOps Changes
+Machine 2 (192.168.10.88) Setup Checklist:
+1. ZFS Pool and Dataset Creation
+bash
+# Determine disk device
+lsblk
+# Identify target SSD, e.g., /dev/sdb
+
+# Create ZFS pool (run once)
+sudo apt install -y zfsutils-linux
+sudo zpool create datapool /dev/sdb
+
+# Create users dataset
+sudo zfs create datapool/users
+
+# Set quota on parent dataset
+sudo zfs set quota=400G datapool/users
+
+# Verify
+zfs list datapool/users
+2. NFS Server Setup
+bash
+sudo apt install -y nfs-kernel-server
+
+# Enable and start service
+sudo systemctl enable --now nfs-kernel-server
+
+# Verify
+sudo systemctl status nfs-kernel-server
+
+# Manually add initial export for testing (will be managed by provisioner)
+# echo '/datapool/users  192.168.10.99(rw,sync,no_subtree_check,no_root_squash) 192.168.10.88(rw,sync,no_subtree_check,no_root_squash)' | sudo tee -a /etc/exports
+# sudo exportfs -ra
+3. Docker Installation
+bash
+sudo apt install -y docker.io
+sudo usermod -aG docker $USER
+sudo systemctl enable --now docker
+
+# Verify
+docker --version
+4. Storage Provisioner Deployment
+bash
+# Copy provisioner code from Node 1
+scp -r <node1>:/path/to/host-services/storage-provision /home/ubuntu/laas-provisioner
+
+cd /home/ubuntu/laas-provisioner
+
+# Create systemd service file
+sudo tee /etc/systemd/system/laas-provisioner.service > /dev/null <<EOF
+[Unit]
+Description=LaaS Storage Provisioner
+After=network.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/ubuntu/laas-provisioner/app.py
+Environment="PROVISION_SECRET=<same-value-as-node1>"
+Environment="NFS_EXPORT_CLIENTS=192.168.10.99,192.168.10.88"
+Environment="NFS_MOUNT_ROOT=/mnt/nfs/users"
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable --now laas-provisioner
+sudo systemctl status laas-provisioner
+5. Session Orchestrator Deployment
+bash
+# Copy orchestrator code from Node 1
+scp -r <node1>:/path/to/host-services/session-orchestration /home/ubuntu/laas-orchestrator
+
+cd /home/ubuntu/laas-orchestrator
+
+# Create systemd service file
+sudo tee /etc/systemd/system/laas-orchestrator.service > /dev/null <<EOF
+[Unit]
+Description=LaaS Session Orchestrator
+After=network.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/ubuntu/laas-orchestrator/app.py
+Environment="SESSION_SECRET=<secret>"
+Environment="HOST_IP=192.168.10.88"
+Environment="NFS_MOUNT_ROOT=/mnt/nfs/users"
+Environment="SELKIES_IMAGE=ghcr.io/selkies-project/nvidia-egl-desktop:latest"
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable --now laas-orchestrator
+sudo systemctl status laas-orchestrator
+6. Node 1 NFS Export Update
+bash
+# On Node 1, update /etc/exports to include Node 2
+# Each user dataset should export to both nodes:
+# /datapool/users/<uid>  192.168.10.99(...) 192.168.10.88(...)
+
+# Provision script will handle this automatically via NFS_EXPORT_CLIENTS env var
+sudo exportfs -ra
+sudo exportfs -v | head -20  # Verify exports
+7. Firewall Rules (Both Nodes)
+bash
+# On Node 2 — allow NFS from Node 1
+sudo ufw allow from 192.168.10.99 to any port 2049 proto tcp  # NFS data
+sudo ufw allow from 192.168.10.99 to any port 111 proto udp   # RPC portmapper
+
+# On Node 1 — allow NFS to Node 2 (for mounting if needed)
+sudo ufw allow from 192.168.10.88 to any port 2049 proto tcp
+sudo ufw allow from 192.168.10.88 to any port 111 proto udp
+
+# Orchestrator ports (inter-node discovery, optional)
+sudo ufw allow from 192.168.10.99 to any port 9998 proto tcp  # Orchestrator
+sudo ufw allow from 192.168.10.88 to any port 9998 proto tcp
+
+# Provisioner ports
+sudo ufw allow from 192.168.10.99 to any port 5001 proto tcp  # Provisioner
+sudo ufw allow from 192.168.10.88 to any port 5001 proto tcp
+8. Cross-Node Validation Tests
+bash
+# From Node 2, test connectivity to Node 1
+ping -c 3 192.168.10.99
+
+# From Node 2, test NFS visibility on Node 1
+sudo showmount -e 192.168.10.99
+
+# From Node 1, test connectivity to Node 2
+ping -c 3 192.168.10.88
+
+# Test Docker connectivity (optional, for inter-node registry pulls)
+# docker pull <image> should work on both
+Complexity Assessment
+Effort: Low-Medium (3-5 hours for full setup + validation)
+Risk: Low — straightforward infrastructure setup; no code changes required
+Critical: Firewall rules must be correct; NFS must be bidirectional
+H. Complexity Assessment Summary
+Layer	Complexity	Estimated Dev-Hours	Risk Level	Notes
+Database Schema	Low	2-3	Low	Nullable columns, backward-compatible
+Backend (compute.service.ts)	Medium	14-20	Medium	Node selection algorithm is new; must handle edge cases
+Backend (storage.service.ts)	Medium	8-12	Medium	Multi-node provisioning routing; error handling critical
+Session Orchestrator	Medium	6-8	Medium	Remote NFS mount logic; timeout tuning needed
+Storage Provisioner	Low	2-3	Low	Environment variable + export line changes
+Docker Commit Cross-Node	Large	16-24	High	NFS export/import approach; alternative is Docker Registry
+Frontend	Trivial	0-2	None	Optional UI enhancements only
+Infrastructure (Node 2 Setup)	Low	3-5	Low	Straightforward Ubuntu + ZFS + Docker + services
+Testing & Integration	Large	20-32	Medium	Multi-node scenarios, failover, load testing, permission validation
+TOTAL	Medium-Large	71-109	Medium	~2-3 weeks for one developer
+I. Docker Commit Cross-Node Problem — Detailed Analysis
+Scenario: User "Alice" Multi-Node Experience
+Session 1: Alice launches on Node 1 (default)
+Backend selects Node 1 as compute node (only node available)
+Alice runs sudo apt install pytorch → layer written to ephemeral writable layer
+Alice saves ~/project/model.pth → lands on NFS mount (persistent)
+Alice stops session
+Orchestrator commits: docker commit laas-alice-session-1 laas-user-<alice_uid>:latest
+Image saved to Node 1's local Docker daemon
+Session 2: Alice launches on Node 2 (system selected for better headroom)
+Backend selects Node 2 (scores higher due to available resources)
+Orchestrator on Node 2 queries docker image inspect laas-user-<alice_uid>:latest
+Image NOT found (it's on Node 1, not Node 2's daemon)
+Falls back to base Selkies image
+Container starts from scratch
+Alice loses: All apt packages, pip packages, system configs, /etc changes
+Alice keeps: ~/project/model.pth (it's on NFS)
+Result: User experience broken — appears to be factory reset
+Why This is Critical
+The value proposition of LaaS is persistent stateful desktops. Users expect:
+Packages they installed to survive restarts
+System configurations to persist
+Development environments to remain intact
+Without solving the cross-node image problem, multi-node architecture breaks this promise.
+Solutions Comparison
+Solution	Effort	Latency Cost	Reliability	Scalability	Recommendation
+NFS Export/Import	16-24h	+30-60s per session	Poor (single copy on NFS)	Limited to small clusters	POC only
+Docker Registry	28-40h	+5-10s per session	Good (distributed)	Good	Production
+Session Affinity	1-2h	None	N/A	None	Not recommended
+Implementation Recommendation
+Phase 1 (POC/MVP): NFS-backed export/import
+Acceptable for 2-3 node cluster with light load
+No external infrastructure required
+Users understand ~1 min session start/stop overhead
+Phase 2 (Production): Docker Registry (Harbor)
+Handles unlimited nodes efficiently
+Layer deduplication saves storage
+Standard Docker workflow; easier ops
+Registry can be on Node 1 with persistent volume
+J. Risks and Gotchas
+Risk	Severity	Mitigation
+NFS mount stale on session launch	HIGH	Implement unmount + remount cycle; pre-flight validation with write test
+Storage node goes offline mid-session	HIGH	Pre-flight health check on backend before session launch; graceful error to user
+Docker commit image stranded on wrong node	HIGH	Implement NFS export/import (POC) or Docker Registry (production)
+Cross-node NFS latency kills UX	MEDIUM	Tune mount options (rsize=131072, wsize=131072); latency should be 2-5ms on LAN
+Committed image accumulation (disk growth)	MEDIUM	Implement image cleanup policy; squash old layers periodically; migrate to registry
+uid/gid mismatch between nodes	MEDIUM	Document requirement: uid 1000 must be consistent; add to Node 2 setup checklist
+NFS exports not updated when user provisioned on Node 2	LOW	Provisioner automatically adds export entry; idempotent
+Backend hardcoded to single node	LOW	Already identified in code review; node selection algorithm required
+Firewall blocks inter-node NFS/orchestrator traffic	MEDIUM	Pre-implementation validation: test connectivity; document firewall rules
+ZFS quota not replicated across nodes	LOW	By design — each node's ZFS quota is independent; NFS correctly reflects quota
+K. Implementation Roadmap
+Phase	Duration	Tasks
+Phase 1: Foundations	Day 1 (8h)	Database migration (add storageNodeId), seed laas-node-02, backfill existing users, Node 2 ZFS + NFS setup
+Phase 2: Backend Core	Days 2-3 (14h)	Node selection algorithm in compute.service.ts, storage node lookup, multi-node orchestrator call, routing in storage.service.ts
+Phase 3: Orchestrator	Days 4-5 (8h)	Remote NFS mount logic in app.py, pre-flight writable validation, error handling, HOST_IP env var
+Phase 4: Storage Provisioning	Day 5 (3h)	Multi-node NFS exports in provisioner, NFS_EXPORT_CLIENTS env var, deploy provisioner on Node 2
+Phase 5: Docker Persistence	Days 6-9 (24h)	NFS-backed image export/import or Docker Registry setup (see Section I)
+Phase 6: Testing	Days 9-13 (32h)	Integration tests on two nodes, failover scenarios, cross-node session test, load test, permission validation
+Total estimated effort: 8-13 dev-days (64-104 hours)
+L. Prerequisites Checklist
+Before implementation begins:
+ Node 2 (192.168.10.88) has Ubuntu 22.04 with static IP and root SSH access
+ Both machines can ping each other (ping -c 3 192.168.10.99 from 10.88 succeeds, 0% loss)
+ Node 2 has ZFS installed: sudo apt install -y zfsutils-linux
+ Node 2 has ZFS pool created: sudo zpool create datapool /dev/sdX (device confirmed)
+ Node 2 has datapool/users dataset with quota set: sudo zfs create datapool/users; sudo zfs set quota=400G datapool/users
+ Node 2 has NFS server installed and enabled: sudo apt install -y nfs-kernel-server; sudo systemctl enable --now nfs-kernel-server
+ Node 2 has Docker installed: sudo apt install -y docker.io
+ Firewall rules allow NFS (2049/tcp, 111/udp) between both nodes
+ Backend .env has SESSION_ORCHESTRATION_URL pointing to Node 1 orchestrator
+ Node 1 provisioner configured with NFS_EXPORT_CLIENTS="192.168.10.99,192.168.10.88"
+ Database backups completed before schema migration
+ Test environment (staging) setup mirrors production for validation
+M. File References
+Core Files to Modify:
+c:\Users\Punith\LaaS\backend-new\prisma\schema.prisma — Add storageNodeId columns
+c:\Users\Punith\LaaS\backend-new\prisma\seed.ts — Seed laas-node-02
+c:\Users\Punith\LaaS\backend-new\src\compute\compute.service.ts — Node selection algorithm, multi-node orchestrator calls
+c:\Users\Punith\LaaS\backend-new\src\storage\storage.service.ts — Storage node selection, multi-node provisioning routing
+c:\Users\Punith\LaaS\host-services\session-orchestration\app.py — Remote NFS mount logic, Docker commit changes
+c:\Users\Punith\LaaS\host-services\storage-provision\app.py — Multi-client NFS export configuration
+c:\Users\Punith\LaaS\ReadMe\Multi-Node-Distributed-Storage-Plan.md — Already documents architecture (reference during implementation)
+Optional/Reference Files:
+c:\Users\Punith\LaaS\backend-new\dist\src\ — Compiled versions (auto-generated from TypeScript)
+c:\Users\Punith\LaaS\host-services\ — Deployment templates and systemd service files
+Summary
+Extending LaaS from single-node to two-node architecture requires:
+Database: Add storageNodeId columns to track node-storage relationships (Low effort, backward-compatible)
+Backend: Implement multi-node node selection scoring and storage node routing (Medium effort, handles complex edge cases)
+Orchestration: Add remote NFS mount logic for cross-node storage access (Medium effort, requires careful error handling)
+Storage: Support multi-node NFS exports and provisioner routing (Low effort, straightforward configuration)
+Docker Persistence: Solve critical cross-node image stranding via NFS export/import (POC) or Docker Registry (production) (Large effort, high risk/impact)
+Infrastructure: Deploy ZFS, NFS, Docker, provisioner, orchestrator on Node 2 (Low effort, well-defined checklist)
+Frontend: No changes required for MVP; optional UI enhancements only (Trivial)
+
+Summary!!
+Overall verdict: Medium-Large change, ~2-3 weeks for one developer (71-109 dev-hours)The architecture is sound and implementable. Here's the breakdown by layer:
+Database — Low complexity (2-3 hours)The Node model already exists with ipCompute, ipStorage, resource tracking fields. What's missing:
+storageNodeId field on UserStorageVolume — to track which node hosts a user's ZFS dataset
+storageNodeId field on Session — for audit/debugging
+Seed laas-node-02 (192.168.10.88) in seed.ts
+Backfill existing records to point to Node 1
+All columns are nullable and backward-compatible — existing functionality unaffected.
+Backend — Medium complexity (22-32 hours)Two services affected:
+compute.service.ts — Currently does findFirst({ where: { status: 'healthy' } }) for node selection (line ~310). Needs a weighted scoring algorithm considering available CPU, RAM, and VRAM across all healthy nodes. Also needs to look up which node hosts the user's storage and pass both compute_node_ip and storage_node_ip to the orchestrator.
+storage.service.ts — Currently sends all provision requests to a single URL. Needs to select a storage node and route provisioning calls to the correct node's provisioner (each node runs its own on port 5001).
+Session Orchestrator — Medium complexity (6-8 hours)app.py needs a new mount_remote_storage() function — when the compute node differs from the storage node, it mounts the user's ZFS dataset via NFS4 before launching the container. The rest of the Docker launch logic stays the same since it already uses volume_path regardless of source.
+Storage Provisioner — Low complexity (2-3 hours)storage-provision/app.py currently exports to a single NFS_EXPORT_CLIENT (127.0.0.1). Needs to support NFS_EXPORT_CLIENTS with comma-separated IPs so each dataset is exported to all nodes.
+Docker Commit Cross-Node — HIGH RISK, Large complexity (16-24 hours)This is the critical challenge. Currently, commit_container_state() saves laas-user-<uid>:latest to the local Docker daemon. If a user's session moves to Node 2, that committed image doesn't exist there — the user loses all installed packages and system configs (files on NFS are fine).Two approaches:
+POC: NFS-backed export/import — docker save to user's NFS mount on stop, docker load on start. Adds ~30-60s per session. No extra infrastructure needed.
+Production: Docker Registry (Harbor) — docker push/pull with layer deduplication. +5-10s latency. Requires registry infrastructure.
+Frontend — Trivial (0 hours for MVP)Multi-node is completely transparent to the UI. Optional cosmetic enhancements (node badges on session cards) can come later.
+Infrastructure — Low complexity (3-5 hours)Node 2 needs: ZFS pool + NFS server + Docker + provisioner + orchestrator deployed as systemd services. Firewall rules for NFS (2049/tcp) and orchestrator (9998/tcp) between both nodes.
+Key risks:
+NFS mount going stale during session launch
+Storage node going offline mid-session (user data inaccessible)
+Docker committed images stranded on wrong node (the biggest UX risk)
+uid/gid mismatch between nodes
+
+
+
+
+
+
+
+# Maybe (option)
+The smart selection approach is better — ZFS datasets for local, zvols only for cross-node NVMe-oF. Here's why:
+Thin provisioning — Datasets only consume pool space as data is written. With your pools at 33-38GB, you don't want a 5GB zvol immediately reserving 5GB from the pool when the user has stored nothing yet.
+Native ZFS features — Datasets get quota enforcement, compression, snapshots natively. Zvols add an unnecessary ext4 layer on top of ZFS when storage is local.
+Simpler lifecycle — No mkfs.ext4, no fstab entries, no mount management, no lost+found cleanup. Just zfs create -o quota=5G and it's done — exactly how it worked before.
+Cross-node still works — When a user's compute session runs on a different node from their storage, the backend provisions a zvol + NVMe-oF export. This is the only case that needs block devices.
+The decision logic is straightforward: if storage node == compute node → zfs_dataset, else → zfs_zvol + NVMe-oF. Since you currently only have 2 nodes, most early users will likely land on the same node for both, so they get the clean dataset experience you're used to.Want me to implement this? The changes would be in the backend storage service (selection logic) and the provision script (branching on backend type)

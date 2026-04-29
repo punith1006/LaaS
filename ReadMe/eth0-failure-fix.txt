@@ -1,0 +1,47 @@
+## Full clean restart:
+
+## Step 1 — Kill everything:
+```bash
+sudo killall wpa_supplicant
+sudo killall dhclient
+```
+
+## Step 2 — Bring interface down:
+```bash
+sudo ip link set wlp8s0 down
+```
+
+## Step 3 — Reload WiFi driver:
+```bash
+sudo rmmod mt7921e
+sudo modprobe mt7921e
+```
+
+## Step 4 — Bring interface up:
+```bash
+sudo ip link set wlp8s0 up
+```
+
+## Step 5 — Start wpa_supplicant:
+```bash
+sudo wpa_supplicant -B -i wlp8s0 -c /etc/wpa_supplicant.conf
+```
+
+## Step 6 — Wait 5 seconds, get IP:
+```bash
+sudo dhclient wlp8s0
+```
+
+## Step 7 — Check IP:
+```bash
+ip addr show wlp8s0
+```
+
+## Step 8 — Test internet:
+```bash
+ping 8.8.8.8
+```
+
+---
+
+Run them **one by one in order** and tell me what happens at each step! 🎯

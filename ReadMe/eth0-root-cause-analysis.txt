@@ -1,0 +1,560 @@
+====== EVIDENCE COLLECTION - Wed Apr  1 11:07:12 AM UTC 2026 ======
+
+--- 1. SYSTEM INFO ---
+Linux zenith 5.15.0-173-generic #183-Ubuntu SMP Fri Mar 6 13:29:34 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+zenith
+
+--- 2. NETWORK INTERFACES ---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: eno1: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc mq state DOWN mode DEFAULT group default qlen 1000
+    link/ether 10:7c:61:49:08:15 brd ff:ff:ff:ff:ff:ff
+    altname enp9s0
+3: eno2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000
+    link/ether 10:7c:61:49:07:10 brd ff:ff:ff:ff:ff:ff
+    altname enp10s0
+5: tailscale0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1280 qdisc fq_codel state UNKNOWN mode DEFAULT group default qlen 500
+    link/none
+6: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN mode DEFAULT group default
+    link/ether 0e:93:85:05:47:06 brd ff:ff:ff:ff:ff:ff
+7: br-80ce3db71243: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether be:20:48:4f:6f:3a brd ff:ff:ff:ff:ff:ff
+8: br-afd53b1bc0aa: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether fe:4c:00:03:d0:83 brd ff:ff:ff:ff:ff:ff
+140: veth1fbe484@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 6a:b5:b0:20:33:b3 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+141: veth2d9001b@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether f2:2c:32:ed:90:e0 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+142: veth0efbbe3@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 7a:32:81:c6:ff:20 brd ff:ff:ff:ff:ff:ff link-netnsid 2
+143: veth5408d3f@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether ce:35:ad:31:4d:be brd ff:ff:ff:ff:ff:ff link-netnsid 3
+144: veth4d92fec@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 92:88:d1:fe:f9:1b brd ff:ff:ff:ff:ff:ff link-netnsid 4
+145: vethb495eab@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether c2:11:6c:06:0e:fa brd ff:ff:ff:ff:ff:ff link-netnsid 5
+146: vethab90ad5@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP mode DEFAULT group default
+    link/ether 36:38:22:b4:0a:d9 brd ff:ff:ff:ff:ff:ff link-netnsid 6
+147: vethf4aa1a5@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 1a:b4:86:76:ed:4f brd ff:ff:ff:ff:ff:ff link-netnsid 7
+148: vetha32abd7@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP mode DEFAULT group default
+    link/ether ca:de:08:46:7a:ab brd ff:ff:ff:ff:ff:ff link-netnsid 8
+149: vethc3f5fd0@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether ea:20:d8:61:f3:42 brd ff:ff:ff:ff:ff:ff link-netnsid 9
+150: vethb2a3bea@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether c6:a8:33:4c:a9:1d brd ff:ff:ff:ff:ff:ff link-netnsid 10
+151: vethecc3d54@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 96:b2:f9:46:58:28 brd ff:ff:ff:ff:ff:ff link-netnsid 11
+152: veth154091a@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether e6:34:64:4c:73:75 brd ff:ff:ff:ff:ff:ff link-netnsid 12
+153: vethfd5f19c@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 22:26:d7:c6:5c:9d brd ff:ff:ff:ff:ff:ff link-netnsid 13
+154: vethf363b45@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP mode DEFAULT group default
+    link/ether 86:c5:13:93:54:6b brd ff:ff:ff:ff:ff:ff link-netnsid 14
+155: vethfda8a6a@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP mode DEFAULT group default
+    link/ether 6a:73:1b:87:5a:37 brd ff:ff:ff:ff:ff:ff link-netnsid 15
+156: wlp8s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DORMANT group default qlen 1000
+    link/ether 4c:82:a9:f0:8b:0b brd ff:ff:ff:ff:ff:ff
+
+--- 3. IP ADDRESSES ---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eno1: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc mq state DOWN group default qlen 1000
+    link/ether 10:7c:61:49:08:15 brd ff:ff:ff:ff:ff:ff
+    altname enp9s0
+    inet6 fe80::127c:61ff:fe49:815/64 scope link
+       valid_lft forever preferred_lft forever
+3: eno2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 10:7c:61:49:07:10 brd ff:ff:ff:ff:ff:ff
+    altname enp10s0
+    inet 192.168.10.92/23 metric 100 brd 192.168.11.255 scope global dynamic eno2
+       valid_lft 581648sec preferred_lft 581648sec
+    inet6 fe80::127c:61ff:fe49:710/64 scope link
+       valid_lft forever preferred_lft forever
+5: tailscale0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1280 qdisc fq_codel state UNKNOWN group default qlen 500
+    link/none
+    inet 100.100.66.101/32 scope global tailscale0
+       valid_lft forever preferred_lft forever
+    inet6 fd7a:115c:a1e0::c01:4294/128 scope global
+       valid_lft forever preferred_lft forever
+    inet6 fe80::b481:c2d3:9ecf:445/64 scope link stable-privacy
+       valid_lft forever preferred_lft forever
+6: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+    link/ether 0e:93:85:05:47:06 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+7: br-80ce3db71243: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+    link/ether be:20:48:4f:6f:3a brd ff:ff:ff:ff:ff:ff
+    inet 172.31.0.1/16 brd 172.31.255.255 scope global br-80ce3db71243
+       valid_lft forever preferred_lft forever
+    inet6 fe80::bc20:48ff:fe4f:6f3a/64 scope link
+       valid_lft forever preferred_lft forever
+8: br-afd53b1bc0aa: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+    link/ether fe:4c:00:03:d0:83 brd ff:ff:ff:ff:ff:ff
+    inet 172.30.0.1/24 brd 172.30.0.255 scope global br-afd53b1bc0aa
+       valid_lft forever preferred_lft forever
+    inet6 fe80::fc4c:ff:fe03:d083/64 scope link
+       valid_lft forever preferred_lft forever
+140: veth1fbe484@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether 6a:b5:b0:20:33:b3 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet6 fe80::68b5:b0ff:fe20:33b3/64 scope link
+       valid_lft forever preferred_lft forever
+141: veth2d9001b@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether f2:2c:32:ed:90:e0 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+    inet6 fe80::f02c:32ff:feed:90e0/64 scope link
+       valid_lft forever preferred_lft forever
+142: veth0efbbe3@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether 7a:32:81:c6:ff:20 brd ff:ff:ff:ff:ff:ff link-netnsid 2
+    inet6 fe80::7832:81ff:fec6:ff20/64 scope link
+       valid_lft forever preferred_lft forever
+143: veth5408d3f@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether ce:35:ad:31:4d:be brd ff:ff:ff:ff:ff:ff link-netnsid 3
+    inet6 fe80::cc35:adff:fe31:4dbe/64 scope link
+       valid_lft forever preferred_lft forever
+144: veth4d92fec@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether 92:88:d1:fe:f9:1b brd ff:ff:ff:ff:ff:ff link-netnsid 4
+    inet6 fe80::9088:d1ff:fefe:f91b/64 scope link
+       valid_lft forever preferred_lft forever
+145: vethb495eab@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether c2:11:6c:06:0e:fa brd ff:ff:ff:ff:ff:ff link-netnsid 5
+    inet6 fe80::c011:6cff:fe06:efa/64 scope link
+       valid_lft forever preferred_lft forever
+146: vethab90ad5@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP group default
+    link/ether 36:38:22:b4:0a:d9 brd ff:ff:ff:ff:ff:ff link-netnsid 6
+    inet6 fe80::3438:22ff:feb4:ad9/64 scope link
+       valid_lft forever preferred_lft forever
+147: vethf4aa1a5@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether 1a:b4:86:76:ed:4f brd ff:ff:ff:ff:ff:ff link-netnsid 7
+    inet6 fe80::18b4:86ff:fe76:ed4f/64 scope link
+       valid_lft forever preferred_lft forever
+148: vetha32abd7@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP group default
+    link/ether ca:de:08:46:7a:ab brd ff:ff:ff:ff:ff:ff link-netnsid 8
+    inet6 fe80::c8de:8ff:fe46:7aab/64 scope link
+       valid_lft forever preferred_lft forever
+149: vethc3f5fd0@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether ea:20:d8:61:f3:42 brd ff:ff:ff:ff:ff:ff link-netnsid 9
+    inet6 fe80::e820:d8ff:fe61:f342/64 scope link
+       valid_lft forever preferred_lft forever
+150: vethb2a3bea@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether c6:a8:33:4c:a9:1d brd ff:ff:ff:ff:ff:ff link-netnsid 10
+    inet6 fe80::c4a8:33ff:fe4c:a91d/64 scope link
+       valid_lft forever preferred_lft forever
+151: vethecc3d54@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether 96:b2:f9:46:58:28 brd ff:ff:ff:ff:ff:ff link-netnsid 11
+    inet6 fe80::94b2:f9ff:fe46:5828/64 scope link
+       valid_lft forever preferred_lft forever
+152: veth154091a@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether e6:34:64:4c:73:75 brd ff:ff:ff:ff:ff:ff link-netnsid 12
+    inet6 fe80::e434:64ff:fe4c:7375/64 scope link
+       valid_lft forever preferred_lft forever
+153: vethfd5f19c@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP group default
+    link/ether 22:26:d7:c6:5c:9d brd ff:ff:ff:ff:ff:ff link-netnsid 13
+    inet6 fe80::2026:d7ff:fec6:5c9d/64 scope link
+       valid_lft forever preferred_lft forever
+154: vethf363b45@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP group default
+    link/ether 86:c5:13:93:54:6b brd ff:ff:ff:ff:ff:ff link-netnsid 14
+    inet6 fe80::84c5:13ff:fe93:546b/64 scope link
+       valid_lft forever preferred_lft forever
+155: vethfda8a6a@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP group default
+    link/ether 6a:73:1b:87:5a:37 brd ff:ff:ff:ff:ff:ff link-netnsid 15
+    inet6 fe80::6873:1bff:fe87:5a37/64 scope link
+       valid_lft forever preferred_lft forever
+156: wlp8s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 4c:82:a9:f0:8b:0b brd ff:ff:ff:ff:ff:ff
+    inet 192.168.10.87/23 brd 192.168.11.255 scope global dynamic wlp8s0
+       valid_lft 591141sec preferred_lft 591141sec
+    inet6 fe80::4e82:a9ff:fef0:8b0b/64 scope link
+       valid_lft forever preferred_lft forever
+
+--- 4. ROUTING TABLE ---
+default via 192.168.10.1 dev wlp8s0
+1.1.1.1 via 192.168.10.1 dev eno2 proto dhcp src 192.168.10.92 metric 100
+8.8.8.8 via 192.168.10.1 dev eno2 proto dhcp src 192.168.10.92 metric 100
+172.17.0.0/16 dev docker0 proto kernel scope link src 172.17.0.1 linkdown
+172.30.0.0/24 dev br-afd53b1bc0aa proto kernel scope link src 172.30.0.1
+172.31.0.0/16 dev br-80ce3db71243 proto kernel scope link src 172.31.0.1
+192.168.10.0/23 dev wlp8s0 proto kernel scope link src 192.168.10.87
+192.168.10.0/23 dev eno2 proto kernel scope link src 192.168.10.92 metric 100
+192.168.10.1 dev eno2 proto dhcp scope link src 192.168.10.92 metric 100
+
+--- 5. TAILSCALE STATUS ---
+100.100.66.101  zenith      punith.vs74064@  linux    -
+100.90.228.84   punith-gkt  punith.vs74064@  windows  active; direct 192.168.10.62:41641, tx 3934162600 rx 796264100
+
+--- 6. TAILSCALE VERSION ---
+1.94.2
+  tailscale commit: 0a29cf18b56e478b9cd33af07755fcae90d5171a
+  long version: 1.94.2-t0a29cf18b-g3f044c9f6
+  other commit: 3f044c9f62dd0168c79f9ba7e67250b1dee06caa
+  go version: go1.25.5
+
+--- 7. PING GATEWAY ---
+PING 192.168.10.1 (192.168.10.1) 56(84) bytes of data.
+64 bytes from 192.168.10.1: icmp_seq=1 ttl=255 time=0.239 ms
+64 bytes from 192.168.10.1: icmp_seq=2 ttl=255 time=0.213 ms
+64 bytes from 192.168.10.1: icmp_seq=3 ttl=255 time=0.210 ms
+64 bytes from 192.168.10.1: icmp_seq=4 ttl=255 time=0.206 ms
+64 bytes from 192.168.10.1: icmp_seq=5 ttl=255 time=0.201 ms
+
+--- 192.168.10.1 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4083ms
+rtt min/avg/max/mdev = 0.201/0.213/0.239/0.013 ms
+
+--- 8. PING INTERNET ---
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+
+--- 8.8.8.8 ping statistics ---
+5 packets transmitted, 0 received, 100% packet loss, time 4094ms
+
+
+--- 9. DNS RESOLUTION ---
+PING google.com (142.250.206.46) 56(84) bytes of data.
+64 bytes from pnmaaa-bf-in-f14.1e100.net (142.250.206.46): icmp_seq=1 ttl=118 time=16.2 ms
+64 bytes from pnmaaa-bf-in-f14.1e100.net (142.250.206.46): icmp_seq=2 ttl=118 time=16.8 ms
+64 bytes from pnmaaa-bf-in-f14.1e100.net (142.250.206.46): icmp_seq=3 ttl=118 time=18.4 ms
+
+--- google.com ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2002ms
+rtt min/avg/max/mdev = 16.220/17.127/18.383/0.916 ms
+
+--- 10. TRACEPATH ---
+ 1?: [LOCALHOST]                      pmtu 1500
+ 1:  ???                                                   0.289ms
+ 1:  ???                                                   0.312ms
+ 2:  no reply
+ 3:  no reply
+ 4:  no reply
+ 5:  no reply
+ 6:  no reply
+ 7:  no reply
+ 8:  no reply
+ 9:  no reply
+10:  no reply
+11:  no reply
+12:  no reply
+13:  no reply
+14:  no reply
+15:  no reply
+16:  no reply
+17:  no reply
+18:  no reply
+19:  no reply
+20:  no reply
+21:  no reply
+22:  no reply
+23:  no reply
+24:  no reply
+25:  no reply
+26:  no reply
+27:  no reply
+28:  no reply
+29:  no reply
+30:  no reply
+     Too many hops: pmtu 1500
+     Resume: pmtu 1500
+
+--- 11. WIFI DRIVER INFO ---
+08:00.0 Network controller: MEDIATEK Corp. Device 0616
+        Subsystem: Foxconn International, Inc. Device e0cd
+        Kernel driver in use: mt7921e
+        Kernel modules: mt7921e
+
+--- 12. NETWORK MANAGER STATUS ---
+Unit NetworkManager.service could not be found.
+
+--- 13. TAILSCALE SERVICE STATUS ---
+● tailscaled.service - Tailscale node agent
+     Loaded: loaded (/lib/systemd/system/tailscaled.service; enabled; vendor preset: enabled)
+     Active: active (running) since Wed 2026-04-01 04:18:09 UTC; 6h ago
+       Docs: https://tailscale.com/kb/
+   Main PID: 1847 (tailscaled)
+     Status: "Connected; punith.vs74064@gmail.com; 100.100.66.101 fd7a:115c:a1e0::c01:4294"
+      Tasks: 39 (limit: 75815)
+     Memory: 75.6M
+        CPU: 15min 10.925s
+     CGroup: /system.slice/tailscaled.service
+             └─1847 /usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=41641
+
+Apr 01 10:19:38 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:24:57 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:30:06 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:35:17 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:40:25 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:45:34 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:50:38 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:55:50 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 11:01:01 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 11:06:20 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+
+--- 14. TAILSCALE LOGS ---
+Apr 01 07:23:27 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 07:28:46 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 07:33:52 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 07:39:06 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 07:39:06 zenith tailscaled[1847]: magicsock: endpoints changed: 122.172.80.138:21556 (stun), 122.172.80.138:18734 (stun), 122.172.80.138:41641 (stun4localport), 172.17.0.1:41641 (local), 172.30.0.1:41641 (local), 172.31.0.1:41641 (local), 192.168.10.87:41641 (local), 192.168.10.92:41641 (local)
+Apr 01 07:44:13 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 07:49:13 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 07:49:34 zenith tailscaled[1847]: magicsock: endpoints changed: 122.172.80.138:21556 (stun), 122.172.80.138:41641 (stun4localport), 172.17.0.1:41641 (local), 172.30.0.1:41641 (local), 172.31.0.1:41641 (local), 192.168.10.87:41641 (local), 192.168.10.92:41641 (local)
+Apr 01 07:54:24 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 07:59:32 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:04:46 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:09:49 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:15:07 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:20:18 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:25:31 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:30:32 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:35:37 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:40:44 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:45:58 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:51:20 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 08:52:13 zenith tailscaled[1847]: monitor: RTM_DELROUTE: src=, dst=fe80::/64, gw=, outif=157, table=254
+Apr 01 08:52:13 zenith tailscaled[1847]: monitor: RTM_DELROUTE: src=, dst=fe80::ec68:2fff:fea8:8ba2/128, gw=, outif=157, table=255
+Apr 01 08:52:13 zenith tailscaled[1847]: monitor: RTM_DELROUTE: src=, dst=ff00::/8, gw=, outif=157, table=255
+Apr 01 08:56:33 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:01:50 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:06:59 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:12:11 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:17:36 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:22:41 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:27:57 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:32:57 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:38:10 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:43:35 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:48:42 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:53:48 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 09:58:58 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:04:04 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:04:04 zenith tailscaled[1847]: magicsock: endpoints changed: 122.172.80.138:21556 (stun), 122.172.80.138:18734 (stun), 122.172.80.138:41641 (stun4localport), 172.17.0.1:41641 (local), 172.30.0.1:41641 (local), 172.31.0.1:41641 (local), 192.168.10.87:41641 (local), 192.168.10.92:41641 (local)
+Apr 01 10:09:10 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:14:32 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:19:38 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:24:57 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:30:06 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:35:17 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:40:25 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:45:34 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:50:38 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 10:55:50 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 11:01:01 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+Apr 01 11:06:20 zenith tailscaled[1847]: netcheck: DetectCaptivePortal(found=false)
+
+--- 15. FIREWALL RULES ---
+table ip raw {
+        chain PREROUTING {
+                type filter hook prerouting priority raw; policy accept;
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.2 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.3 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.4 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.5 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.6 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.7 counter packets 0 bytes 0 drop
+                iifname != "br-80ce3db71243" ip daddr 172.31.0.2 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.8 counter packets 0 bytes 0 drop
+                iifname != "br-80ce3db71243" ip daddr 172.31.0.3 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.9 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.10 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.11 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.12 counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" ip daddr 172.30.0.13 counter packets 0 bytes 0 drop
+                iifname != "br-80ce3db71243" ip daddr 172.31.0.4 counter packets 0 bytes 0 drop
+                iifname != "br-80ce3db71243" ip daddr 172.31.0.5 counter packets 0 bytes 0 drop
+        }
+}
+table ip nat {
+        chain DOCKER {
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 3001 counter packets 0 bytes 0 dnat to 172.30.0.2:3001
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 9501 counter packets 0 bytes 0 dnat to 172.30.0.3:9501
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 3000 counter packets 33 bytes 1716 dnat to 172.30.0.4:3000
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 9090 counter packets 0 bytes 0 dnat to 172.30.0.5:9090
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 9093 counter packets 0 bytes 0 dnat to 172.30.0.6:9093
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 9500 counter packets 0 bytes 0 dnat to 172.30.0.8:9500
+                iifname != "br-80ce3db71243" meta l4proto tcp tcp dport 8080 counter packets 0 bytes 0 dnat to 172.31.0.2:8080
+                iifname != "br-80ce3db71243" meta l4proto tcp tcp dport 19080 counter packets 0 bytes 0 dnat to 172.31.0.2:19080
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 3100 counter packets 0 bytes 0 dnat to 172.30.0.9:3100
+                iifname != "br-80ce3db71243" meta l4proto tcp tcp dport 8101 counter packets 0 bytes 0 dnat to 172.31.0.3:8080
+                iifname != "br-80ce3db71243" meta l4proto tcp tcp dport 19101 counter packets 0 bytes 0 dnat to 172.31.0.3:19080
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 8999 counter packets 0 bytes 0 dnat to 172.30.0.10:8999
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 9115 counter packets 0 bytes 0 dnat to 172.30.0.11:9115
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 9100 counter packets 0 bytes 0 dnat to 172.30.0.12:9100
+                iifname != "br-afd53b1bc0aa" meta l4proto tcp tcp dport 9400 counter packets 0 bytes 0 dnat to 172.30.0.13:9400
+                iifname != "br-80ce3db71243" meta l4proto tcp tcp dport 8102 counter packets 177 bytes 9204 dnat to 172.31.0.4:8080
+                iifname != "br-80ce3db71243" meta l4proto tcp tcp dport 19102 counter packets 0 bytes 0 dnat to 172.31.0.4:19080
+                iifname != "br-80ce3db71243" meta l4proto tcp tcp dport 8103 counter packets 9 bytes 468 dnat to 172.31.0.5:8080
+                iifname != "br-80ce3db71243" meta l4proto tcp tcp dport 19103 counter packets 0 bytes 0 dnat to 172.31.0.5:19080
+        }
+
+        chain PREROUTING {
+                type nat hook prerouting priority dstnat; policy accept;
+                fib daddr type local counter packets 3878 bytes 238558 jump DOCKER
+        }
+
+        chain OUTPUT {
+                type nat hook output priority -100; policy accept;
+                ip daddr != 127.0.0.0/8 fib daddr type local counter packets 0 bytes 0 jump DOCKER
+        }
+
+        chain POSTROUTING {
+                type nat hook postrouting priority srcnat; policy accept;
+                oifname != "docker0" ip saddr 172.17.0.0/16 counter packets 0 bytes 0 masquerade
+                oifname != "br-afd53b1bc0aa" ip saddr 172.30.0.0/24 counter packets 39 bytes 2340 masquerade
+                oifname != "br-80ce3db71243" ip saddr 172.31.0.0/16 counter packets 4289 bytes 660386 masquerade
+        }
+}
+table ip filter {
+        chain DOCKER {
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" meta l4proto tcp ip daddr 172.31.0.5 tcp dport 19080 counter packets 0 bytes 0 accept
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" meta l4proto tcp ip daddr 172.31.0.5 tcp dport 8080 counter packets 9 bytes 468 accept
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" meta l4proto tcp ip daddr 172.31.0.4 tcp dport 19080 counter packets 0 bytes 0 accept
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" meta l4proto tcp ip daddr 172.31.0.4 tcp dport 8080 counter packets 177 bytes 9204 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.13 tcp dport 9400 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.12 tcp dport 9100 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.11 tcp dport 9115 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.10 tcp dport 8999 counter packets 0 bytes 0 accept
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" meta l4proto tcp ip daddr 172.31.0.3 tcp dport 19080 counter packets 0 bytes 0 accept
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" meta l4proto tcp ip daddr 172.31.0.3 tcp dport 8080 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.9 tcp dport 3100 counter packets 0 bytes 0 accept
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" meta l4proto tcp ip daddr 172.31.0.2 tcp dport 19080 counter packets 0 bytes 0 accept
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" meta l4proto tcp ip daddr 172.31.0.2 tcp dport 8080 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.8 tcp dport 9500 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.6 tcp dport 9093 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.5 tcp dport 9090 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.4 tcp dport 3000 counter packets 33 bytes 1716 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.3 tcp dport 9501 counter packets 0 bytes 0 accept
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" meta l4proto tcp ip daddr 172.30.0.2 tcp dport 3001 counter packets 0 bytes 0 accept
+                iifname != "br-80ce3db71243" oifname "br-80ce3db71243" counter packets 0 bytes 0 drop
+                iifname != "br-afd53b1bc0aa" oifname "br-afd53b1bc0aa" counter packets 0 bytes 0 drop
+                iifname != "docker0" oifname "docker0" counter packets 0 bytes 0 drop
+        }
+
+        chain DOCKER-FORWARD {
+                counter packets 2046063 bytes 1204601277 jump DOCKER-CT
+                counter packets 1257750 bytes 267988829 jump DOCKER-INTERNAL
+                counter packets 1257750 bytes 267988829 jump DOCKER-BRIDGE
+                iifname "br-80ce3db71243" oifname "br-80ce3db71243" counter packets 11 bytes 25223 drop
+                iifname "br-80ce3db71243" oifname != "br-80ce3db71243" counter packets 1246675 bytes 261013759 accept
+                iifname "br-afd53b1bc0aa" counter packets 10836 bytes 6937991 accept
+                iifname "docker0" counter packets 0 bytes 0 accept
+        }
+
+        chain DOCKER-BRIDGE {
+                oifname "br-80ce3db71243" counter packets 206 bytes 35363 jump DOCKER
+                oifname "br-afd53b1bc0aa" counter packets 5213 bytes 312516 jump DOCKER
+                oifname "docker0" counter packets 0 bytes 0 jump DOCKER
+        }
+
+        chain DOCKER-CT {
+                oifname "br-80ce3db71243" ct state related,established counter packets 632733 bytes 816446277 accept
+                oifname "br-afd53b1bc0aa" ct state related,established counter packets 155580 bytes 120166171 accept
+                oifname "docker0" ct state related,established counter packets 0 bytes 0 accept
+        }
+
+        chain DOCKER-INTERNAL {
+        }
+
+        chain FORWARD {
+                type filter hook forward priority filter; policy accept;
+                counter packets 2046063 bytes 1204601277 jump DOCKER-USER
+                counter packets 2046063 bytes 1204601277 jump DOCKER-FORWARD
+        }
+
+        chain DOCKER-USER {
+        }
+}
+table ip6 nat {
+        chain DOCKER {
+        }
+
+        chain PREROUTING {
+                type nat hook prerouting priority dstnat; policy accept;
+                fib daddr type local counter packets 0 bytes 0 jump DOCKER
+        }
+
+        chain OUTPUT {
+                type nat hook output priority -100; policy accept;
+                ip6 daddr != ::1 fib daddr type local counter packets 0 bytes 0 jump DOCKER
+        }
+}
+table ip6 filter {
+        chain DOCKER {
+        }
+
+        chain DOCKER-FORWARD {
+                counter packets 0 bytes 0 jump DOCKER-CT
+                counter packets 0 bytes 0 jump DOCKER-INTERNAL
+                counter packets 0 bytes 0 jump DOCKER-BRIDGE
+        }
+
+        chain DOCKER-BRIDGE {
+        }
+
+        chain DOCKER-CT {
+        }
+
+        chain DOCKER-INTERNAL {
+        }
+
+        chain FORWARD {
+                type filter hook forward priority filter; policy accept;
+                counter packets 0 bytes 0 jump DOCKER-USER
+                counter packets 0 bytes 0 jump DOCKER-FORWARD
+        }
+
+        chain DOCKER-USER {
+        }
+}
+
+--- 16. DNS CONFIG ---
+# This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
+# Do not edit.
+#
+# This file might be symlinked as /etc/resolv.conf. If you're looking at
+# /etc/resolv.conf and seeing this text, you have followed the symlink.
+#
+# This is a dynamic resolv.conf file for connecting local clients to the
+# internal DNS stub resolver of systemd-resolved. This file lists all
+# configured search domains.
+#
+# Run "resolvectl status" to see details about the uplink DNS servers
+# currently in use.
+#
+# Third party programs should typically not access this file directly, but only
+# through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a
+# different way, replace this symlink by a static file or a different symlink.
+#
+# See man:systemd-resolved.service(8) for details about the supported modes of
+# operation for /etc/resolv.conf.
+
+nameserver 127.0.0.53
+options edns0 trust-ad
+search tailbdaa59.ts.net
+
+--- 17. DOCKER NETWORKS ---
+NETWORK ID     NAME                              DRIVER    SCOPE
+345334e427bf   bridge                            bridge    local
+8fd51f1d43c8   host                              host      local
+afd53b1bc0aa   laas-monitoring_laas-monitoring   bridge    local
+80ce3db71243   laas-sessions                     bridge    local
+76da61ddebe2   none                              null      local
+
+--- 18. ARP TABLE ---
+Address                  HWtype  HWaddress           Flags Mask            Iface
+192.168.10.1             ether   38:c0:ea:4d:81:ac   C                     wlp8s0
+192.168.10.52            ether   4c:82:a9:f0:3b:2d   C                     wlp8s0
+192.168.10.62            ether   a0:e7:0b:d5:56:2e   C                     wlp8s0
+172.30.0.5               ether   7e:52:a5:9a:20:b3   C                     br-afd53b1bc0aa
+172.30.0.2               ether   ea:50:a3:9f:2e:f3   C                     br-afd53b1bc0aa
+172.30.0.4               ether   fe:1a:14:e2:c0:a8   C                     br-afd53b1bc0aa
+172.30.0.10              ether   da:b7:6c:eb:6c:ce   C                     br-afd53b1bc0aa
+192.168.10.62            ether   a0:e7:0b:d5:56:2e   C                     eno2
+192.168.10.52            ether   4c:82:a9:f0:3b:2d   C                     eno2
+192.168.10.1             ether   38:c0:ea:4d:81:ac   C                     eno2
+172.31.0.3               ether   ea:0b:ac:41:d0:bb   C                     br-80ce3db71243
+172.31.0.2               ether   4a:ae:ac:69:9b:80   C                     br-80ce3db71243
+172.31.0.6               ether   a2:62:4f:b1:c9:15   C                     br-80ce3db71243
+172.31.0.5               ether   36:cd:01:a6:7b:5f   C                     br-80ce3db71243
+172.31.0.4               ether   ae:49:1b:6d:21:a6   C                     br-80ce3db71243
+====== EVIDENCE COLLECTION COMPLETE ======

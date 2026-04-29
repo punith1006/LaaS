@@ -1,0 +1,400 @@
+# How Virtual Labs Work — Technical Deep Dive
+> Research synthesis for LaaS platform inspiration
+
+---
+
+## 1. THE CONCEPTUAL MODEL — What a "Virtual Lab" Actually Is
+
+At its core, every virtual lab — whether Azure Lab Services, Google Colab, JupyterHub, or a custom HPC platform — is the same thing:
+
+**A system that allocates a slice of compute (CPU/RAM/GPU/disk), wraps it in an isolated environment, delivers access to it over a network protocol, and tears it down (or persists it) when done.**
+
+The key variables that differentiate all implementations are:
+- **Isolation primitive** (VM vs Container vs process)
+- **Desktop delivery protocol** (RDP, VNC, WebRTC, NoVNC, SSH, Jupyter kernel)
+- **State persistence model** (ephemeral vs persistent vs layered)
+- **GPU sharing model** (dedicated, MIG, MPS, time-sliced, vGPU)
+- **Scheduling model** (reserved, on-demand, FIFO queue)
+
+---
+
+## 2. THE LAYERS — Every Virtual Lab Has These 5
+
+```
+┌──────────────────────────────────────────────────┐
+│  Layer 5: USER ACCESS (Browser / Client)         │  ← WebRTC, RDP, SSH, Jupyter
+├──────────────────────────────────────────────────┤
+│  Layer 4: SESSION MANAGEMENT & PROXY             │  ← Auth, routing, lifecycle
+├──────────────────────────────────────────────────┤
+│  Layer 3: WORKLOAD RUNTIME (Container / VM)      │  ← Where user's work runs
+├──────────────────────────────────────────────────┤
+│  Layer 2: RESOURCE ALLOCATION & ISOLATION        │  ← cgroups, namespaces, GPU limits
+├──────────────────────────────────────────────────┤
+│  Layer 1: PHYSICAL HARDWARE                      │  ← CPU, RAM, GPU, NVMe, NIC
+└──────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. REAL-WORLD IMPLEMENTATIONS — How Each One Works
+
+---
+
+### 3A. Google Colab (Ephemeral Notebook Model)
+
+**Architecture:**
+- User opens a notebook in browser → Google's backend allocates an **isolated container/VM** on GCP infrastructure
+- The runtime is fully **ephemeral** — when session ends or idles out, the VM is destroyed
+- User's **notebook file** is the only persistent artifact (stored in Google Drive — decoupled from compute)
+- GPU access: user requests GPU type → Google assigns a shared physical GPU (T4/A100) to that container
+
+**Key insight for your build:**
+> The notebook (file) is separate from the compute (runtime). The runtime is disposable; the notebook is permanent. This is exactly your ephemeral mode design — users' `.ipynb` files persist, the container doesn't.
+
+**Technical stack:**
+- Container-based isolation (GCP GKE / Borg under the hood)
+- NVIDIA Container Toolkit for GPU passthrough
+- Jupyter Server protocol over HTTPS for cell execution
+- Google Drive as persistent storage backend (mapped at `/content/drive`)
+- Session lifecycle managed by a Google-internal orchestrator (not public)
+
+---
+
+### 3B. JupyterHub (Multi-User Notebook Server)
+
+**Architecture:**
+JupyterHub is the closest open-source analog to what you're building for the ephemeral tier. Its flow is:
+
+```
+User → Browser → JupyterHub (Hub process) → Spawner → Single-user server (container)
+                         ↓
+                  Proxy (configurable-http-proxy)
+                  Routes /user/<name>/ to that container's port
+```
+
+1. **Hub process**: Authenticates users, manages sessions, talks to the Spawner API
+2. **Spawner**: The component that *creates* the workload environment. Swappable:
+   - `LocalProcessSpawner` — spawns a subprocess on same machine
+   - `DockerSpawner` — spawns a Docker container per user
+   - `KubeSpawner` — spawns a Kubernetes Pod per user
+3. **Configurable HTTP Proxy (CHP)**: Routes each user's HTTP traffic to their container's port
+4. **Single-user server**: A Jupyter Notebook/Lab server running inside the container
+
+**GPU sharing in JupyterHub:**
+- Each spawned container requests `nvidia.com/gpu: 1` (whole GPU) or a fraction via HAMi/MPS
+- NVIDIA Device Plugin exposes GPUs as Kubernetes resources
+- For shared GPU: `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE` and `CUDA_MPS_PINNED_DEVICE_MEM_LIMIT` are injected as env vars into the container
+
+**Persistent storage:**
+- NFS-mounted home directories — same model as your NAS design
+- Each user gets a persistent volume mounted at `/home/jovyan` (or equivalent)
+- Container is ephemeral; `/home/jovyan` on NFS is permanent
+
+**Key insight for your build:**
+> JupyterHub's proxy-per-user-session pattern is directly applicable to your platform's routing model. Every session gets a path on the reverse proxy. The proxy maps URLs to containers.
+
+---
+
+### 3C. Azure Lab Services (VM-per-User Model)
+
+**Architecture:**
+- Each lab user gets their **own dedicated VM** (not a container)
+- VMs are **pre-provisioned from a template** — admin builds a template VM with all software, it gets cloned N times
+- Users connect via **RDP (Windows) or SSH (Linux)** through a load balancer with port-forwarded connections
+- Each VM has its own private IP; a load balancer fronts them with random public ports
+
+```
+User → Internet → Load Balancer (public IP, port 50xxx) → VM private IP:3389/22
+```
+
+- No shared-resource problem: each user's VM is completely isolated
+- **Waste problem**: VMs are always on (or pre-warmed), consuming resources even when idle
+- **Auto-shutdown**: Azure Lab Services adds a diagnostic extension to VMs to detect RDP disconnect and triggers shutdown
+
+**Key insight for your build:**
+> Azure's model is VM-per-user = maximum isolation but maximum resource waste. Your container model gives you 80% of the isolation at 20% of the resource cost. Azure's value is in showing you *what users expect*: a persistent desktop they can RDP/SSH into that looks the same every time.
+
+---
+
+### 3D. Selkies-GStreamer (WebRTC Desktop Streaming — Your Core Tech)
+
+This is the most relevant technology to understand deeply.
+
+**What it is:**
+An open-source platform (started by Google engineers) that streams a Linux desktop running inside a container to a browser via WebRTC. It's what makes a GUI desktop accessible through just a browser URL, no client install.
+
+**How it works — the pipeline:**
+
+```
+Container:
+  [Linux Desktop (KDE Plasma)]
+        ↓
+  [Virtual Display (EGL/Xvfb)] ← no physical monitor needed
+        ↓
+  [Screen Capture (KMS/DRM or X11)]
+        ↓
+  [GStreamer Pipeline]
+        ↓ H.264/H.265/VP9 encode
+  [NVENC (GPU) or software encoder]
+        ↓
+  [WebRTC (webrtcbin + signaling server)]
+        ↓
+  Browser ← video stream + input events (mouse/keyboard back-channel)
+```
+
+**Three required components:**
+1. **GStreamer build** — the media pipeline engine (screen capture → encode → stream)
+2. **Python signaling server** — coordinates WebRTC peer connection establishment (the "handshake" before streaming starts)
+3. **HTML5 web interface** — receives the video stream, sends mouse/keyboard events back
+
+**EGL vs GLX variants:**
+- `docker-selkies-egl-desktop`: Accesses GPU directly via EGL *without* an X.Org server. Multiple containers can share one GPU because there's no exclusive X server lock. This is your variant.
+- `docker-selkies-glx-desktop`: Uses a dedicated X.Org X11 server per container. Better OpenGL performance but can't share one GPU across containers as cleanly.
+
+**TURN server requirement:**
+WebRTC requires a TURN server when the client and server can't establish a direct P2P connection (which is always the case in containerized environments behind NAT/firewall). The TURN server relays the media stream. Options: coturn (self-hosted), Cloudflare, or use Selkies' built-in internal TURN.
+
+**Key insight for your build:**
+> Each running Selkies container = one user's desktop. The container has its own virtual display. The GPU (via EGL) is accessed without an exclusive lock, enabling multiple containers to share a single GPU. The browser receives a video stream and sends back input events — from the user's perspective, it's identical to sitting in front of the machine.
+
+---
+
+### 3E. HAMi + CUDA MPS (GPU Sharing Stack)
+
+This is how you get fractional GPU allocation across concurrent containers.
+
+**The problem:**
+GPUs are not natively divisible. When a container claims a GPU, by default it can use 100% of it. You need software to enforce limits.
+
+**The solution stack (two layers):**
+
+**Layer 1 — HAMi-core (CUDA API interception):**
+- HAMi injects a shared library (`libvgpu.so`) into the container via `LD_PRELOAD`
+- This library **intercepts every CUDA API call** between the application and the driver
+- When the application tries to allocate more VRAM than its quota, HAMi rejects it
+- The application *sees* only the VRAM it's been allocated — it doesn't know it's on a shared GPU
+- This is **user-space virtualization** — no kernel modification needed
+
+**Layer 2 — CUDA MPS (Multi-Process Service — driver level):**
+- MPS is an NVIDIA feature that runs a single CUDA context shared by multiple processes
+- Without MPS: each container gets its own CUDA context → contexts time-slice → wasted SM cycles
+- With MPS: all containers share one CUDA context → kernels from different containers can run *simultaneously* on the GPU
+- MPS enforces `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE` (compute limit) and `CUDA_MPS_PINNED_DEVICE_MEM_LIMIT` (VRAM limit)
+- MPS runs as a daemon on the host, containers communicate with it via shared IPC namespace
+
+**Combined effect:**
+```
+Container A (4GB VRAM quota, 25% SM):
+  CUDA malloc(8GB) → HAMi intercepts → REJECTED
+  CUDA malloc(3GB) → HAMi intercepts → ALLOWED → MPS enforces 4GB hard limit
+
+Container B (8GB VRAM quota, 50% SM):
+  Both run simultaneously on the same physical GPU
+```
+
+**Failure behavior:**
+- MPS: if one container's CUDA context has a fatal fault (segfault, illegal memory access), the MPS server can propagate that fault to other co-resident containers. This is the 30-60s auto-recovery scenario in your spec — MPS restarts, affected containers restart, user data on NAS is safe.
+- MIG (NVIDIA A100/H100 only): hardware-level partitioning with true fault isolation. Not available on RTX 5090 (consumer GPU).
+
+**Key insight for your build:**
+> HAMi = software vGPU for Kubernetes containers. MPS = the NVIDIA driver mechanism that enables concurrent GPU kernel execution. Together they give you hard VRAM limits and compute partitioning on a consumer RTX GPU, which doesn't support MIG.
+
+---
+
+### 3F. University HPC / JupyterHub with GPU (WWU Münster Pattern)
+
+A well-documented real-world university deployment:
+
+**Stack:**
+```
+OpenStack (IaaS) → Kubernetes on VMs → JupyterHub (KubeSpawner) → User Pods
+```
+
+**GPU handling:**
+- NVIDIA GRID (vGPU) virtualizes GPUs as mediated devices (`mdev`)
+- Each JupyterHub session pod that requests a vGPU gets a slice
+- For desktop sessions: an **Xorg server + VirtualGL in a sidecar container** within the same pod
+- X11 apps in the main container forward rendering to the sidecar's Xorg (which has GPU access) via `DISPLAY` env var
+- The rendered output is compressed and sent to the browser (similar to Selkies but older approach)
+
+**Key insight for your build:**
+> Universities with GPU clusters have converged on: containers + NFS home directories + JupyterHub as the control plane + GPU device plugin for allocation. Your design follows this proven pattern but adds the GUI desktop streaming layer via Selkies, which is the modern evolution of their X11 forwarding sidecar approach.
+
+---
+
+## 4. NETWORKING FUNDAMENTALS IN VIRTUAL LABS
+
+Every virtual lab solves the same network problem: **how does a user's browser/client reach a container that has no public IP?**
+
+### The Reverse Proxy Pattern
+
+```
+Internet → Nginx/Traefik/Caddy (reverse proxy) → Container (private IP)
+              ↑
+         Routes based on:
+         - URL path (/user/<uid>/session)
+         - Subdomain (uid.lab.yourdomain.in)
+         - Session token in headers
+```
+
+- Each container gets a private IP on a Docker bridge or overlay network
+- The proxy terminates TLS (HTTPS) and forwards to the container's HTTP/WebSocket port
+- Session tokens or JWT cookies authenticate the request at the proxy level
+
+### WebRTC Specifics
+
+WebRTC is peer-to-peer but always requires a signaling server (to exchange SDP offers/answers) and usually a TURN relay:
+
+```
+Browser                    Server Container
+   ↓                              ↓
+   ├── Signaling (WebSocket) ─────┤  (exchange SDP offer/answer, ICE candidates)
+   └── Media (UDP/TCP via TURN) ──┘  (actual video/audio stream)
+```
+
+- **STUN**: Server tells the client "your public IP is X.X.X.X" (for direct connections)
+- **TURN**: Relays media when direct connection fails (behind NAT/firewall — always needed in containers)
+- **ICE**: Protocol for negotiating the best path (tries direct first, falls back to TURN relay)
+
+---
+
+## 5. STATE PERSISTENCE — The Three Models
+
+| Model | How It Works | Example | Your Usage |
+|---|---|---|---|
+| **Fully Ephemeral** | Container destroyed on session end. Everything in the container is gone. | Google Colab free tier | Ephemeral compute sessions |
+| **File-Persistent** | Container destroyed, but a volume (NFS/PVC) is preserved and re-mounted on next session | JupyterHub with NFS home | Your stateful sessions — 15GB NAS layer |
+| **Full VM Persistence** | A VM snapshot or full disk image is saved and resumed | Azure Lab Services, VMware Horizon | Not your model (too expensive) |
+
+**Your model = File-Persistent Container:**
+```
+Container (ephemeral, from read-only image)
+  + NFS volume mount at /home/<uid> (persistent, on NAS)
+= Stateful desktop that "remembers" everything in /home
+  but loses system-level changes (apt installs, etc.) on restart
+```
+
+This is architecturally identical to how JupyterHub does it — the container is the "compute shape", the NFS volume is the "user's data".
+
+---
+
+## 6. THE OVERLAY FILESYSTEM — How Docker Images Enable Stateful Sessions Without Duplication
+
+This is a critical concept. Docker uses a **Union Filesystem (OverlayFS)** to layer images:
+
+```
+Layer 3: Writable container layer  ← user's runtime changes (LOST on stop)
+    ↑
+Layer 2: User's NFS home (bind-mounted) ← PERSISTS (on NAS)
+    ↑
+Layer 1: Read-only base image (selkies-egl-desktop) ← SHARED across all containers
+```
+
+- **Base image**: Stored once on disk. All 20 concurrent containers use the *same* read-only image layers. No duplication.
+- **Writable layer**: Created fresh when container starts, destroyed when it stops. Any `apt install` done in a session disappears.
+- **NFS bind mount**: Not part of Docker's layering. It's mounted directly at `/home/<uid>`. Files written here persist.
+
+This is why your 15GB quota is efficient — the 20GB base image is shared, not replicated per user. Each user only "owns" their 15GB delta.
+
+---
+
+## 7. RESOURCE SCHEDULING — How Labs Decide Where to Place Workloads
+
+**The bin-packing problem:**
+You have 4 nodes × (16 vCPU / 64GB RAM / 32GB VRAM). You need to fit user containers without overcommitting.
+
+**The naive approach (what most small deployments do):**
+- Keep a resource ledger in a database (Redis or Postgres): `{node_id: {cpu_used, ram_used, vram_used}}`
+- On session request: find a node where `cpu_free >= requested AND ram_free >= requested AND vram_free >= requested`
+- Assign session to that node, update ledger
+- On session end: release resources, update ledger
+
+**The Kubernetes approach:**
+- Kubernetes scheduler handles bin-packing natively
+- Nodes advertise their resources (including `nvidia.com/gpu` via device plugin)
+- Pods declare resource `requests` and `limits`
+- Scheduler finds a node that can satisfy the request
+
+**For your FastAPI backend approach:**
+You don't need full Kubernetes for 4 nodes. A FastAPI service with a Redis ledger, calling Docker API to launch containers with explicit resource constraints (`--cpus`, `--memory`, `--gpus`) on the right node (via Docker remote API or SSH) is a completely valid and simpler architecture.
+
+---
+
+## 8. THE SESSION LIFECYCLE — Step by Step
+
+This is the technical flow of what happens when a user clicks "Launch Session":
+
+```
+1. USER CLICKS LAUNCH
+   → Frontend sends POST /api/sessions/create {user_id, config_id}
+
+2. SESSION SERVICE (FastAPI)
+   → Validates auth (Keycloak JWT)
+   → Checks resource availability (Redis ledger)
+   → Selects target node (bin-packing logic)
+   → Reserves resources in Redis (atomic operation)
+
+3. CONTAINER LAUNCH
+   → Docker API call to target node:
+     docker run -d
+       --name session-<uid>-<session_id>
+       --cpus=4 --memory=8g
+       --gpus device=<gpu_id>  (or omitted for CPU-only)
+       -e CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=25
+       -e CUDA_MPS_PINNED_DEVICE_MEM_LIMIT=0=4096MiB
+       -e LD_PRELOAD=/usr/local/lib/libvgpu.so  (HAMi)
+       -v /nfs/users/<uid>:/home/<uid>:rw
+       -v /nfs/base-image-data:/opt/software:ro
+       -p <assigned_port>:8080  (Selkies WebRTC port)
+       selkies-egl-desktop:ubuntu2204-custom
+
+4. READINESS CHECK
+   → Poll container health endpoint until ready (~15-20s)
+   → Container runs: Selkies GStreamer + KDE Plasma + user's NFS home
+
+5. PROXY REGISTRATION
+   → Nginx/Traefik: add route /session/<session_id>/ → container:<port>
+
+6. SESSION TOKEN ISSUED
+   → Return session URL to frontend: https://lab.domain.in/session/<session_id>/
+
+7. WEBRTC HANDSHAKE
+   → Browser loads HTML5 Selkies interface
+   → Connects to signaling server inside container (WebSocket)
+   → ICE negotiation via STUN/TURN
+   → Video stream begins (H.264/NVENC encoded)
+
+8. USER WORKS
+   → Mouse/keyboard events sent back over WebRTC data channel
+   → Screen changes encoded and streamed to browser
+   → Files saved to /home/<uid> → written to NAS via NFS
+
+9. SESSION END (timer or user-initiated)
+   → Warning sent (15min, 5min)
+   → Graceful shutdown: SIGTERM → container stop → container rm
+   → Proxy route removed
+   → Redis ledger updated (resources freed)
+   → Billing event recorded (duration × price/hr)
+
+10. NEXT SESSION
+    → New container, same NFS mount, same home directory
+    → User sees exactly where they left off
+```
+
+---
+
+## 9. KEY PATTERNS TO BORROW FOR YOUR BUILD
+
+| Pattern | Source | How to Apply |
+|---|---|---|
+| **Notebook ≠ Runtime** | Google Colab | Decouple user's files (NAS) from compute (container). Container is disposable. |
+| **Spawner abstraction** | JupyterHub | One "launch session" API that decides container params based on config tier |
+| **Proxy per session** | JupyterHub / Traefik | Dynamic reverse proxy routes keyed to session ID |
+| **NFS home directories** | JupyterHub + WWU Münster | User's 15GB on NAS, mounted per container |
+| **LD_PRELOAD GPU virtualization** | HAMi | Inject libvgpu.so to enforce VRAM limits transparently |
+| **MPS for concurrent GPU** | NVIDIA / GKE | Enable concurrent kernel execution across containers on same GPU |
+| **EGL headless GPU** | Selkies egl-desktop | Multiple containers sharing one GPU without X server exclusivity |
+| **WebRTC for desktop** | Selkies-GStreamer | Full desktop in browser, no client install, works through firewalls |
+| **Resource ledger** | Custom / Kubernetes | Track node-level resources in Redis, enforce before container launch |
+| **Read-only base + writable home** | Docker OverlayFS + NFS | Base image is shared/cached; user data is isolated per NFS dataset |
+| **Billing on session event** | Azure Lab Services | Record start/end timestamps, calculate billable hours, write to audit log |

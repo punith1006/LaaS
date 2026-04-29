@@ -1,0 +1,70 @@
+%% LaaS Architecture - Database ERD (Core Tables)
+%% 8 essential tables with key relationships
+
+erDiagram
+    users {
+        uuid id PK
+        string email UK
+        enum status
+        datetime created_at
+    }
+
+    wallets {
+        uuid id PK
+        uuid user_id FK
+        bigint balance_cents
+        bigint lifetime_spent_cents
+    }
+
+    user_storage_volumes {
+        uuid id PK
+        uuid user_id FK
+        string storage_uid UK
+        bigint quota_bytes
+    }
+
+    sessions {
+        uuid id PK
+        uuid user_id FK
+        uuid node_id FK
+        uuid compute_config_id FK
+        enum status
+        datetime started_at
+    }
+
+    nodes {
+        uuid id PK
+        string hostname UK
+        bigint available_vram_bytes
+        enum status
+    }
+
+    compute_configs {
+        uuid id PK
+        string tier UK
+        int vram_gb
+        bigint rate_per_hour_cents
+    }
+
+    wallet_transactions {
+        uuid id PK
+        uuid wallet_id FK
+        enum type
+        bigint amount_cents
+    }
+
+    payment_transactions {
+        uuid id PK
+        uuid user_id FK
+        string razorpay_order_id UK
+        enum status
+    }
+
+    %% Core Relationships
+    users ||--|| wallets : "has"
+    users ||--o{ user_storage_volumes : "owns"
+    users ||--o{ sessions : "launches"
+    users ||--o{ payment_transactions : "makes"
+    wallets ||--o{ wallet_transactions : "records"
+    sessions }o--|| compute_configs : "uses"
+    sessions }o--|| nodes : "runs on"

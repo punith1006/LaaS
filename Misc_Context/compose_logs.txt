@@ -1,0 +1,563 @@
+zenith@zenith:~/laas-monitoring$ docker compose logs prometheus
+WARN[0000] /home/zenith/laas-monitoring/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion
+laas-prometheus  | time=2026-03-12T07:20:58.725Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:20:58.725Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:20:58.725Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:20:58.726Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:20:58.727Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:20:58.728Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:20:58.728Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:20:58.729Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:20:58.729Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=791ns
+laas-prometheus  | time=2026-03-12T07:20:58.729Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:20:58.730Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=0 duration=1.23074ms
+laas-prometheus  | time=2026-03-12T07:20:58.730Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=27.341µs wal_replay_duration=1.242562ms wbl_replay_duration=160ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=791ns total_replay_duration=1.31058ms
+laas-prometheus  | time=2026-03-12T07:20:58.731Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:20:58.731Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:20:58.731Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:20:58.734Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:20:58.735Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:20:58.735Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:20:58.740Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:20:58.740Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:20:58.740Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:20:58.740Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:20:58.740Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:20:58.740Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:20:58.740Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:20:59.939Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:20:59.939Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:20:59.939Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:20:59.940Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:20:59.940Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:20:59.941Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:20:59.941Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:20:59.943Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:20:59.943Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=601ns
+laas-prometheus  | time=2026-03-12T07:20:59.943Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:20:59.944Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=1 duration=380.978µs
+laas-prometheus  | time=2026-03-12T07:20:59.944Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=1 duration=355.099µs
+laas-prometheus  | time=2026-03-12T07:20:59.944Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=20.989µs wal_replay_duration=750.104µs wbl_replay_duration=130ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=601ns total_replay_duration=795.699µs
+laas-prometheus  | time=2026-03-12T07:20:59.945Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:20:59.945Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:20:59.945Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:20:59.948Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:20:59.956Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:20:59.985Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:20:59.985Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:20:59.985Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:20:59.985Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:20:59.985Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:20:59.985Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:21:00.567Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:21:00.567Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:21:00.567Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:21:00.568Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:21:00.568Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:21:00.569Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:00.569Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:00.571Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:00.571Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=671ns
+laas-prometheus  | time=2026-03-12T07:21:00.571Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:00.571Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=2 duration=715.308µs
+laas-prometheus  | time=2026-03-12T07:21:00.572Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=2 duration=461.69µs
+laas-prometheus  | time=2026-03-12T07:21:00.572Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=2 duration=403.681µs
+laas-prometheus  | time=2026-03-12T07:21:00.572Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=28.313µs wal_replay_duration=1.615104ms wbl_replay_duration=120ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=671ns total_replay_duration=1.68204ms
+laas-prometheus  | time=2026-03-12T07:21:00.574Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:21:00.574Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:21:00.574Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:21:00.577Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:00.578Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:00.578Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:00.578Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:00.584Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:00.584Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:00.584Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:00.584Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:00.585Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:00.585Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:21:01.233Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:21:01.233Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:21:01.234Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:21:01.235Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:21:01.235Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:21:01.236Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:01.236Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:01.237Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:01.237Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=561ns
+laas-prometheus  | time=2026-03-12T07:21:01.237Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:01.239Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=3 duration=1.587432ms
+laas-prometheus  | time=2026-03-12T07:21:01.239Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=3 duration=250.201µs
+laas-prometheus  | time=2026-03-12T07:21:01.239Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=3 duration=287.362µs
+laas-prometheus  | time=2026-03-12T07:21:01.239Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=3 duration=340µs
+laas-prometheus  | time=2026-03-12T07:21:01.239Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=18.414µs wal_replay_duration=2.496535ms wbl_replay_duration=140ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=561ns total_replay_duration=2.54721ms
+laas-prometheus  | time=2026-03-12T07:21:01.241Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:21:01.241Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:21:01.241Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:21:01.244Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:01.244Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:01.244Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:01.244Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:01.245Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:01.250Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:01.250Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:01.250Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:01.250Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:01.250Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:01.250Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:21:02.287Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:21:02.287Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:21:02.287Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:21:02.289Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:21:02.289Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:21:02.290Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:02.290Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:02.291Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:02.291Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=661ns
+laas-prometheus  | time=2026-03-12T07:21:02.291Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:02.292Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=4 duration=1.04494ms
+laas-prometheus  | time=2026-03-12T07:21:02.293Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=4 duration=298.503µs
+laas-prometheus  | time=2026-03-12T07:21:02.293Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=4 duration=293.063µs
+laas-prometheus  | time=2026-03-12T07:21:02.293Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=4 duration=328.179µs
+laas-prometheus  | time=2026-03-12T07:21:02.293Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=4 maxSegment=4 duration=302.791µs
+laas-prometheus  | time=2026-03-12T07:21:02.293Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=26.851µs wal_replay_duration=2.303281ms wbl_replay_duration=140ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=661ns total_replay_duration=2.359617ms
+laas-prometheus  | time=2026-03-12T07:21:02.295Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:21:02.295Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:21:02.295Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:02.298Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:02.303Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:02.303Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:02.303Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:02.303Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:02.303Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:02.303Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:02.303Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:21:04.091Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:21:04.091Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:21:04.091Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:21:04.092Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:21:04.092Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:21:04.093Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:04.093Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:04.095Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:04.095Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=541ns
+laas-prometheus  | time=2026-03-12T07:21:04.095Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:04.096Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=5 duration=463.673µs
+laas-prometheus  | time=2026-03-12T07:21:04.096Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=5 duration=244.51µs
+laas-prometheus  | time=2026-03-12T07:21:04.096Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=5 duration=301.608µs
+laas-prometheus  | time=2026-03-12T07:21:04.097Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=5 duration=347.715µs
+laas-prometheus  | time=2026-03-12T07:21:04.097Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=4 maxSegment=5 duration=342.556µs
+laas-prometheus  | time=2026-03-12T07:21:04.098Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=5 maxSegment=5 duration=1.03461ms
+laas-prometheus  | time=2026-03-12T07:21:04.098Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=25.147µs wal_replay_duration=2.795809ms wbl_replay_duration=120ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=541ns total_replay_duration=2.84944ms
+laas-prometheus  | time=2026-03-12T07:21:04.100Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:21:04.100Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:21:04.100Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:04.102Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:04.106Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:04.106Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:04.106Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:04.106Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:04.106Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:04.106Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:21:07.515Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:21:07.515Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:21:07.515Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:21:07.516Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:21:07.517Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:21:07.517Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:07.517Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:07.518Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:07.518Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=541ns
+laas-prometheus  | time=2026-03-12T07:21:07.518Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:07.520Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=6 duration=1.790435ms
+laas-prometheus  | time=2026-03-12T07:21:07.520Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=6 duration=238.519µs
+laas-prometheus  | time=2026-03-12T07:21:07.521Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=6 duration=316.467µs
+laas-prometheus  | time=2026-03-12T07:21:07.521Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=6 duration=297.42µs
+laas-prometheus  | time=2026-03-12T07:21:07.521Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=4 maxSegment=6 duration=283.865µs
+laas-prometheus  | time=2026-03-12T07:21:07.522Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=5 maxSegment=6 duration=682.687µs
+laas-prometheus  | time=2026-03-12T07:21:07.523Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=6 maxSegment=6 duration=847.017µs
+laas-prometheus  | time=2026-03-12T07:21:07.523Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=22.362µs wal_replay_duration=4.508838ms wbl_replay_duration=120ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=541ns total_replay_duration=4.560996ms
+laas-prometheus  | time=2026-03-12T07:21:07.524Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:21:07.524Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:21:07.524Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:07.527Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:07.529Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:07.529Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:07.529Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:07.529Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:07.529Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:07.529Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:07.529Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:21:14.100Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:21:14.100Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:21:14.100Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:21:14.101Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:21:14.102Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:21:14.102Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:14.102Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:14.104Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:14.104Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=661ns
+laas-prometheus  | time=2026-03-12T07:21:14.104Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:14.105Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=7 duration=1.043357ms
+laas-prometheus  | time=2026-03-12T07:21:14.105Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=7 duration=292µs
+laas-prometheus  | time=2026-03-12T07:21:14.105Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=7 duration=276.491µs
+laas-prometheus  | time=2026-03-12T07:21:14.106Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=7 duration=315.725µs
+laas-prometheus  | time=2026-03-12T07:21:14.106Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=4 maxSegment=7 duration=564.384µs
+laas-prometheus  | time=2026-03-12T07:21:14.107Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=5 maxSegment=7 duration=1.023679ms
+laas-prometheus  | time=2026-03-12T07:21:14.108Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=6 maxSegment=7 duration=320.704µs
+laas-prometheus  | time=2026-03-12T07:21:14.108Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=7 maxSegment=7 duration=249.4µs
+laas-prometheus  | time=2026-03-12T07:21:14.108Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=22.682µs wal_replay_duration=4.145463ms wbl_replay_duration=141ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=661ns total_replay_duration=4.193093ms
+laas-prometheus  | time=2026-03-12T07:21:14.109Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:21:14.109Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:21:14.109Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:14.111Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:14.116Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:14.116Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:14.116Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:14.116Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:14.116Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:14.116Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:14.116Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:21:27.110Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:21:27.110Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:21:27.111Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:21:27.112Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:21:27.112Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:21:27.112Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:27.112Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:27.115Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:27.115Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=1.102µs
+laas-prometheus  | time=2026-03-12T07:21:27.115Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:27.116Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=8 duration=1.510496ms
+laas-prometheus  | time=2026-03-12T07:21:27.116Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=8 duration=296.99µs
+laas-prometheus  | time=2026-03-12T07:21:27.117Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=8 duration=362.393µs
+laas-prometheus  | time=2026-03-12T07:21:27.117Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=8 duration=361.11µs
+laas-prometheus  | time=2026-03-12T07:21:27.118Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=4 maxSegment=8 duration=371.23µs
+laas-prometheus  | time=2026-03-12T07:21:27.119Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=5 maxSegment=8 duration=1.357639ms
+laas-prometheus  | time=2026-03-12T07:21:27.120Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=6 maxSegment=8 duration=747.509µs
+laas-prometheus  | time=2026-03-12T07:21:27.120Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=7 maxSegment=8 duration=404.392µs
+laas-prometheus  | time=2026-03-12T07:21:27.121Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=8 maxSegment=8 duration=495.764µs
+laas-prometheus  | time=2026-03-12T07:21:27.121Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=39.424µs wal_replay_duration=5.988286ms wbl_replay_duration=130ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=1.102µs total_replay_duration=6.064128ms
+laas-prometheus  | time=2026-03-12T07:21:27.122Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:21:27.122Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:21:27.122Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:21:27.124Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:27.124Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:27.124Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:27.124Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:21:27.125Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:27.125Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:27.125Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:27.125Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:27.125Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:21:27.125Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:27.125Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:27.125Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:27.130Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:27.130Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:27.130Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:27.130Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:27.130Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:27.130Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:27.130Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:21:52.918Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:21:52.918Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:21:52.919Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:21:52.920Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:21:52.921Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:21:52.921Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:52.921Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:21:52.923Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:52.923Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=661ns
+laas-prometheus  | time=2026-03-12T07:21:52.923Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:21:52.925Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=9 duration=1.818708ms
+laas-prometheus  | time=2026-03-12T07:21:52.925Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=9 duration=456.49µs
+laas-prometheus  | time=2026-03-12T07:21:52.925Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=9 duration=356.402µs
+laas-prometheus  | time=2026-03-12T07:21:52.926Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=9 duration=340.191µs
+laas-prometheus  | time=2026-03-12T07:21:52.926Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=4 maxSegment=9 duration=373.042µs
+laas-prometheus  | time=2026-03-12T07:21:52.926Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=5 maxSegment=9 duration=362.583µs
+laas-prometheus  | time=2026-03-12T07:21:52.928Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=6 maxSegment=9 duration=1.18881ms
+laas-prometheus  | time=2026-03-12T07:21:52.929Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=7 maxSegment=9 duration=940.643µs
+laas-prometheus  | time=2026-03-12T07:21:52.929Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=8 maxSegment=9 duration=427.726µs
+laas-prometheus  | time=2026-03-12T07:21:52.929Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=9 maxSegment=9 duration=394.082µs
+laas-prometheus  | time=2026-03-12T07:21:52.929Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=26.62µs wal_replay_duration=6.767775ms wbl_replay_duration=130ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=661ns total_replay_duration=6.828819ms
+laas-prometheus  | time=2026-03-12T07:21:52.931Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:21:52.931Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:21:52.931Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:52.934Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:52.940Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:52.940Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:21:52.940Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:52.940Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:21:52.940Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:52.940Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:21:52.940Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:21:52.940Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:22:44.328Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:22:44.329Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:22:44.330Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:22:44.331Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:22:44.331Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:22:44.331Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:22:44.331Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:22:44.333Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:22:44.333Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=561ns
+laas-prometheus  | time=2026-03-12T07:22:44.333Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:22:44.334Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=10 duration=1.560822ms
+laas-prometheus  | time=2026-03-12T07:22:44.334Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=10 duration=206.609µs
+laas-prometheus  | time=2026-03-12T07:22:44.335Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=10 duration=280.649µs
+laas-prometheus  | time=2026-03-12T07:22:44.335Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=10 duration=308.461µs
+laas-prometheus  | time=2026-03-12T07:22:44.335Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=4 maxSegment=10 duration=290.698µs
+laas-prometheus  | time=2026-03-12T07:22:44.336Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=5 maxSegment=10 duration=518.808µs
+laas-prometheus  | time=2026-03-12T07:22:44.337Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=6 maxSegment=10 duration=1.136381ms
+laas-prometheus  | time=2026-03-12T07:22:44.337Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=7 maxSegment=10 duration=270.33µs
+laas-prometheus  | time=2026-03-12T07:22:44.338Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=8 maxSegment=10 duration=305.786µs
+laas-prometheus  | time=2026-03-12T07:22:44.338Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=9 maxSegment=10 duration=436.693µs
+laas-prometheus  | time=2026-03-12T07:22:44.338Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=10 maxSegment=10 duration=343.397µs
+laas-prometheus  | time=2026-03-12T07:22:44.338Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=26.66µs wal_replay_duration=5.737363ms wbl_replay_duration=140ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=561ns total_replay_duration=5.796293ms
+laas-prometheus  | time=2026-03-12T07:22:44.339Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:22:44.339Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:22:44.339Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:22:44.342Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:22:44.347Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:22:44.347Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:22:44.347Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:22:44.347Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:22:44.347Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:22:44.347Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+laas-prometheus  | time=2026-03-12T07:23:44.548Z level=INFO source=main.go:725 msg="Starting Prometheus Server" mode=server version="(version=3.4.0, branch=HEAD, revision=546b1d242e209ed4228aa01a248dbf3e41e573ea)"
+laas-prometheus  | time=2026-03-12T07:23:44.548Z level=INFO source=main.go:730 msg="operational information" build_context="(go=go1.24.3, platform=linux/amd64, user=root@b1749ffe17d4, date=20250517-06:54:08, tags=netgo,builtinassets,stringlabels)" host_details="(Linux 5.15.0-171-generic #181-Ubuntu SMP Fri Feb 6 22:44:50 UTC 2026 x86_64 2bade6e08f8e (none))" fd_limits="(soft=524287, hard=524288)" vm_limits="(soft=unlimited, hard=unlimited)"
+laas-prometheus  | time=2026-03-12T07:23:44.549Z level=INFO source=main.go:806 msg="Updating GOMAXPROCS=2: determined from CPU quota" component=automaxprocs
+laas-prometheus  | time=2026-03-12T07:23:44.550Z level=INFO source=web.go:656 msg="Start listening for connections" component=web address=0.0.0.0:9090
+laas-prometheus  | time=2026-03-12T07:23:44.550Z level=INFO source=main.go:1266 msg="Starting TSDB ..."
+laas-prometheus  | time=2026-03-12T07:23:44.551Z level=INFO source=tls_config.go:347 msg="Listening on" component=web address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:23:44.551Z level=INFO source=tls_config.go:350 msg="TLS is disabled." component=web http2=false address=[::]:9090
+laas-prometheus  | time=2026-03-12T07:23:44.552Z level=INFO source=head.go:657 msg="Replaying on-disk memory mappable chunks if any" component=tsdb
+laas-prometheus  | time=2026-03-12T07:23:44.552Z level=INFO source=head.go:744 msg="On-disk memory mappable chunks replay completed" component=tsdb duration=571ns
+laas-prometheus  | time=2026-03-12T07:23:44.552Z level=INFO source=head.go:752 msg="Replaying WAL, this may take a while" component=tsdb
+laas-prometheus  | time=2026-03-12T07:23:44.553Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=0 maxSegment=11 duration=1.34278ms
+laas-prometheus  | time=2026-03-12T07:23:44.554Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=1 maxSegment=11 duration=858.248µs
+laas-prometheus  | time=2026-03-12T07:23:44.555Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=2 maxSegment=11 duration=285.427µs
+laas-prometheus  | time=2026-03-12T07:23:44.555Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=3 maxSegment=11 duration=332.256µs
+laas-prometheus  | time=2026-03-12T07:23:44.555Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=4 maxSegment=11 duration=285.929µs
+laas-prometheus  | time=2026-03-12T07:23:44.556Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=5 maxSegment=11 duration=328.649µs
+laas-prometheus  | time=2026-03-12T07:23:44.556Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=6 maxSegment=11 duration=912.199µs
+laas-prometheus  | time=2026-03-12T07:23:44.557Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=7 maxSegment=11 duration=817.601µs
+laas-prometheus  | time=2026-03-12T07:23:44.558Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=8 maxSegment=11 duration=274.898µs
+laas-prometheus  | time=2026-03-12T07:23:44.558Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=9 maxSegment=11 duration=314.843µs
+laas-prometheus  | time=2026-03-12T07:23:44.558Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=10 maxSegment=11 duration=470.998µs
+laas-prometheus  | time=2026-03-12T07:23:44.559Z level=INFO source=head.go:825 msg="WAL segment loaded" component=tsdb segment=11 maxSegment=11 duration=388.893µs
+laas-prometheus  | time=2026-03-12T07:23:44.559Z level=INFO source=head.go:862 msg="WAL replay completed" component=tsdb checkpoint_replay_duration=32.943µs wal_replay_duration=6.709944ms wbl_replay_duration=121ns chunk_snapshot_load_duration=0s mmap_chunk_replay_duration=571ns total_replay_duration=6.774497ms
+laas-prometheus  | time=2026-03-12T07:23:44.560Z level=INFO source=main.go:1287 msg="filesystem information" fs_type=EXT4_SUPER_MAGIC
+laas-prometheus  | time=2026-03-12T07:23:44.560Z level=INFO source=main.go:1290 msg="TSDB started"
+laas-prometheus  | time=2026-03-12T07:23:44.560Z level=INFO source=main.go:1475 msg="Loading configuration file" filename=/etc/prometheus/prometheus.yml
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 3, \"ContainerMemoryUsageHigh\": annotation \"description\": template: __alert_ContainerMemoryUsageHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_health\", rule 4, \"ContainerCPUThrottlingHigh\": annotation \"description\": template: __alert_ContainerCPUThrottlingHigh:1: function \"mul\" not defined"
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=ERROR source=manager.go:226 msg="loading groups failed" component="rule manager" err="/etc/prometheus/rules/container_alerts.yml: group \"container_network\", rule 1, \"SessionNetworkEgressHigh\": annotation \"description\": template: __alert_SessionNetworkEgressHigh:1: function \"div\" not defined"
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=ERROR source=main.go:1503 msg="Failed to apply configuration" err="error loading rules, previous rule set restored"
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=INFO source=main.go:1078 msg="Stopping scrape discovery manager..."
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=INFO source=main.go:1092 msg="Stopping notify discovery manager..."
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=INFO source=manager.go:189 msg="Stopping rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=INFO source=manager.go:205 msg="Rule manager stopped" component="rule manager"
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=INFO source=main.go:1129 msg="Stopping scrape manager..."
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=INFO source=main.go:1121 msg="Scrape manager stopped"
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=INFO source=manager.go:175 msg="Starting rule manager..." component="rule manager"
+laas-prometheus  | time=2026-03-12T07:23:44.563Z level=INFO source=main.go:1074 msg="Scrape discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:23:44.568Z level=INFO source=main.go:1088 msg="Notify discovery manager stopped"
+laas-prometheus  | time=2026-03-12T07:23:44.568Z level=INFO source=manager.go:540 msg="Stopping notification manager..." component=notifier
+laas-prometheus  | time=2026-03-12T07:23:44.568Z level=INFO source=manager.go:282 msg="Draining any remaining notifications..." component=notifier
+laas-prometheus  | time=2026-03-12T07:23:44.568Z level=INFO source=manager.go:288 msg="Remaining notifications drained" component=notifier
+laas-prometheus  | time=2026-03-12T07:23:44.568Z level=INFO source=manager.go:218 msg="Notification manager stopped" component=notifier
+laas-prometheus  | time=2026-03-12T07:23:44.568Z level=INFO source=main.go:1399 msg="Notifier manager stopped"
+laas-prometheus  | time=2026-03-12T07:23:44.568Z level=ERROR source=main.go:1409 msg="Fatal error" err="error loading config from \"/etc/prometheus/prometheus.yml\": one or more errors occurred while applying the new configuration (--config.file=\"/etc/prometheus/prometheus.yml\")"
+zenith@zenith:~/laas-monitoring$ docker compose logs alertmanager
+WARN[0000] /home/zenith/laas-monitoring/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion
+laas-alertmanager  | time=2026-03-12T07:20:59.026Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:20:59.026Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:20:59.081Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.4 port=9094
+laas-alertmanager  | time=2026-03-12T07:20:59.081Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:20:59.096Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:20:59.096Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:20:59.096Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=14.924228ms
+laas-alertmanager  | time=2026-03-12T07:21:00.028Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:00.028Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:00.028Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.13 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:00.028Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:00.042Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:00.042Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:00.042Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=13.888846ms
+laas-alertmanager  | time=2026-03-12T07:21:00.637Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:00.637Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:00.637Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.13 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:00.638Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:00.683Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:00.684Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:00.684Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=46.061851ms
+laas-alertmanager  | time=2026-03-12T07:21:01.416Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:01.416Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:01.485Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.13 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:01.486Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:01.503Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:01.504Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:01.504Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=17.409291ms
+laas-alertmanager  | time=2026-03-12T07:21:02.714Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:02.714Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:02.714Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.13 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:02.715Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:02.783Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:02.783Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:02.783Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=68.125614ms
+laas-alertmanager  | time=2026-03-12T07:21:04.588Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:04.588Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:04.588Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.12 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:04.588Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:04.606Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:04.606Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:04.606Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=17.540298ms
+laas-alertmanager  | time=2026-03-12T07:21:08.081Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:08.081Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:08.082Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.12 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:08.082Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:08.096Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:08.096Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:08.096Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=14.111686ms
+laas-alertmanager  | time=2026-03-12T07:21:14.679Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:14.679Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:14.679Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.12 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:14.680Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:14.691Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:14.692Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:14.692Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=11.961022ms
+laas-alertmanager  | time=2026-03-12T07:21:27.688Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:27.688Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:27.688Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.12 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:27.689Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:27.703Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:27.703Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:27.703Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=13.982181ms
+laas-alertmanager  | time=2026-03-12T07:21:53.489Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:21:53.489Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:21:53.489Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.12 port=9094
+laas-alertmanager  | time=2026-03-12T07:21:53.490Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:21:53.583Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:21:53.583Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:21:53.583Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=93.24907ms
+laas-alertmanager  | time=2026-03-12T07:22:44.974Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:22:44.974Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:22:44.974Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.12 port=9094
+laas-alertmanager  | time=2026-03-12T07:22:44.974Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:22:44.987Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:22:44.988Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:22:44.988Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=13.502647ms
+laas-alertmanager  | time=2026-03-12T07:23:45.178Z level=INFO source=main.go:191 msg="Starting Alertmanager" version="(version=0.28.1, branch=HEAD, revision=b2099eaa2c9ebc25edb26517cb9c732738e93910)"
+laas-alertmanager  | time=2026-03-12T07:23:45.178Z level=INFO source=main.go:192 msg="Build context" build_context="(go=go1.23.7, platform=linux/amd64, user=root@fa3ca569dfe4, date=20250307-15:05:18, tags=netgo)"
+laas-alertmanager  | time=2026-03-12T07:23:45.179Z level=INFO source=cluster.go:185 msg="setting advertise address explicitly" component=cluster addr=172.30.0.12 port=9094
+laas-alertmanager  | time=2026-03-12T07:23:45.179Z level=INFO source=cluster.go:674 msg="Waiting for gossip to settle..." component=cluster interval=2s
+laas-alertmanager  | time=2026-03-12T07:23:45.193Z level=INFO source=coordinator.go:112 msg="Loading configuration file" component=configuration file=/etc/alertmanager/alertmanager.yml
+laas-alertmanager  | time=2026-03-12T07:23:45.193Z level=ERROR source=coordinator.go:117 msg="Loading configuration file failed" component=configuration file=/etc/alertmanager/alertmanager.yml err="address ${SMTP_HOST}: missing port in address"
+laas-alertmanager  | time=2026-03-12T07:23:45.193Z level=INFO source=cluster.go:683 msg="gossip not settled but continuing anyway" component=cluster polls=0 elapsed=13.859539ms
+zenith@zenith:~/laas-monitoring$

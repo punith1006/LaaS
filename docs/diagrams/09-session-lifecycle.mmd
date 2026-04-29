@@ -1,0 +1,33 @@
+%% LaaS Architecture - Session Lifecycle (Simplified)
+%% Clean state diagram with 7 states
+
+stateDiagram-v2
+    [*] --> Pending: User requests
+
+    Pending --> Starting: Node selected
+
+    Starting --> Running: Container healthy
+
+    Running --> Running: Reconnect
+
+    Running --> Stopping: User ends / timeout
+
+    Running --> Failed: GPU fault
+
+    Stopping --> Ended: Cleanup complete
+
+    Failed --> Starting: Auto-recovery
+
+    Ended --> [*]
+
+    note right of Running
+        Active session states:
+        Streaming via WebRTC
+        Auto-reconnect on disconnect
+    end note
+
+    note right of Ended
+        Billing captured:
+        Duration × rate charged
+        Wallet debited
+    end note

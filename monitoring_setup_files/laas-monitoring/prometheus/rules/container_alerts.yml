@@ -1,0 +1,104 @@
+groups:
+
+  # ──────────────────────────────────────────────────────────
+  # CONTAINER HEALTH — crash loops, OOM, resource limits
+  # ──────────────────────────────────────────────────────────
+  - name: container_health
+    rules:
+      - alert: SelkiesContainerCrashLoop
+        expr: |
+          increase(container_last_seen{name=~"selkies-.*"}[10m]) == 0
+          and
+          increase(container_start_time_seconds{name=~"selkies-.*"}[10m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Selkies container crash-looping: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} has restarted multiple times in 10 minutes. User session is disrupted."
+
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total{name=~"selkies-.*"} > 0
+        for: 0s
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container OOM killed: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} was killed by OOM killer. User's session RAM limit was hit. Consider raising RAM allocation for this tier."
+
+      - alert: ContainerMemoryUsageHigh
+        expr: |
+          container_memory_usage_bytes{name=~"selkies-.*"}
+          / container_spec_memory_limit_bytes{name=~"selkies-.*"} > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container memory near limit: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is using over 90% of its memory limit. OOM risk."
+
+      - alert: ContainerCPUThrottlingHigh
+        expr: |
+          rate(container_cpu_cfs_throttled_seconds_total{name=~"selkies-.*"}[5m])
+          / rate(container_cpu_cfs_periods_total{name=~"selkies-.*"}[5m]) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "CPU heavily throttled in {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is CPU throttled over 80% of the time. Desktop may lag. Consider upgrading tier or moving to a less busy node."
+
+  # ──────────────────────────────────────────────────────────
+  # INFRASTRUCTURE CONTAINERS — monitoring stack + services
+  # ──────────────────────────────────────────────────────────
+  - name: infra_container_health
+    rules:
+      - alert: CriticalServiceDown
+        expr: absent(container_last_seen{name=~"laas-(prometheus|grafana|loki|dcgm-exporter|mps-exporter)"})
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Critical LaaS service is down"
+          description: "A critical monitoring/infrastructure container is not running. Check: docker ps | grep laas"
+
+      - alert: LxcfsDown
+        expr: laas_lxcfs_running == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "lxcfs is DOWN on {{ $labels.node }}"
+          description: "lxcfs has stopped. All running user containers will now show the host's full hardware specs (16 CPUs, 64GB RAM) instead of their tier limits. Restart immediately: sudo systemctl restart lxcfs"
+
+      - alert: DockerDaemonIssue
+        expr: laas_docker_info_containers_running < 0
+        for: 1m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Docker daemon may be unresponsive on {{ $labels.node }}"
+          description: "Cannot query Docker daemon. Session orchestration is broken."
+
+  # ──────────────────────────────────────────────────────────
+  # CONTAINER NETWORK — WebRTC streams, egress
+  # ──────────────────────────────────────────────────────────
+  - name: container_network
+    rules:
+      - alert: SessionNetworkEgressHigh
+        expr: |
+          rate(container_network_transmit_bytes_total{name=~"selkies-.*"}[5m]) > 20000000
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "High network egress from session container: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is transmitting over 20MB/s. Expected max for 1080p@60fps stream is ~15MB/s. Possible 4K stream or data exfiltration."

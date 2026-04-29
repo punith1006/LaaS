@@ -1,0 +1,134 @@
+# ============================================================
+# Promtail Configuration — LaaS Log Collection
+# Sources:
+#   1. Docker container logs (all containers, labelled)
+#   2. systemd journal (host services: cuda-mps, docker, lxcfs)
+#   3. CUDA MPS daemon logs (/tmp/nvidia-log)
+#   4. HAMi / supervisord logs (from within session containers)
+#   5. System auth/syslog (security events)
+# ============================================================
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+
+  # ── Docker Container Logs ─────────────────────────────────
+  # Auto-discovers all running containers.
+  # Uses Docker labels for metadata: laas.session_id, laas.user_id, laas.tier
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Use container name as job
+      - source_labels: [__meta_docker_container_name]
+        regex: '/(.*)'
+        target_label: container
+      # Classify container type
+      - source_labels: [__meta_docker_container_name]
+        regex: 'selkies-.*'
+        target_label: container_type
+        replacement: 'selkies-session'
+      - source_labels: [__meta_docker_container_name]
+        regex: 'laas-.*'
+        target_label: container_type
+        replacement: 'platform-infra'
+      # Promote LaaS session labels to log labels
+      - source_labels: [__meta_docker_container_label_laas_session_id]
+        target_label: session_id
+      - source_labels: [__meta_docker_container_label_laas_user_id]
+        target_label: user_id
+      - source_labels: [__meta_docker_container_label_laas_tier]
+        target_label: tier
+      - source_labels: [__meta_docker_container_label_laas_node]
+        target_label: node
+      # Log source
+      - target_label: log_source
+        replacement: docker
+
+    pipeline_stages:
+      # Parse log level from Selkies logs
+      - match:
+          selector: '{container=~"selkies-.*"}'
+          stages:
+            - regex:
+                expression: '(?P<level>ERROR|WARN|INFO|DEBUG)\s+'
+            - labels:
+                level:
+      # Flag critical GPU-related log lines
+      - match:
+          selector: '{container=~"selkies-.*"}'
+          stages:
+            - regex:
+                expression: '(?P<event>NVENC|MPS|CUDA|HAMi|libvgpu|cuMemAlloc|OOM|segfault)'
+            - labels:
+                event:
+      # Drop noisy health check logs
+      - drop:
+          expression: ".*GET /healthz.*"
+      - drop:
+          expression: ".*ping.*pong.*"
+
+  # ── systemd Journal (Host Services) ─────────────────────────
+  - job_name: systemd-journal
+    journal:
+      max_age: 12h
+      labels:
+        job: systemd
+        node: node-mvp           # update per node
+    relabel_configs:
+      - source_labels: [__journal__systemd_unit]
+        target_label: unit
+      - source_labels: [__journal__systemd_unit]
+        regex: '(cuda-mps|lxcfs|docker|nfs-kernel-server|nvidia-persistenced)\.service'
+        target_label: laas_critical_service
+        replacement: 'true'
+      - source_labels: [__journal_priority]
+        target_label: priority
+    pipeline_stages:
+      # Extract priority levels
+      - match:
+          selector: '{unit="cuda-mps.service"}'
+          stages:
+            - regex:
+                expression: '(?P<mps_event>FAULT|ERROR|ACTIVE|QUIT)'
+            - labels:
+                mps_event:
+
+  # ── CUDA MPS Daemon Logs ────────────────────────────────────
+  - job_name: cuda-mps-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: cuda-mps
+          node: node-mvp
+          __path__: /var/log/nvidia-mps/*.log
+    pipeline_stages:
+      - regex:
+          expression: '(?P<mps_state>FAULT|ACTIVE|ERROR|WARNING)'
+      - labels:
+          mps_state:
+
+  # ── System Auth Log (security events) ──────────────────────
+  - job_name: syslog-auth
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: syslog-auth
+          node: node-mvp
+          __path__: /var/log/auth.log
+    pipeline_stages:
+      - regex:
+          expression: '(?P<auth_event>Failed password|Invalid user|Accepted publickey|session opened|session closed)'
+      - labels:
+          auth_event:

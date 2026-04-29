@@ -1,0 +1,33 @@
+modules:
+  # HTTP 2xx check — for web services
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: []   # defaults to 2xx
+      method: GET
+      follow_redirects: true
+      preferred_ip_protocol: "ip4"
+
+  # TCP connect check — for TURN server, MPS socket ports
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+
+  # TCP with SSL check — for Cloudflare Tunnel endpoint
+  https_check:
+    prober: http
+    timeout: 10s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      method: GET
+      tls_config:
+        insecure_skip_verify: false
+
+  # ICMP ping — for node reachability (multi-node production)
+  icmp_ping:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: "ip4"

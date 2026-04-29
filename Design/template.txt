@@ -1,0 +1,85 @@
+The Design Style: "Utilitarian Minimalism" (also called the "Dev-Tool Aesthetic")
+This is a very specific and recognizable design language that's become popular among developer-facing SaaS products. Here's how to break it down for your agent:
+Named style references you can use:
+
+Utilitarian Minimalism — the broadest accurate term
+"Linear-style UI" — named after Linear.app, which popularized this look; widely understood in design circles
+Functional Flat Design — emphasizes purpose over decoration
+
+
+Key Characteristics to instruct your agent with:
+Color & Surface
+
+Warm off-white / greige / sage background (not pure white) — something like #E8E8E0 or #EEEEE6 for light mode
+Pure black (#0A0A0A) for dark mode with zero surface elevation
+Monochromatic palette with a single functional accent (green status dot, black CTAs)
+
+Typography
+
+Uppercase, wide-tracked (letter-spacing) labels for navigation and section headers
+Clean sans-serif ("Suisse Intl" with fallbacks to -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto)
+For technical data (dates, sizes, file types): use monospace ("Suisse Intl Mono" or system monospace)
+Small, restrained font sizes — nothing oversized
+
+Layout & Spacing
+
+Heavy whitespace — content breathes
+Left sidebar navigation, icon + uppercase label pairs
+No cards with heavy shadows; borders are thin or absent
+
+Interactive Elements
+
+Primary CTA: solid dark button, light text — high contrast, no gradients
+Secondary CTA: outlined/ghost button
+Highlights only where functionally necessary (active nav item = left border)
+Status indicators are the only "color" used (green dot = live)
+
+General Rules
+
+No decorative elements, gradients, or illustrations
+Flat hierarchy — depth is implied by spacing, not shadows
+Tables and data are presented raw and clean
+
+FILE STORE / FILE LIST SECTION
+
+The File Store section displays files and folders in a structured table format with the following characteristics:
+
+Table Structure:
+- Grid layout: File Name | Type | Size | Updated On | Actions (40px)
+- Table headers: uppercase, letter-spacing: 0.06em, font-weight: 500
+- Row height: 48px for proper touch targets
+- Alternating backgrounds on hover only, not alternating rows
+
+File Icons:
+- 32x32px container with 4px border-radius
+- Folder icon: info blue (#3A73FF) stroke
+- File icon: muted gray stroke
+- Icon container background: var(--bgColor-muted)
+
+ICON SPECIFICATIONS (Lambda Design Philosophy):
+- All icons use consistent strokeWidth: 1.5 (not 2)
+- Icon size: 16x16px for inline, 14x14px for buttons
+- Empty state icons: 40x40px with 0.6 opacity
+- All icons use "round" stroke-linecap and stroke-linejoin
+- Minimal, geometric shapes - no decorative elements
+- Folder icon path: "M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-9l-2-3H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"
+- File icon path: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" with polyline "14 2 14 8 20 8"
+- Do NOT use icons with strokeWidth: 2 as it's too heavy for the minimal aesthetic
+
+Typography Hierarchy:
+- Page title: 1.5rem, font-weight: 600
+- Table headers: 0.75rem, uppercase, letter-spacing: 0.06em, muted color
+- File names: 0.875rem, default color
+- Folder names: info blue, clickable with arrow indicator
+- Metadata (size, type, date): monospace font, 0.8125rem, muted color
+
+Folder Navigation:
+- Breadcrumb bar appears when inside folders
+- "Back" button with left arrow icon
+- Clickable path segments with chevron separators
+- Current folder highlighted with background
+
+Action Menu (Three-dot):
+- Portal-rendered dropdown to avoid clipping issues
+- z-index: 9999 for proper layering
+- Options: Download, Delete (with critical color for delete)

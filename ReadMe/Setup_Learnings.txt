@@ -1,0 +1,2 @@
+The UFW firewall on ai2 is blocking all incoming traffic except SSH (ports 22/2224) and Calico. Your iperf3 connections arriving on enp11s0 from the 10.10.100.x subnet are hitting the default DROP policy.
+sudo ufw allow in on enp11s0 (both machines)

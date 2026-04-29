@@ -1,0 +1,419 @@
+# ============================================================
+# LaaS Platform — Complete Monitoring Stack
+# Docker Compose v3.8
+#
+# Stack components:
+#   Core:       Prometheus · Grafana · Alertmanager
+#   Logs:       Loki · Promtail
+#   Host:       node-exporter · cAdvisor
+#   GPU:        DCGM Exporter
+#   Network:    blackbox-exporter · coturn (metrics scrape only)
+#   Custom:     mps-exporter · session-exporter
+#   Status:     Uptime Kuma
+#   Future:     redis-exporter (uncomment when orchestrator is deployed)
+#
+# Usage:
+#   cp .env.example .env && nano .env          # fill in secrets
+#   docker compose up -d                       # start everything
+#   docker compose logs -f prometheus          # debug
+# ============================================================
+
+version: "3.8"
+
+networks:
+  laas-monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  alertmanager_data:
+  uptime_kuma_data:
+
+# ─────────────────────────────────────────────────────────────
+# PROMETHEUS — metrics store + alerting rules engine
+# ─────────────────────────────────────────────────────────────
+services:
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    container_name: laas-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"        # 30 days of history
+      - "--storage.tsdb.retention.size=20GB"        # hard cap at 20GB
+      - "--web.enable-lifecycle"                    # allows hot reload: POST /-/reload
+      - "--web.enable-admin-api"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--query.max-samples=50000000"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+      # File-based service discovery directory — orchestrator writes targets here
+      - ./prometheus/file_sd:/etc/prometheus/file_sd:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─────────────────────────────────────────────────────────────
+  # GRAFANA — dashboards and visualization
+  # ─────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.5.0
+    container_name: laas-grafana
+    restart: unless-stopped
+    environment:
+      # Admin credentials — change in .env
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+      # Allow embedding in admin tools
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      # Anonymous access for read-only public status (optional)
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Feature flags
+      GF_FEATURE_TOGGLES_ENABLE: "ngalert"
+      # Loki plugin
+      GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-piechart-panel"
+      # Alerting
+      GF_ALERTING_ENABLED: "true"
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - laas-monitoring
+    depends_on:
+      - prometheus
+      - loki
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  # ─────────────────────────────────────────────────────────────
+  # ALERTMANAGER — alert routing: Telegram + Email
+  # ─────────────────────────────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: laas-alertmanager
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--web.listen-address=:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  # ─────────────────────────────────────────────────────────────
+  # LOKI — log aggregation backend (Grafana native)
+  # ─────────────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: laas-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────────────
+  # PROMTAIL — log shipper: Docker + systemd + CUDA MPS + HAMi
+  # ─────────────────────────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: laas-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /run/log/journal:/run/log/journal:ro        # systemd journal
+      - /etc/machine-id:/etc/machine-id:ro
+      # MPS and HAMi logs
+      - /tmp/nvidia-log:/var/log/nvidia-mps:ro
+      - /tmp/nvidia-mps:/run/nvidia-mps:ro
+    networks:
+      - laas-monitoring
+    depends_on:
+      - loki
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  # ─────────────────────────────────────────────────────────────
+  # NODE EXPORTER — host hardware + OS metrics
+  # ─────────────────────────────────────────────────────────────
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: laas-node-exporter
+    restart: unless-stopped
+    pid: "host"                          # required for accurate process metrics
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+      - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$"
+      - "--collector.systemd"            # systemd service health
+      - "--collector.processes"          # process-level metrics
+      - "--collector.nfs"                # NFS client metrics
+      - "--collector.nvme"              # NVMe SMART data
+      - "--collector.zfs"               # ZFS metrics (if ZFS is installed)
+      - "--collector.textfile.directory=/var/lib/node_exporter/textfile_collector"
+      - "--web.listen-address=:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro   # systemd collector
+      - ./node-exporter/textfile:/var/lib/node_exporter/textfile_collector  # custom textfile metrics
+    ports:
+      - "9100:9100"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: 128M
+  
+  # ─────────────────────────────────────────────────────────────
+  # CADVISOR — per-container CPU, RAM, network, disk I/O
+  # ─────────────────────────────────────────────────────────────
+# cadvisor:
+#    image: gcr.io/cadvisor/cadvisor:v0.52.1
+#    container_name: laas-cadvisor
+#    restart: unless-stopped
+#    privileged: true
+#    devices:
+#      - /dev/kmsg
+#    command:
+#      - "--port=8999"
+#      - "--housekeeping_interval=15s"
+#      - "--docker=unix:///var/run/docker.sock"
+#      - "--docker_only=false"
+#      - "--store_container_labels=false"
+#      - "--whitelisted_container_labels=laas_session_id,laas_user_id,laas_tier,laas_node"
+#      - "--disable_metrics=advtcp,cpuset,hugetlb,memory_numa,perf_event,referenced_memory,resctrl,tcp,udp"
+#    volumes:
+#      - /:/rootfs:ro
+#      - /var/run:/var/run:rw
+#      - /var/run/docker.sock:/var/run/docker.sock:ro
+#      - /sys:/sys:ro
+#      - /var/lib/docker:/var/lib/docker:ro
+#      - /dev/disk:/dev/disk:ro
+#    ports:
+#      - "8999:8999"
+#    networks:
+#      - laas-monitoring
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: "1.0"
+#          memory: 512M
+
+  # ─────────────────────────────────────────────────────────────
+  # DCGM EXPORTER — deep GPU telemetry (the critical one)
+  # Metrics: temperature, power, VRAM, SM utilization, NVENC,
+  #          PCIe bandwidth, ECC errors, clocks, memory BW
+  # ─────────────────────────────────────────────────────────────
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:4.2.3-4.1.1-ubuntu22.04
+    container_name: laas-dcgm-exporter
+    restart: unless-stopped
+    runtime: nvidia                          # requires NVIDIA Container Toolkit
+    cap_add:
+      - SYS_ADMIN                            # required for DCGM
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      DCGM_EXPORTER_LISTEN: ":9400"
+      DCGM_EXPORTER_INTERVAL: "5000"         # 5s collection interval (default 30s is too slow)
+    ports:
+      - "9400:9400"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9400/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─────────────────────────────────────────────────────────────
+  # BLACKBOX EXPORTER — endpoint probing + service health
+  # Probes: Selkies session health, TURN server, cloudflared,
+  #         NFS exports, MPS daemon socket
+  # ─────────────────────────────────────────────────────────────
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: laas-blackbox-exporter
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/blackbox/blackbox.yml"
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    ports:
+      - "9115:9115"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 64M
+
+  # ─────────────────────────────────────────────────────────────
+  # MPS EXPORTER (CUSTOM) — CUDA MPS daemon state, NVENC count
+  # Exports: mps_daemon_state, mps_fault_total, nvenc_sessions,
+  #          mps_active_clients, gpu_vram_orchestrator_allocated
+  # ─────────────────────────────────────────────────────────────
+  mps-exporter:
+    build:
+      context: ./exporters/mps-exporter
+      dockerfile: Dockerfile
+    container_name: laas-mps-exporter
+    restart: unless-stopped
+    # Needs MPS pipe dir + nvidia-smi access
+    volumes:
+      - /tmp/nvidia-mps:/tmp/nvidia-mps
+      - /tmp/nvidia-log:/tmp/nvidia-log
+      - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi-real:ro    # real nvidia-smi
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro
+    environment:
+      MPS_PIPE_DIR: /tmp/nvidia-mps
+      EXPORTER_PORT: "9500"
+      GPU_INDEX: "0"
+      GPU_TOTAL_VRAM_MB: "32768"          # 32GB for RTX 5090; update for POC RTX 4090: 24576
+    devices:
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia0:/dev/nvidia0
+    ports:
+      - "9500:9500"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 128M
+
+  # ─────────────────────────────────────────────────────────────
+  # SESSION EXPORTER (CUSTOM) — live session metrics from Docker
+  # Exports: active_sessions_total (by tier, type, node),
+  #          vram_allocated_mb, session_uptime, per-user metrics
+  # Also writes file_sd targets for Selkies /metrics scraping
+  # ─────────────────────────────────────────────────────────────
+  session-exporter:
+    build:
+      context: ./exporters/session-exporter
+      dockerfile: Dockerfile
+    container_name: laas-session-exporter
+    restart: unless-stopped
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw    # Docker API (rw needed for API access)
+      - ./prometheus/file_sd:/app/file_sd               # writes Selkies scrape targets
+    environment:
+      EXPORTER_PORT: "9501"
+      NODE_ID: ${NODE_ID:-node-mvp}
+      FILE_SD_PATH: /app/file_sd/selkies_sessions.json
+    ports:
+      - "9501:9501"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 128M
+
+  # ─────────────────────────────────────────────────────────────
+  # UPTIME KUMA — internal service status page (admin use)
+  # Access: http://host:3001
+  # ─────────────────────────────────────────────────────────────
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: laas-uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker container monitoring
+    ports:
+      - "3001:3001"
+    networks:
+      - laas-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  # ─────────────────────────────────────────────────────────────
+  # REDIS EXPORTER — uncomment when FastAPI orchestrator deploys
+  # ─────────────────────────────────────────────────────────────
+  # redis-exporter:
+  #   image: oliver006/redis_exporter:v1.65.0
+  #   container_name: laas-redis-exporter
+  #   restart: unless-stopped
+  #   environment:
+  #     REDIS_ADDR: "redis://host.docker.internal:6379"
+  #   ports:
+  #     - "9121:9121"
+  #   networks:
+  #     - laas-monitoring

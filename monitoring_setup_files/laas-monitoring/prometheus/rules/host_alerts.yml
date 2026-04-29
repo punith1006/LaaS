@@ -1,0 +1,161 @@
+groups:
+
+  # ──────────────────────────────────────────────────────────
+  # HOST MEMORY
+  # 64GB per node. With 4 Full Machine sessions = 4×48GB = overcommit.
+  # Orchestrator must prevent this. Alert if it somehow happens.
+  # ──────────────────────────────────────────────────────────
+  - name: host_memory
+    rules:
+      - alert: HostMemoryUsageHigh
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Host RAM > 85% on {{ $labels.instance }}"
+          description: "Over 85% RAM used on host. Sessions may be over-scheduled."
+
+      - alert: HostMemoryCritical
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "CRITICAL: Host RAM nearly exhausted on {{ $labels.instance }}"
+          description: "Over 95% RAM used. OOM kills imminent. Stop accepting new sessions immediately."
+
+      - alert: HostSwapUsageHigh
+        expr: |
+          (1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) > 0.50
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Swap usage > 50% on {{ $labels.instance }}"
+          description: "Significant swap usage detected. System is under memory pressure. GPU sessions should not cause swapping."
+
+  # ──────────────────────────────────────────────────────────
+  # HOST CPU
+  # Ryzen 9950X3D: 16C/32T. Normal load: 8-12 CPUs under full session load.
+  # ──────────────────────────────────────────────────────────
+  - name: host_cpu
+    rules:
+      - alert: HostCPULoadHigh
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "CPU load > 85% on {{ $labels.instance }}"
+          description: "Sustained high CPU load. With AMD 3D V-Cache, this is unusual unless multiple heavy compute sessions are running."
+
+      - alert: HostHighLoadAverage
+        expr: node_load15 / count by(instance) (node_cpu_seconds_total{mode="idle"}) > 2.0
+        for: 15m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Load average > 2x CPU count on {{ $labels.instance }}"
+          description: "15-minute load average is {{ printf \"%.1f\" $value }}× the CPU count. Sustained compute saturation."
+
+  # ──────────────────────────────────────────────────────────
+  # HOST DISK — NVMe partitions
+  # nvme0n1p2 = Docker storage (500GB)  — fills with image layers
+  # nvme0n1p3 = VG_CONTAINERS (1100GB) — ephemeral scratch
+  # ──────────────────────────────────────────────────────────
+  - name: host_disk
+    rules:
+      - alert: DockerStoragePartitionFull
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint="/var/lib/docker"} / node_filesystem_size_bytes{mountpoint="/var/lib/docker"}) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "Docker storage partition > 80% full on {{ $labels.instance }}"
+          description: "Docker overlay partition is over 80% full. Run 'docker system prune' to remove stopped containers and dangling images."
+
+      - alert: DockerStorageCritical
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint="/var/lib/docker"} / node_filesystem_size_bytes{mountpoint="/var/lib/docker"}) > 0.92
+        for: 2m
+        labels:
+          severity: critical
+          category: storage
+        annotations:
+          summary: "CRITICAL: Docker storage nearly full on {{ $labels.instance }}"
+          description: "New session containers may fail to start. Immediate cleanup required."
+
+      - alert: OSPartitionFull
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "OS partition > 80% full on {{ $labels.instance }}"
+
+      - alert: NVMeSMARTWearHigh
+        expr: node_nvme_spare_percent < 20
+        for: 10m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "NVMe spare capacity low on {{ $labels.instance }}"
+          description: "NVMe {{ $labels.device }} has only {{ $value }}% spare blocks remaining. Begin monitoring for failure. Plan replacement."
+
+  # ──────────────────────────────────────────────────────────
+  # SYSTEMD SERVICE HEALTH
+  # Critical services: cuda-mps, lxcfs, docker, nfs-server
+  # ──────────────────────────────────────────────────────────
+  - name: systemd_services
+    rules:
+      - alert: SystemdServiceFailed
+        expr: |
+          node_systemd_unit_state{state="failed", name=~"(cuda-mps|lxcfs|docker|nfs-kernel-server|nvidia-persistenced).service"} == 1
+        for: 30s
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Critical systemd service failed: {{ $labels.name }} on {{ $labels.instance }}"
+          description: "Service {{ $labels.name }} is in failed state. Run: sudo systemctl status {{ $labels.name }}"
+
+  # ──────────────────────────────────────────────────────────
+  # NFS CLIENT HEALTH (on compute nodes)
+  # If NFS mount drops, user data is inaccessible — catastrophic
+  # ──────────────────────────────────────────────────────────
+  - name: nfs_health
+    rules:
+      - alert: NFSMountUnresponsive
+        expr: |
+          node_nfs_requests_total{method="Read"} unless node_nfs_requests_total{method="Read"} > 0
+        for: 2m
+        labels:
+          severity: critical
+          category: storage
+        annotations:
+          summary: "NFS mount may be unresponsive on {{ $labels.instance }}"
+          description: "No NFS read activity when sessions are running. User data access may be frozen. Check NAS health and NFS mount."
+
+      - alert: NFSClientErrors
+        expr: rate(node_nfs_rpc_errors_total[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "NFS client errors on {{ $labels.instance }}"
+          description: "{{ printf \"%.1f\" $value }} NFS errors/sec. Users may experience slow file I/O or save failures."

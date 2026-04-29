@@ -1,0 +1,105 @@
+# LaaS Hardened Container Launch Template
+# Security layers: cap-drop ALL, seccomp, AppArmor, sudoers deny, LD_PRELOAD sudo wrapper
+# Validated: 2026-03-25
+#
+# Host prerequisites (one-time setup):
+#   /etc/laas/seccomp-gpu-desktop.json   - Seccomp profile (blocks mount, unshare, bpf, etc.)
+#   AppArmor: Uses docker-default profile (built-in to Docker)
+#   /etc/laas/sudoers-laas-user          - Sudoers: NOPASSWD ALL + deny mount/insmod/iptables/nsenter
+#   /etc/laas/bash.bashrc                - Includes sudo() wrapper to strip LD_PRELOAD
+#
+# Changes from original c1.txt:
+#   REMOVED: --cap-add SYS_ADMIN
+#   REMOVED: --device /dev/fuse
+#   ADDED:   --cap-drop=ALL + minimal cap-add (CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, NET_BIND_SERVICE, KILL, SYS_CHROOT, MKNOD, NET_RAW, FSETID, AUDIT_WRITE)
+#   ADDED:   --security-opt seccomp=/etc/laas/seccomp-gpu-desktop.json
+#   ADDED:   --security-opt apparmor=docker-default
+#   ADDED:   --pids-limit=512
+#   ADDED:   sudoers bind-mount (/etc/laas/sudoers-laas-user -> /etc/sudoers.d/laas-user:ro)
+#   CHANGED: nvidia-mps mounted :ro
+#   CHANGED: config file mounts set to :ro
+
+SESSION_PASS=$(openssl rand -base64 12)
+echo "Session password: $SESSION_PASS"
+
+docker run -d \
+  --name selkies-test-1 \
+  --hostname ws-$(openssl rand -hex 4) \
+  --restart unless-stopped \
+  --network=host \
+  --gpus all \
+  --cpus=4 \
+  --cpuset-cpus=8-11 \
+  --memory=8g \
+  --ipc=host \
+  --tmpfs /dev/shm:rw \
+  --pids-limit=512 \
+  --cap-drop=ALL \
+  --cap-add=CHOWN \
+  --cap-add=DAC_OVERRIDE \
+  --cap-add=FOWNER \
+  --cap-add=SETUID \
+  --cap-add=SETGID \
+  --cap-add=NET_BIND_SERVICE \
+  --cap-add=KILL \
+  --cap-add=SYS_CHROOT \
+  --cap-add=MKNOD \
+  --cap-add=NET_RAW \
+  --cap-add=FSETID \
+  --cap-add=AUDIT_WRITE \
+  --security-opt seccomp=/etc/laas/seccomp-gpu-desktop.json \
+  --security-opt apparmor=docker-default \
+  -e TZ=UTC \
+  -e DISPLAY=:23 \
+  -e DISPLAY_SIZEW=1920 -e DISPLAY_SIZEH=1080 -e DISPLAY_REFRESH=60 \
+  -e SELKIES_ENCODER=nvh264enc \
+  -e SELKIES_ENABLE_BASIC_AUTH=true \
+  -e SELKIES_BASIC_AUTH_PASSWORD="$SESSION_PASS" \
+  -e NGINX_PORT=8083 \
+  -e SELKIES_PORT=9083 \
+  -e SELKIES_METRICS_HTTP_PORT=19083 \
+  -e PASSWD=mypasswd \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  -e CUDA_NVRTC_ARCH=89 \
+  -e __NV_PRIME_RENDER_OFFLOAD=1 \
+  -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
+  -e CUDA_DEVICE_MEMORY_LIMIT_0=8192m \
+  -e CUDA_DEVICE_SM_LIMIT=33 \
+  -e CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps \
+  -e CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log \
+  -e CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=8G" \
+  -e CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=33 \
+  -e CUDA_MPS_ENABLE_PER_CTX_DEVICE_MULTIPROCESSOR_PARTITIONING=1 \
+  -e CONTAINER_MEMORY_LIMIT_BYTES=$((8*1024*1024*1024)) \
+  -e SELKIES_TURN_HOST=106.51.247.170 \
+  -e SELKIES_TURN_PORT=3478 \
+  -e SELKIES_TURN_USERNAME=selkies \
+  -e SELKIES_TURN_PASSWORD=wVIAbfwkgkxjaCiZVX4BDsdU \
+  -e SELKIES_TURN_PROTOCOL=tcp \
+  -v /tmp/nvidia-mps:/tmp/nvidia-mps:ro \
+  -v /tmp/nvidia-log:/tmp/nvidia-log \
+  -v /mnt/nfs/users/testuser3:/home/ubuntu \
+  -v /usr/lib/libvgpu.so:/usr/lib/libvgpu.so:ro \
+  -v /usr/lib/fake_sysconf.so:/usr/lib/fake_sysconf.so:ro \
+  -v /tmp/vgpulock-3:/tmp/vgpulock \
+  -v /usr/bin/nvidia-smi:/usr/bin/nvidia-smi.real \
+  -v /etc/laas/nvidia-smi-wrapper:/usr/bin/nvidia-smi:ro \
+  -v /usr/bin/passwd:/usr/bin/passwd.real \
+  -v /etc/laas/passwd-wrapper:/usr/bin/passwd \
+  -v /etc/laas/supervisord-hami.conf:/etc/supervisord.conf:ro \
+  -v /etc/laas/bash.bashrc:/etc/bash.bashrc:ro \
+  -v /etc/laas/sudoers-laas-user:/etc/sudoers.d/laas-user:ro \
+  -v /var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:ro \
+  -v /var/lib/lxcfs/proc/meminfo:/proc/meminfo:ro \
+  -v /var/lib/lxcfs/proc/stat:/proc/stat:ro \
+  -v /var/lib/lxcfs/proc/uptime:/proc/uptime:ro \
+  -v /var/lib/lxcfs/proc/loadavg:/proc/loadavg:ro \
+  -v /var/lib/lxcfs/proc/diskstats:/proc/diskstats:ro \
+  -v /var/lib/lxcfs/proc/swaps:/proc/swaps:ro \
+  -v /tmp/container-3-cpu:/sys/devices/system/cpu:ro \
+  --label laas.session_id=$(openssl rand -hex 8) \
+  --label laas.user_id=testuser3@laas.in \
+  --label laas.tier=power \
+  --label laas.session_type=stateful \
+  --label laas.node=node-mvp \
+  ghcr.io/selkies-project/nvidia-egl-desktop:latest

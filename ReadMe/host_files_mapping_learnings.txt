@@ -1,0 +1,621 @@
+Investigation Report: Complete LaaS Host Files Mapping for Container Launches
+Objective
+Build a complete mapping of all host files required for LaaS container launches on compute nodes, including configuration files, library files, mount requirements, and SCP commands for replication from .99 to .88.
+A) COMPLETE FILE MAPPING TABLE
+#	Host File	Source Path	Destination on Compute Node	Permissions	Mount Flag in app.py	Notes
+1	bash.bashrc	c:\Users\Punith\LaaS\host-services\config\bash.bashrc	/etc/laas/bash.bashrc	644 (ro)	-v /etc/laas/bash.bashrc:/etc/bash.bashrc:ro	HAMi LD_PRELOAD wrappers for python3, pip, sudo
+2	nvidia-smi-wrapper	c:\Users\Punith\LaaS\host-services\config\nvidia-smi-wrapper	/etc/laas/nvidia-smi-wrapper	755 (ro)	-v /etc/laas/nvidia-smi-wrapper:/usr/bin/nvidia-smi:ro	Shows VRAM limit instead of full GPU memory
+3	passwd-wrapper	c:\Users\Punith\LaaS\host-services\config\passwd-wrapper	/etc/laas/passwd-wrapper	755 (ro)	-v /etc/laas/passwd-wrapper:/usr/bin/passwd:ro	Strips LD_PRELOAD to prevent HAMi conflicts
+4	seccomp-gpu-desktop.json	c:\Users\Punith\LaaS\host-services\config\seccomp-gpu-desktop.json	/etc/laas/seccomp-gpu-desktop.json	644	--security-opt seccomp=/etc/laas/seccomp-gpu-desktop.json	Blocks dangerous syscalls (mount, unshare, setns, bpf, etc.)
+5	sudoers	c:\Users\Punith\LaaS\host-services\config\sudoers	/etc/laas/sudoers	444 (ro)	-v /etc/laas/sudoers:/etc/sudoers:ro	Overrides base image's blanket ubuntu grant
+6	sudoers-laas-user	c:\Users\Punith\LaaS\host-services\config\sudoers-laas-user	/etc/laas/sudoers-laas-user	440 (ro)	-v /etc/laas/sudoers-laas-user:/etc/sudoers.d/laas-user:ro	NOPASSWD sudo with deny rules for dangerous operations
+7	supervisord-hami.conf	c:\Users\Punith\LaaS\host-services\config\supervisord-hami.conf	/etc/laas/supervisord-hami.conf	644 (ro)	-v /etc/laas/supervisord-hami.conf:/etc/supervisord.conf:ro	Desktop services (entrypoint, selkies, nginx) with HAMi LD_PRELOAD
+8	sudo-bin	Extracted from Selkies image	/etc/laas/sudo-bin	4755	-v /etc/laas/sudo-bin:/usr/bin/sudo (no ro flag)	Real setuid sudo binary (Selkies symlinks this to fakeroot)
+B) FULL CONTENTS OF EACH CONFIG FILE
+1. bash.bashrc
+bash
+# System-wide .bashrc file for interactive bash(1) shells.
+
+# To enable the settings / commands in this file for login shells as well,
+# this file has to be sourced in /etc/profile.
+
+# If not running interactively, don't do anything
+[ -z "$PS1" ] && return
+
+# check the window size after each command and, if necessary,
+# update the values of LINES and COLUMNS.
+shopt -s checkwinsize
+
+# set variable identifying the chroot you work in (used in the prompt below)
+if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
+    debian_chroot=$(cat /etc/debian_chroot)
+fi
+
+# set a fancy prompt (non-color, overwrite the one in /etc/profile)
+# but only if not SUDOing and have SUDO_PS1 set; then assume smart user.
+if ! [ -n "${SUDO_USER}" -a -n "${SUDO_PS1}" ]; then
+  PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+fi
+
+# Commented out, don't overwrite xterm -T "title" -n "icontitle" by default.
+# If this is an xterm set the title to user@host:dir
+#case "$TERM" in
+#xterm*|rxvt*)
+#    PROMPT_COMMAND='echo -ne "\033]0;${USER}@${HOSTNAME}: ${PWD}\007"'
+#    ;;
+#*)
+#    ;;
+#esac
+
+# enable bash completion in interactive shells
+#if ! shopt -oq posix; then
+#  if [ -f /usr/share/bash-completion/bash_completion ]; then
+#    . /usr/share/bash-completion/bash_completion
+#  elif [ -f /etc/bash_completion ]; then
+#    . /etc/bash_completion
+#  fi
+#fi
+
+# sudo hint
+if [ ! -e "$HOME/.sudo_as_admin_successful" ] && [ ! -e "$HOME/.hushlogin" ] ; then
+    case " $(groups) " in *\ admin\ *|*\ sudo\ *)
+    if [ -x /usr/bin/sudo ]; then
+        echo 'To run a command as administrator (user "root"), use "sudo <command>".'
+        echo 'See "man sudo_root" for details.'
+        echo
+    fi
+    esac
+fi
+
+# if the command-not-found package is installed, use it
+if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-not-found ]; then
+        function command_not_found_handle {
+                # check because c-n-f could've been removed in the meantime
+                if [ -x /usr/lib/command-not-found ]; then
+                   /usr/lib/command-not-found -- "$1"
+                   return $?
+                elif [ -x /usr/share/command-not-found/command-not-found ]; then
+                   /usr/share/command-not-found/command-not-found -- "$1"
+                   return $?
+                else
+                   printf "%s: command not found\n" "$1" >&2
+                   return 127
+                fi
+        }
+fi
+
+# Electron/Chromium apps (VS Code, Chrome, Brave, Slack, etc.)
+# Disable Chromium's internal sandbox — the container IS the sandbox
+export ELECTRON_DISABLE_SANDBOX=1
+
+# LaaS resource interceptors
+# fake_sysconf.so is safe for all programs (KDE RAM display fix)
+# libvgpu.so ONLY for CUDA programs (crashes non-CUDA via dlsym hooks)
+if [ -f /usr/lib/fake_sysconf.so ]; then
+    export LD_PRELOAD="/usr/lib/fake_sysconf.so"
+    export SYSCONF_INJECTED=1
+fi
+mkdir -p /tmp/vgpulock 2>/dev/null
+
+# CUDA program wrappers — inject HAMi VRAM/SM enforcement
+# IMPORTANT: space-separated, fake_sysconf FIRST (proven working order from Full_Setup.txt)
+_HAMI_PRELOAD="/usr/lib/fake_sysconf.so /usr/lib/libvgpu.so"
+if [ -f /usr/lib/libvgpu.so ]; then
+    python3() { LD_PRELOAD="$_HAMI_PRELOAD" command python3 "$@"; }
+    python()  { LD_PRELOAD="$_HAMI_PRELOAD" command python "$@"; }
+    nvcc()    { LD_PRELOAD="$_HAMI_PRELOAD" command nvcc "$@"; }
+    jupyter() { LD_PRELOAD="$_HAMI_PRELOAD" command jupyter "$@"; }
+fi
+
+# Smart sudo wrapper: strip LD_PRELOAD so system tools dont crash
+sudo() {
+    env -u LD_PRELOAD /usr/bin/sudo "$@"
+}
+
+# Package managers: always strip LD_PRELOAD
+apt()     { env -u LD_PRELOAD /usr/bin/apt "$@"; }
+apt-get() { env -u LD_PRELOAD /usr/bin/apt-get "$@"; }
+dpkg()    { env -u LD_PRELOAD /usr/bin/dpkg "$@"; }
+pip()     { LD_PRELOAD= command pip "$@"; }
+pip3()    { LD_PRELOAD= command pip3 "$@"; }
+2. nvidia-smi-wrapper
+bash
+#!/bin/bash
+# LaaS nvidia-smi wrapper - shows user's VRAM limit instead of full GPU memory
+get_vram_limit_mib() {
+  if [ -n "$CUDA_DEVICE_MEMORY_LIMIT_0" ]; then
+    VAL="${CUDA_DEVICE_MEMORY_LIMIT_0,,}"
+    if [[ "$VAL" == *"m" ]]; then echo "${VAL//m/}"
+    elif [[ "$VAL" == *"g" ]]; then echo $(( ${VAL//g/} * 1024 ))
+    fi
+    return
+  fi
+  python3 -c "
+import struct
+with open('/tmp/cudevshr.cache','rb') as f:
+    d=f.read(4096)
+print(struct.unpack_from('<Q',d,1600)[0]//(1024*1024))
+" 2>/dev/null || echo "0"
+}
+case "$*" in
+  *"-pm"*|*"--persistence-mode"*|*"-pl"*|*"--power-limit"*|\
+  *"--query-gpu"*|*"--format"*|*"-i "*|*"--id"*)
+    exec env -u LD_PRELOAD /usr/bin/nvidia-smi.real "$@" ;;
+esac
+LIMIT_MIB=$(get_vram_limit_mib)
+REAL_OUT=$(env -u LD_PRELOAD /usr/bin/nvidia-smi.real "$@" 2>&1)
+if [ -n "$LIMIT_MIB" ] && [ "$LIMIT_MIB" -gt "0" ] 2>/dev/null; then
+  echo "$REAL_OUT" | sed "s|/ [0-9]*MiB|/ ${LIMIT_MIB}MiB|g"
+else
+  echo "$REAL_OUT"
+fi
+3. passwd-wrapper
+bash
+#!/bin/bash
+# LaaS passwd wrapper - strips LD_PRELOAD to prevent HAMi conflicts
+exec env -u LD_PRELOAD /usr/bin/passwd.real "$@"
+4. seccomp-gpu-desktop.json
+json
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": [
+        "kexec_load",
+        "kexec_file_load",
+        "init_module",
+        "finit_module",
+        "delete_module",
+        "bpf",
+        "process_vm_writev",
+        "process_vm_readv",
+        "add_key",
+        "keyctl",
+        "request_key",
+        "reboot",
+        "swapon",
+        "swapoff",
+        "pivot_root",
+        "acct",
+        "lookup_dcookie",
+        "perf_event_open",
+        "open_by_handle_at",
+        "userfaultfd",
+        "mount",
+        "umount2",
+        "unshare",
+        "setns",
+        "nfsservctl"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    }
+  ]
+}
+5. sudoers
+plaintext
+# /etc/sudoers - LaaS Container Override
+# This file removes the base image's blanket ubuntu ALL grant that
+# overrides deny rules in /etc/sudoers.d/laas-user
+#
+# Managed by LaaS - DO NOT EDIT inside container
+
+Defaults        env_reset
+Defaults        mail_badpass
+Defaults        secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+Defaults        use_pty
+
+root    ALL=(ALL:ALL) ALL
+%admin ALL=(ALL) ALL
+%sudo   ALL=(ALL:ALL) ALL
+
+@includedir /etc/sudoers.d
+6. sudoers-laas-user
+plaintext
+# LaaS Container Sudoers Policy
+# Full sudo for desktop experience, deny dangerous + GPU-bypass operations
+#
+# IMPORTANT: Deny rules must target REAL binary paths (readlink -f)
+# because sudo resolves symlinks before matching.
+#
+# Security layers (defense in depth):
+#   1. This sudoers file (deny specific dangerous commands)
+#   2. Linux capabilities (--cap-drop=ALL + minimal adds)
+#   3. Seccomp syscall filter (blocks mount, unshare, setns, etc.)
+#   4. AppArmor MAC profile (docker-default)
+
+Defaults env_reset
+Defaults env_delete += "LD_PRELOAD LD_LIBRARY_PATH"
+Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Grant ALL with deny exceptions - MUST be single logical line
+# Includes both symlink paths AND real binary paths for full coverage
+ubuntu ALL=(ALL) NOPASSWD: ALL, \
+    !/sbin/insmod, !/usr/sbin/insmod, \
+    !/sbin/rmmod, !/usr/sbin/rmmod, \
+    !/sbin/modprobe, !/usr/sbin/modprobe, !/usr/bin/kmod, \
+    !/bin/mount, !/usr/bin/mount, !/sbin/mount, !/usr/sbin/mount, \
+    !/bin/umount, !/usr/bin/umount, !/sbin/umount, !/usr/sbin/umount, \
+    !/sbin/mkfs.ext4, !/usr/sbin/mkfs.ext4, !/usr/sbin/mke2fs, !/sbin/mke2fs, \
+    !/sbin/mkfs.ext3, !/usr/sbin/mkfs.ext3, \
+    !/sbin/mkfs.xfs, !/usr/sbin/mkfs.xfs, \
+    !/sbin/mkfs.btrfs, !/usr/sbin/mkfs.btrfs, \
+    !/sbin/fdisk, !/usr/sbin/fdisk, \
+    !/sbin/parted, !/usr/sbin/parted, \
+    !/sbin/iptables, !/usr/sbin/iptables, \
+    !/sbin/ip6tables, !/usr/sbin/ip6tables, \
+    !/sbin/nft, !/usr/sbin/nft, \
+    !/sbin/ip, !/usr/sbin/ip, !/usr/bin/ip, \
+    !/usr/bin/nsenter, !/usr/sbin/nsenter, \
+    !/usr/bin/unshare, !/usr/sbin/unshare, \
+    !/usr/bin/chroot, !/usr/sbin/chroot, \
+    !/usr/bin/docker, !/usr/sbin/docker, \
+    !/usr/bin/python3, !/usr/bin/python3.10, !/usr/bin/python3.11, !/usr/bin/python3.12, !/usr/bin/python3.13, \
+    !/usr/bin/python, !/usr/local/bin/python3, !/usr/local/bin/python, \
+    !/home/ubuntu/
+7. supervisord-hami.conf
+plaintext
+[unix_http_server]
+file=/tmp/supervisor.sock
+chmod=0700
+
+[supervisord]
+logfile=/tmp/supervisord.log
+logfile_maxbytes=5MB
+logfile_backups=0
+loglevel=info
+pidfile=/tmp/supervisord.pid
+childlogdir=/tmp
+nodaemon=true
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix:///tmp/supervisor.sock
+
+[include]
+files = /etc/supervisor/conf.d/*.conf
+
+[program:entrypoint]
+command=bash -c "LD_PRELOAD=/usr/lib/fake_sysconf.so dbus-run-session -- /etc/entrypoint.sh"
+stdout_logfile=/tmp/entrypoint.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=1
+
+[program:selkies-gstreamer]
+command=bash -c "if [ \"$(echo ${KASMVNC_ENABLE} | tr '[:upper:]' '[:lower:]')\" != \"true\" ]; then LD_PRELOAD=/usr/lib/libvgpu.so /etc/selkies-gstreamer-entrypoint.sh; else sleep infinity; fi"
+stdout_logfile=/tmp/selkies-gstreamer-entrypoint.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=20
+
+[program:kasmvnc]
+command=bash -c "if [ \"$(echo ${KASMVNC_ENABLE} | tr '[:upper:]' '[:lower:]')\" = \"true\" ]; then /etc/kasmvnc-entrypoint.sh; else sleep infinity; fi"
+stdout_logfile=/tmp/kasmvnc-entrypoint.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=20
+
+[program:nginx]
+command=bash -c "until nc -z localhost ${SELKIES_PORT:-9081}; do sleep 0.5; done; /usr/sbin/nginx -g \"daemon off;\""
+stdout_logfile=/tmp/nginx.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=30
+
+[program:dbus]
+command=bash -c "mkdir -pm700 \"${XDG_RUNTIME_DIR}\"; chown -f \"$(id -nu):$(id -ng)\" \"${XDG_RUNTIME_DIR}\"; chmod -f 700 \"${XDG_RUNTIME_DIR}\"; dbus-daemon --system --nofork --nosyslog --nopidfile --address=\"${DBUS_SYSTEM_BUS_ADDRESS}\""
+environment=DISPLAY="%(ENV_DISPLAY)s",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SYSTEM_BUS_ADDRESS="%(ENV_DBUS_SYSTEM_BUS_ADDRESS)s"
+stdout_logfile=/tmp/dbus.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=1
+
+[group:pipewire-group]
+programs=pipewire,wireplumber,pipewire-pulse
+priority=10
+
+[program:pipewire]
+command=bash -c "until [ -S \"/tmp/.X11-unix/X${DISPLAY#*:}\" ]; do sleep 0.5; done; dbus-run-session -- /usr/bin/pipewire"
+environment=PIPEWIRE_LATENCY="128/48000",DISPLAY="%(ENV_DISPLAY)s",DISABLE_RTKIT="y",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SYSTEM_BUS_ADDRESS="%(ENV_DBUS_SYSTEM_BUS_ADDRESS)s",PIPEWIRE_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",PULSE_RUNTIME_PATH="%(ENV_XDG_RUNTIME_DIR)s/pulse"
+stdout_logfile=/tmp/pipewire.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+
+[program:wireplumber]
+command=bash -c "until [ \"$(echo ${XDG_RUNTIME_DIR}/pipewire-*.lock)\" != \"${XDG_RUNTIME_DIR}/pipewire-*.lock\" ]; do sleep 0.5; done; dbus-run-session -- /usr/bin/wireplumber"
+environment=PIPEWIRE_LATENCY="128/48000",DISPLAY="%(ENV_DISPLAY)s",DISABLE_RTKIT="y",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SYSTEM_BUS_ADDRESS="%(ENV_DBUS_SYSTEM_BUS_ADDRESS)s",PIPEWIRE_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",PULSE_RUNTIME_PATH="%(ENV_XDG_RUNTIME_DIR)s/pulse"
+stdout_logfile=/tmp/wireplumber.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+
+[program:pipewire-pulse]
+command=bash -c "until [ \"$(echo ${XDG_RUNTIME_DIR}/pipewire-*.lock)\" != \"${XDG_RUNTIME_DIR}/pipewire-*.lock\" ]; do sleep 0.5; done; dbus-run-session -- /usr/bin/pipewire-pulse"
+environment=PIPEWIRE_LATENCY="128/48000",DISPLAY="%(ENV_DISPLAY)s",DISABLE_RTKIT="y",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SYSTEM_BUS_ADDRESS="%(ENV_DBUS_SYSTEM_BUS_ADDRESS)s",PIPEWIRE_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",PULSE_RUNTIME_PATH="%(ENV_XDG_RUNTIME_DIR)s/pulse"
+stdout_logfile=/tmp/pipewire-pulse.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+C) NON-CONFIG HOST PREREQUISITES
+These files/directories are referenced in build_docker_command() but are NOT in the config/ directory. They must exist on the compute node:
+Prerequisite	Host Path	Type	Purpose	Created By	Mount Flag
+HAMi-core library	/usr/lib/libvgpu.so	Shared object	GPU VRAM/SM enforcement	Built and installed separately	-v /usr/lib/libvgpu.so:/usr/lib/libvgpu.so:ro
+Fake sysconf library	/usr/lib/fake_sysconf.so	Shared object	KDE RAM display fix	Built and installed separately	-v /usr/lib/fake_sysconf.so:/usr/lib/fake_sysconf.so:ro
+lxcfs /proc mount	/var/lib/lxcfs/proc/cpuinfo	lxcfs mount	Container sees accurate CPU count	Systemd lxcfs service	-v /var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:ro
+lxcfs /proc mount	/var/lib/lxcfs/proc/meminfo	lxcfs mount	Container sees allocated RAM	Systemd lxcfs service	-v /var/lib/lxcfs/proc/meminfo:/proc/meminfo:ro
+lxcfs /proc mount	/var/lib/lxcfs/proc/stat	lxcfs mount	Container sees CPU stats	Systemd lxcfs service	-v /var/lib/lxcfs/proc/stat:/proc/stat:ro
+lxcfs /proc mount	/var/lib/lxcfs/proc/uptime	lxcfs mount	Container sees uptime	Systemd lxcfs service	-v /var/lib/lxcfs/proc/uptime:/proc/uptime:ro
+lxcfs /proc mount	/var/lib/lxcfs/proc/loadavg	lxcfs mount	Container sees load average	Systemd lxcfs service	-v /var/lib/lxcfs/proc/loadavg:/proc/loadavg:ro
+lxcfs /proc mount	/var/lib/lxcfs/proc/diskstats	lxcfs mount	Container sees disk stats	Systemd lxcfs service	-v /var/lib/lxcfs/proc/diskstats:/proc/diskstats:ro
+lxcfs /proc mount	/var/lib/lxcfs/proc/swaps	lxcfs mount	Container sees swap stats	Systemd lxcfs service	-v /var/lib/lxcfs/proc/swaps:/proc/swaps:ro
+MPS pipe directory	/tmp/nvidia-mps/	Directory	CUDA MPS control socket	nvidia-cuda-mps-control daemon	Accessed via env vars only
+MPS log directory	/tmp/nvidia-log/	Directory	CUDA MPS logs	nvidia-cuda-mps-control daemon	Accessed via env vars only
+vgpulock directory	/tmp/vgpulock-{display_number}	Directory	HAMi VRAM lock files	Created by app.py mkdir -p	-v /tmp/vgpulock-{display_number}:/tmp/vgpulock
+CPU topology files	/tmp/container-{display_number}-cpu/	Directory + files	lxcfs spoof of /sys CPU info	Created by app.py mkdir -p	-v /tmp/container-{display_number}-cpu:/sys/devices/system/cpu:ro
+NFS user storage	/mnt/nfs/users/{storage_uid}	Directory	User home directory (stateful only)	NFS server / ZFS	-v /mnt/nfs/users/{storage_uid}:/home/ubuntu
+Original nvidia-smi	/usr/bin/nvidia-smi	Binary	Used as mount source for .real	NVIDIA driver install	-v /usr/bin/nvidia-smi:/usr/bin/nvidia-smi.real
+Original passwd	/usr/bin/passwd	Binary	Used as mount source for .real	Linux base OS	-v /usr/bin/passwd:/usr/bin/passwd.real
+Key Dependencies and Prerequisites
+Must be running on the host before any container launches:
+lxcfs - Systemd service providing /var/lib/lxcfs/proc/*
+bash
+sudo systemctl enable --now lxcfs
+sudo systemctl status lxcfs
+CUDA MPS daemon - Systemd service providing MPS sockets
+bash
+sudo systemctl enable --now cuda-mps
+echo "get_server_list" | nvidia-cuda-mps-control  # verify running
+HAMi-core built and installed
+bash
+git clone https://github.com/Project-HAMi/HAMi-core.git
+cd HAMi-core && mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)
+sudo cp libvgpu.so /usr/lib/libvgpu.so && sudo chmod 755 /usr/lib/libvgpu.so
+fake_sysconf.so built (from HAMi-core repo)
+bash
+sudo cp {hami_repo}/build/fake_sysconf.so /usr/lib/fake_sysconf.so
+sudo chmod 755 /usr/lib/fake_sysconf.so
+NFS mount (if using stateful storage)
+bash
+sudo mount -t nfs4 {nas_ip}:/path/to/users /mnt/nfs/users
+Docker network (if using bridge mode)
+bash
+docker network create --driver bridge \
+    --opt "com.docker.network.bridge.enable_icc=false" \
+    laas-sessions
+D) DIFFERENCES FROM NODE SETUP GUIDE
+The production app.py uses /etc/laas/ path convention exclusively, NOT /tmp/.
+Component	Node Setup Guide	Production app.py	Status
+Config files destination	/tmp/	/etc/laas/	Production uses /etc/laas
+Seccomp profile	/tmp/	/etc/laas/seccomp-gpu-desktop.json	Consistent in app.py
+nvidia-smi wrapper	/tmp/nvidia-smi-wrapper	/etc/laas/nvidia-smi-wrapper	Consistent in app.py
+passwd wrapper	/tmp/passwd-wrapper	/etc/laas/passwd-wrapper	Consistent in app.py
+bash.bashrc	/tmp/bash.bashrc.orig	/etc/laas/bash.bashrc	Consistent in app.py
+supervisord config	/tmp/supervisord-hami.conf	/etc/laas/supervisord-hami.conf	Consistent in app.py
+sudo binary	NOT in guide	/etc/laas/sudo-bin	New in production app.py
+sudoers file	NOT mentioned	/etc/laas/sudoers	New in production app.py
+sudoers.d file	NOT mentioned	/etc/laas/sudoers-laas-user	New in production app.py
+Key Insight: The Node Setup Guide appears to be an intermediate POC document (possibly from .88 testing). The production deployment script host-deploy-sudo-isolation.sh correctly deploys all files to /etc/laas/ and is the authoritative reference.
+E) SCP COMMANDS FOR REPLICATION FROM .99 TO .88
+These commands replicate exact .99 versions to .88. Run from a Windows PowerShell terminal on your dev machine:
+powershell
+# Setup: Define the nodes
+$SOURCE = "zenith@192.168.10.99"
+$DEST = "zenith@192.168.10.88"
+$REPO_PATH = "C:\Users\Punith\LaaS"
+
+# ========================================================================
+# PART 1: Copy config files from repo to .99, then from .99 to .88
+# ========================================================================
+
+# Copy config files FROM repo TO .99 (to ensure .99 has the canonical versions)
+Write-Host "=== Copying config files from repo to .99 ===" -ForegroundColor Cyan
+scp "$REPO_PATH\host-services\config\bash.bashrc" "${SOURCE}:/tmp/bash.bashrc.upload"
+scp "$REPO_PATH\host-services\config\nvidia-smi-wrapper" "${SOURCE}:/tmp/nvidia-smi-wrapper.upload"
+scp "$REPO_PATH\host-services\config\passwd-wrapper" "${SOURCE}:/tmp/passwd-wrapper.upload"
+scp "$REPO_PATH\host-services\config\seccomp-gpu-desktop.json" "${SOURCE}:/tmp/seccomp-gpu-desktop.json.upload"
+scp "$REPO_PATH\host-services\config\sudoers" "${SOURCE}:/tmp/sudoers.upload"
+scp "$REPO_PATH\host-services\config\sudoers-laas-user" "${SOURCE}:/tmp/sudoers-laas-user.upload"
+scp "$REPO_PATH\host-services\config\supervisord-hami.conf" "${SOURCE}:/tmp/supervisord-hami.conf.upload"
+
+# Verify and install on .99
+Write-Host "=== Verifying uploads on .99 ===" -ForegroundColor Cyan
+ssh $SOURCE "ls -lh /tmp/*.upload"
+
+# Move to /etc/laas on .99
+Write-Host "=== Installing config files to /etc/laas on .99 ===" -ForegroundColor Cyan
+ssh $SOURCE @"
+sudo mkdir -p /etc/laas
+sudo cp /tmp/bash.bashrc.upload /etc/laas/bash.bashrc
+sudo cp /tmp/nvidia-smi-wrapper.upload /etc/laas/nvidia-smi-wrapper
+sudo cp /tmp/passwd-wrapper.upload /etc/laas/passwd-wrapper
+sudo cp /tmp/seccomp-gpu-desktop.json.upload /etc/laas/seccomp-gpu-desktop.json
+sudo cp /tmp/sudoers.upload /etc/laas/sudoers
+sudo cp /tmp/sudoers-laas-user.upload /etc/laas/sudoers-laas-user
+sudo cp /tmp/supervisord-hami.conf.upload /etc/laas/supervisord-hami.conf
+sudo chmod 644 /etc/laas/bash.bashrc
+sudo chmod 755 /etc/laas/nvidia-smi-wrapper
+sudo chmod 755 /etc/laas/passwd-wrapper
+sudo chmod 644 /etc/laas/seccomp-gpu-desktop.json
+sudo chmod 444 /etc/laas/sudoers
+sudo chmod 440 /etc/laas/sudoers-laas-user
+sudo chmod 644 /etc/laas/supervisord-hami.conf
+sudo chown -R root:root /etc/laas
+sudo rm /tmp/*.upload
+"@
+
+# ========================================================================
+# PART 2: Copy exact .99 versions to .88
+# ========================================================================
+
+Write-Host "`n=== Copying exact .99 config files to .88 ===" -ForegroundColor Cyan
+
+# Transfer from .99 to .88 directly (per-file with verification)
+ssh $SOURCE "cat /etc/laas/bash.bashrc" | ssh $DEST "cat > /tmp/bash.bashrc && md5sum /tmp/bash.bashrc"
+ssh $SOURCE "cat /etc/laas/nvidia-smi-wrapper" | ssh $DEST "cat > /tmp/nvidia-smi-wrapper && md5sum /tmp/nvidia-smi-wrapper"
+ssh $SOURCE "cat /etc/laas/passwd-wrapper" | ssh $DEST "cat > /tmp/passwd-wrapper && md5sum /tmp/passwd-wrapper"
+ssh $SOURCE "cat /etc/laas/seccomp-gpu-desktop.json" | ssh $DEST "cat > /tmp/seccomp-gpu-desktop.json && md5sum /tmp/seccomp-gpu-desktop.json"
+ssh $SOURCE "cat /etc/laas/sudoers" | ssh $DEST "cat > /tmp/sudoers && md5sum /tmp/sudoers"
+ssh $SOURCE "cat /etc/laas/sudoers-laas-user" | ssh $DEST "cat > /tmp/sudoers-laas-user && md5sum /tmp/sudoers-laas-user"
+ssh $SOURCE "cat /etc/laas/supervisord-hami.conf" | ssh $DEST "cat > /tmp/supervisord-hami.conf && md5sum /tmp/supervisord-hami.conf"
+
+# Install on .88
+Write-Host "=== Installing config files to /etc/laas on .88 ===" -ForegroundColor Cyan
+ssh $DEST @"
+sudo mkdir -p /etc/laas
+sudo cp /tmp/bash.bashrc /etc/laas/bash.bashrc
+sudo cp /tmp/nvidia-smi-wrapper /etc/laas/nvidia-smi-wrapper
+sudo cp /tmp/passwd-wrapper /etc/laas/passwd-wrapper
+sudo cp /tmp/seccomp-gpu-desktop.json /etc/laas/seccomp-gpu-desktop.json
+sudo cp /tmp/sudoers /etc/laas/sudoers
+sudo cp /tmp/sudoers-laas-user /etc/laas/sudoers-laas-user
+sudo cp /tmp/supervisord-hami.conf /etc/laas/supervisord-hami.conf
+sudo chmod 644 /etc/laas/bash.bashrc
+sudo chmod 755 /etc/laas/nvidia-smi-wrapper
+sudo chmod 755 /etc/laas/passwd-wrapper
+sudo chmod 644 /etc/laas/seccomp-gpu-desktop.json
+sudo chmod 444 /etc/laas/sudoers
+sudo chmod 440 /etc/laas/sudoers-laas-user
+sudo chmod 644 /etc/laas/supervisord-hami.conf
+sudo chown -R root:root /etc/laas
+sudo rm /tmp/bash.bashrc /tmp/nvidia-smi-wrapper /tmp/passwd-wrapper /tmp/seccomp-gpu-desktop.json /tmp/sudoers /tmp/sudoers-laas-user /tmp/supervisord-hami.conf
+"@
+
+# ========================================================================
+# PART 3: Extract sudo-bin from Selkies image on .99, copy to .88
+# ========================================================================
+
+Write-Host "`n=== Extracting sudo-bin from Selkies image on .99 ===" -ForegroundColor Cyan
+ssh $SOURCE @"
+TEMP_CONTAINER=`$(docker create ghcr.io/selkies-project/nvidia-egl-desktop:latest 2>/dev/null)
+docker cp `$TEMP_CONTAINER:/usr/bin/sudo-root /tmp/sudo-bin 2>/dev/null
+docker rm `$TEMP_CONTAINER >/dev/null 2>&1
+sudo mkdir -p /etc/laas
+sudo cp /tmp/sudo-bin /etc/laas/sudo-bin
+sudo chmod 4755 /etc/laas/sudo-bin
+sudo chown root:root /etc/laas/sudo-bin
+md5sum /etc/laas/sudo-bin
+"@
+
+# Copy sudo-bin to .88
+Write-Host "=== Copying sudo-bin from .99 to .88 ===" -ForegroundColor Cyan
+ssh $SOURCE "cat /etc/laas/sudo-bin" | ssh $DEST "cat > /tmp/sudo-bin && sudo mkdir -p /etc/laas && sudo cp /tmp/sudo-bin /etc/laas/sudo-bin && sudo chmod 4755 /etc/laas/sudo-bin && sudo chown root:root /etc/laas/sudo-bin && md5sum /etc/laas/sudo-bin && rm /tmp/sudo-bin"
+
+# ========================================================================
+# PART 4: Verification on .88
+# ========================================================================
+
+Write-Host "`n=== FINAL VERIFICATION ON .88 ===" -ForegroundColor Cyan
+ssh $DEST @"
+echo "=== Files in /etc/laas ===" 
+ls -lh /etc/laas/
+
+echo ""
+echo "=== File checksums on .88 ===" 
+md5sum /etc/laas/* 2>/dev/null | sort
+
+echo ""
+echo "=== Sudoers syntax check ===" 
+sudo visudo -c -f /etc/laas/sudoers 2>&1 && echo "OK: sudoers is valid" || echo "ERROR: sudoers has syntax errors"
+sudo visudo -c -f /etc/laas/sudoers-laas-user 2>&1 && echo "OK: sudoers-laas-user is valid" || echo "ERROR: sudoers-laas-user has syntax errors"
+
+echo ""
+echo "=== Seccomp JSON validation ===" 
+python3 -c "import json; json.load(open('/etc/laas/seccomp-gpu-desktop.json'))" 2>&1 && echo "OK: seccomp JSON is valid" || echo "ERROR: seccomp JSON is invalid"
+"@
+
+# ========================================================================
+# PART 5: (Optional) Verify .99 and .88 match
+# ========================================================================
+
+Write-Host "`n=== COMPARING .99 and .88 (MD5) ===" -ForegroundColor Cyan
+$files = @("bash.bashrc", "nvidia-smi-wrapper", "passwd-wrapper", "seccomp-gpu-desktop.json", "sudoers", "sudoers-laas-user", "supervisord-hami.conf", "sudo-bin")
+
+foreach ($file in $files) {
+    $md5_99 = ssh $SOURCE "md5sum /etc/laas/$file 2>/dev/null | awk '{print `$1}'" 
+    $md5_88 = ssh $DEST "md5sum /etc/laas/$file 2>/dev/null | awk '{print `$1}'"
+    
+    if ($md5_99 -eq $md5_88) {
+        Write-Host "✓ $file : MATCH" -ForegroundColor Green
+    } else {
+        Write-Host "✗ $file : MISMATCH (99: $md5_99, 88: $md5_88)" -ForegroundColor Red
+    }
+}
+
+Write-Host "`n=== REPLICATION COMPLETE ===" -ForegroundColor Green
+F) DEPLOYMENT CHECKLIST FOR .88
+After running the SCP commands above, verify on .88:
+bash
+# 1. Verify all files are in place
+ls -lh /etc/laas/
+# Should show: bash.bashrc, nvidia-smi-wrapper, passwd-wrapper, seccomp-gpu-desktop.json, sudoers, sudoers-laas-user, supervisord-hami.conf, sudo-bin
+
+# 2. Verify permissions
+stat /etc/laas/sudoers | grep "Access: (0444/-r--r--r--)"  # Should be 0444
+stat /etc/laas/sudoers-laas-user | grep "Access: (0440/-r--r-----)"  # Should be 0440
+stat /etc/laas/sudo-bin | grep "Access: (2755/-rwsr-xr-x)"  # Should be 4755
+
+# 3. Verify sudoers syntax
+sudo visudo -c -f /etc/laas/sudoers
+sudo visudo -c -f /etc/laas/sudoers-laas-user
+
+# 4. Verify seccomp JSON
+python3 -c "import json; json.load(open('/etc/laas/seccomp-gpu-desktop.json')); print('OK')"
+
+# 5. Verify other prerequisites are running
+systemctl status lxcfs
+systemctl status cuda-mps
+ls -la /var/lib/lxcfs/proc/
+
+# 6. Test a container launch with these configs
+# (Use the session orchestration API or docker create command directly)
+Summary
+Key Findings:
+8 core config files must be deployed to /etc/laas/ on every compute node
+Path convention: Production app.py uses /etc/laas/, NOT /tmp/ or /etc/supervisor
+Exact file count: 7 configs from repo + 1 binary extracted from Selkies image
+Non-config prerequisites: lxcfs, CUDA MPS, HAMi-core libraries, NFS mounts
+Security model: 3 layers — sudoers deny rules + seccomp syscalls + AppArmor
+SCP strategy: Pipe through SSH to preserve exact bytes from .99 to .88
+Files and directories have been thoroughly mapped. All configs are versioned in the repo and extraction paths have been documented.

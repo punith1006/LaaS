@@ -1,0 +1,59 @@
+%% LaaS Architecture - Monitoring (Simplified)
+%% Three-column left-to-right flow
+
+graph LR
+    subgraph SOURCES["Sources"]
+        GPU["GPU (DCGM)"]
+        HOST["Host (node-exporter)"]
+        CONT["Containers (cAdvisor)"]
+        MPS["MPS (mps-exporter)"]
+        SESS["Sessions (session-ex)"]
+        LOGS["Logs (Docker/systemd)"]
+    end
+    
+    subgraph COLLECTION["Collection"]
+        PROM["Prometheus<br/>(15s scrape)"]
+        PROMTAIL["Promtail"]
+        LOKI["Loki"]
+        BB["Blackbox"]
+    end
+    
+    subgraph OUTPUTS["Outputs"]
+        GRAF["Grafana<br/>(Dashboards)"]
+        ALERT["Alertmanager"]
+        TELE["Telegram"]
+        UPTIME["Uptime Kuma<br/>(Status Page)"]
+    end
+
+    GPU --> PROM
+    HOST --> PROM
+    CONT --> PROM
+    MPS --> PROM
+    SESS --> PROM
+    LOGS --> PROMTAIL
+    PROMTAIL --> LOKI
+    LOKI --> GRAF
+    PROM --> GRAF
+    PROM --> ALERT
+    ALERT --> TELE
+    BB --> PROM
+    BB --> UPTIME
+
+    %% Warm color theme
+    style SOURCES fill:#FDF8F0,stroke:#8B7355,color:#2C2C2C
+    style GPU fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style HOST fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style CONT fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style MPS fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style SESS fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style LOGS fill:#D4C4A8,stroke:#8B7355,color:#2C2C2C
+    style COLLECTION fill:#FDF8F0,stroke:#8B7355,color:#2C2C2C
+    style PROM fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style PROMTAIL fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style LOKI fill:#D4C4A8,stroke:#8B7355,color:#2C2C2C
+    style BB fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style OUTPUTS fill:#FDF8F0,stroke:#8B7355,color:#2C2C2C
+    style GRAF fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style ALERT fill:#F4D3D3,stroke:#8B7355,color:#2C2C2C
+    style TELE fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style UPTIME fill:#D4C4A8,stroke:#8B7355,color:#2C2C2C

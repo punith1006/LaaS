@@ -1,0 +1,294 @@
+I am the owner of a small software services agency (startup). I have limited personal knowledge of networking, cloud infrastructure, and virtualization. You are a **senior solutions architect, product manager, and technical consultant** with deep expertise in networking, cloud, IT infrastructure, virtualization, and security.
+
+This project is critical to the survival and growth of my agency. There is no margin for error, no overlooked considerations.
+
+First completely go through each and every line, detail, notes and consideration i have mentioned below to understand the project / solution to be built, its expectations and outcomes and then make a research plan per section. 
+There is also a research doc available ".cursor\plans\laas_platform_architecture_fbe78c48.plan.md", go through, dont get baised on treat it as absolutely true, take its learning and augement ur research flow / plan
+Research online to gain as much information as required of the technicalities, proven implementations of similar such projects or solutions, re-iterate and critically reflect and evaluate your findings and understandings over multiple passes to provide the best solution implementation for the project
+Look up for the up-to-date techniques, methodologies, guides, best way to implement this project to ensure max success rate
+
+---
+
+## THE PROJECT
+My client owns 4 high-performance on-premises machines. The goal is to build a **Lab as a Service (LaaS) platform** that commercially monetizes these machines by extending them remotely to a diaspora of end users — university students (multiple universities), faculty, researchers, engineers. And to public who need temporary compute for some workloads. This is the client's revenue model.
+
+The platform / solution I build must handle all of this end-to-end: infrastructure, virtualization, user access, session management, billing, admin visibility, and audit logging and other functions that are imperative to such solutions
+
+there are 2 modes of engagement:
+
+1. The full GUI / CLI based remote usage of the system to run the proprietary software installed in these machines (stateful, which means the data of the session is persisted, its essentially like a remote personal computer). All sessions (with or without GPU) are delivered as Selkies EGL Desktop containers streamed via WebRTC to the browser. GPU configs get fractional VRAM enforcement (HAMi-core + CUDA MPS); CPU-only configs launch without GPU access. One base image, one desktop environment, one streaming protocol across all tiers — guarantees seamless cross-tier switching.
+2. Ephemeral session for users who want the compute for temporary bases, interaction mode thru CLI / jupyter notebook (what ever they choose). Available with or without GPU. The public users can only spin up such instance (not the stateful ones)
+
+What i mean or expect by stateful machine ((this expectation is important, please think through clearly))
+
+They' ll have acess to one stateful machine, essentially their remote personal compute where the config of this machine changes based on the chosen spec config before starting the session or machine.
+lets say i am an user called Punith , i will launch my stateful machine (remote personal computer), which delivers me a new computer on first boot (in my whole membership with the solution) essentially on which i can install apps, add files, delete files and so on, but i should not be able to delete anything that was installed as base in that computer . (this is very important as this is the use case for the members of the platforms , where base computer will have its all the necessary software's, configs and so on) each user will have stateful 15GB storage for their personal computer regardless of what system spec they subscribe to.
+
+
+these are machine config offerings, and the user will be priced accordingly : 
+one complete machine for a user (solely for them, including exclusive GPU access), or multiple stateful GUI / CLI instances (with or without fractional GPU), or multiple ephemeral instances (CLI / jupyter notebook, with or without fractional GPU). combination can be anything!! based on the available resources and predefined machine configs it should be seamless !!
+
+Very Important:
+The provision system's architecture should allow for system virtualization to allow concurrent session (for both the above mentioned usecase) while having strong disk partition (for the mentioned use cases, this is a hard partition to keep the stateful usecase away from emphemeral usecase so that emphemeral session corruption doesnt ruin the disk data of the part of the system that has proprietory softwares and user datas).
+
+Should provide the best isolation between concurrent sessions, memory, process, data isolation (look for the approaches which best suites these)! so that any one failure doesnt corrupt anything else!.and one user of a session doesnt get affected by others or one fault in the session doesn't ruin or affect the system!!
+
+---
+
+## HARDWARE SPECIFICATIONS (4 identical machines)
+
+| Component | Model |
+|---|---|
+| CPU | AMD Ryzen 9 9950X3D (16 cores / 32 threads, 3D V-Cache) |
+| Motherboard | ASUS ProArt X670E-Creator WiFi DDR5 |
+| GPU | Zotac RTX 5090 Solid OC 32GB |
+| RAM | G.SKILL DDR5 Trident Z5 NEO 6000MHz 64GB (2×32GB) CL30 |
+| Storage | Samsung 990 EVO Plus NVMe 2TB (7250 MB/s) |
+| PSU | Corsair AX1600i 1600W |
+| Cabinet | Corsair 3500X (3 ARGB fans) |
+| Cooler | Corsair Nautilus RS ARGB 360mm AIO |
+
+**Fleet total:** 4 nodes × (16C/64GB/32GB VRAM/2TB NVMe) = 64 cores, 256GB RAM, 128GB VRAM, 8TB NVMe + A small NFS OR NAS
+
+
+## THE USER MODEL — 
+
+### Account Structure
+- Every user (university member) will **one individual account** with a unique identity (e.g., `priya@cs.university.ac.in`)
+- Semester/department/role is a **Keycloak group** (authorization label), NOT a login credential. i am not sure of keycloak whether the universities have it or not.
+- Shared logins are explicitly rejected — individual accounts are non-negotiable
+- Users authenticate via **university SSO** (Keycloak federated with university Google Workspace or LDAP) — same credentials as their college portal
+- for public users (who are not associated members of university and want temporary compute, its should have oauth or sso with google (for emphermeal only interactions)
+
+### OS Choice (Chosen Once at Registration) - for the first time when the user is building there stateful system
+- Ubuntu 22.04 LTS for now! and i ll provide other distros later
+- This is their environment for their entire membership
+- They can switch OS at any time, BUT this **permanently wipes their entire 15GB personal storage** — requires explicit typed confirmation ("DELETE") as consent
+- There is no dual-OS — one user, one OS (one personal computer), one persistent environment
+
+### Storage — Final Model
+- Each user gets exactly **15GB of personal persistent storage** — their "personal layer"
+- Stored as a ZFS dataset on the centralized NAS (`datapool/users/<uid>`) with a 15GB quota, mounted via NFS to whichever node their session runs on
+- It contains: their home directory (`/home/<uid>/` on Linux), their saved files, their personal settings, their project work
+- **The base Docker image is NOT counted in their 15GB** — it is a separate read-only shared layer
+- 15GB is a hard limit enforced at the ZFS quota level — cannot be exceeded
+- Storage persists across ALL sessions, ALL compute configs, INDEFINITELY (for their membership tenure)
+- Storage is OS-specific: if they switch OS, the old 15GB is wiped and a new 15GB begins fresh
+- Works identically across all compute configs — the NFS mount is transparent to the user
+
+### Base Image (Shared, Read-Only, Maintained by Platform)
+- **One base Docker image** for all sessions (stateful and ephemeral, all tiers): `selkies-egl-desktop:ubuntu2204-custom`
+- Contains: Ubuntu 22.04 LTS + KDE Plasma desktop + MATLAB, Python, CUDA toolkit, Blender, development tools
+- Uses Docker read-only image layers — **no user can modify the base software**
+- Pre-pulled on all 4 nodes (via local Docker registry or direct pull)
+- A software update to the base image = every user gets it on their next session automatically
+- Users cannot install system-level software (no admin/root rights); only user-profile-level changes (pip, conda, npm installs to `~/`) are saved to their 15GB layer on NAS
+- Single image guarantees identical software environment across all tiers — a user switching from Starter (CPU-only) to Pro (GPU) finds the exact same desktop, libraries, and tools
+
+### Session Mechanics
+- When a session launches: a Docker container is started from the read-only Selkies base image + user's 15GB NFS volume is bind-mounted at `/home/<uid>`. GPU configs get HAMi-core + MPS env vars; CPU-only configs launch without GPU access.
+- When a session ends: the container is stopped and removed (writable overlay destroyed — clean slate). User's NFS home directory is always preserved.
+- Same mechanism for ALL tiers (Starter through Full Machine, stateful and ephemeral): same software environment every session (base image), personal files always there (15GB layer on NAS)
+- System-level changes (apt-get installs) are lost on session end. User-profile changes (pip install --user, conda, saved files) persist via NFS.
+
+---
+
+## TWO ENGAGEMENT MODES
+
+### Mode 1 — Stateful GUI Desktop (Persistent)
+- Full remote desktop experience (Linux GUI via KDE Plasma) — Linux based distro as OS for now!
+- All sessions delivered as **Selkies EGL Desktop containers** streamed via **WebRTC** (Selkies-GStreamer) to the browser — no client install required
+- Available **with or without GPU**:
+  - **CPU-only configs (Starter/Standard):** Selkies container launched without GPU access. Desktop uses software rendering or a minimal GPU slice for compositor smoothness (tested during Phase 0). All proprietary software runs in CPU computation mode.
+  - **GPU configs (Pro/Power/Max):** Selkies container with fractional VRAM enforcement (HAMi-core + CUDA MPS), GPU-accelerated OpenGL/Vulkan rendering via VirtualGL EGL backend. GPU VRAM and compute enforced via dual-layer software limits. GPU L2 cache/bandwidth is shared (noisy neighbor possible). GPU fatal faults propagate to co-resident containers (auto-recovery in 30-60 seconds, no data loss).
+  - **Full Machine:** Selkies container with exclusive GPU access (sole GPU user on node, 100% VRAM, 100% compute). No noisy neighbor, no fault propagation from others.
+- Container-level isolation for all sessions: strong process/memory/data isolation via PID namespaces, cgroups v2, network namespaces, seccomp, AppArmor
+- User's 15GB personal layer persists across all sessions (NFS-mounted from NAS)
+- Multiple users can run stateful GUI sessions simultaneously on the same physical machine (each in their own isolated container)
+- Users can freely switch between CPU-only and GPU configs across sessions — same desktop, same libraries, same files, zero friction
+- Users also have CLI access within their stateful environment
+
+### Mode 2 — Ephemeral Compute Sessions (Temporary)
+- Jupyter Notebook, Code-Server (VS Code in browser), or SSH CLI
+- Session data (scratch) is wiped after session ends
+- The ephemeral instance will have pre-defined capacity (based on the config chosen by the user) — so their notebooks and code files are persistent even though the session itself is ephemeral
+- for the public users, their work like the jupyter file will be saved in their account. (like how google colab operates), they can essentially spin a compute for this jupyter notebook if they want to.!!
+- Available as CPU-only or with fractional GPU (via Docker containers using CUDA MPS + HAMi-core for software-enforced VRAM and compute limits). Same GPU sharing model as Mode 1 GPU configs — container-level isolation with dual-layer VRAM enforcement.
+- concurrent users per machine sharing resources (depending on what config they choose) (depending on the available resources in the machine / fleet and the configs available) 
+- No booking required for ephemeral — launch immediately.
+
+---
+
+## THREE-TIER COMPUTE ARCHITECTURE
+
+### Tier 1 — Full Machine (Exclusive)
+- One user gets the entire node exclusively: all CPU cores, RAM, and the full RTX 5090 GPU (32GB VRAM, 100% compute)
+- Delivered as a Selkies EGL Desktop container with exclusive GPU access (sole GPU user on node) — no noisy neighbor, no GPU fault propagation from others
+- Maximum 4 concurrent Tier 1 users across the fleet (one per node)
+- For: exclusive GPU-accelerated workloads — deep learning, 3D GPU rendering, CUDA development, heavy simulation, raw CUDA kernel development
+
+### Tier 2 — Multi-User Stateful GUI Desktops (Concurrent) (computes with GPU or without GPU)
+- All Tier 2 sessions are Selkies EGL Desktop containers streamed via WebRTC
+- **CPU-only configs (Starter/Standard):** Container launched without GPU access. For: coding, MATLAB computation, document work, data analysis, light CAD, general development.
+- **GPU configs (Pro/Power/Max):** Container with fractional VRAM (4GB/8GB/16GB enforced via HAMi-core + CUDA MPS dual-layer). GPU-accelerated desktop rendering. For: Blender GPU rendering, ML inference, heavy simulation, 3D rendering, GPU-accelerated CAD.
+- Multiple users can run stateful desktops simultaneously on the same node, each in their own isolated container
+- All proprietary software available; GPU configs get GPU acceleration (MATLAB GPU compute, Blender Cycles, PyTorch CUDA)
+- Container-level isolation for all Tier 2 sessions (strong process/memory/data isolation)
+
+### Tier 3 — Ephemeral Compute (Concurrent, Multi-User), subjected to user choice
+- Docker containers for Jupyter, Code-Server, SSH CLI
+- Available as CPU-only or with fractional GPU (same HAMi-core + CUDA MPS model as Tier 2 GPU configs)
+- For: quick compute runs, notebook execution, ML training/inference, public user access
+
+---
+
+## PRE-DEFINED COMPUTE CONFIGURATIONS (User selects at booking) (this is not final, this is an example)
+
+The user can choose from the pre-configured system infra config: (Whether its stateful or ephemeral type).
+Pre-defined machine spec configs are available with GPU or without GPU and various sizing. Available configs and allocation happen based on the available resources in the host machine or fleet.
+
+**Stateful GUI Desktop Configs (Tier 1 & Tier 2) — All Selkies EGL Desktop Containers:**
+
+| Config | vCPU | RAM | GPU VRAM | Best For | Price |
+|---|---|---|---|---|---|
+| Starter | 2 | 4GB | None | Light coding, docs | ₹15/hr |
+| Standard | 4 | 8GB | None | MATLAB, office, development | ₹30/hr |
+| Pro | 4 | 8GB | 4GB | Blender, ML inference | ₹60/hr |
+| Power | 8 | 16GB | 8GB | Heavy sim, 3D render | ₹100/hr |
+| Max | 8 | 16GB | 16GB | Large model training | ₹150/hr |
+| Full Machine | 16 | 48GB | 32GB (exclusive) | Exclusive research/DL | ₹300/hr |
+
+All configs are Selkies EGL Desktop containers streamed via WebRTC to the browser. Container-level isolation (strong) for all tiers: PID namespaces, cgroups v2, network namespaces, seccomp, AppArmor.
+
+Note on GPU configs: Pro/Power/Max use fractional GPU with dual-layer VRAM enforcement (HAMi-core intercepts CUDA API + CUDA MPS enforces at driver level). GPU-accelerated desktop rendering. GPU L2 cache/bandwidth is shared (10-30% performance variability possible under peak co-tenancy). GPU fatal faults propagate to co-resident containers but auto-recover in 30-60 seconds with no data loss (user data is on NAS). Full Machine tier has exclusive GPU access — no shared-GPU concerns.
+
+Note on CPU-only configs: Starter/Standard are the same Selkies container launched without GPU access. All proprietary software runs in CPU computation mode (MATLAB computation, Python, Blender CPU rendering, development tools). Same desktop environment (KDE Plasma) and streaming protocol (WebRTC) as GPU configs — seamless experience when switching tiers.
+
+**Ephemeral Compute Configs (Tier 3 — Docker Containers):**
+
+| Config | vCPU | RAM | GPU VRAM | Mode | Best For | Price |
+|---|---|---|---|---|---|---|
+| Ephemeral CPU | 2 | 4GB | None | Container | Jupyter, Code-Server, SSH | ₹10/hr |
+| Ephemeral GPU-S | 2 | 4GB | 4GB | Container + HAMi-core + MPS | Light ML inference | ₹40/hr |
+| Ephemeral GPU-M | 4 | 8GB | 8GB | Container + HAMi-core + MPS | Standard ML training | ₹75/hr |
+| Ephemeral GPU-L | 8 | 16GB | 16GB | Container + HAMi-core + MPS | Heavy ML, large models | ₹120/hr |
+
+Note: Ephemeral GPU configs use the same dual-layer VRAM enforcement as stateful GPU configs (HAMi-core + CUDA MPS). Same container-level isolation model. Acceptable for ephemeral/temporary workloads and is standard practice for educational GPU-sharing platforms (comparable to Google Colab, Kaggle).
+
+All configs: storage = user's 15GB personal layer (NFS-mounted from NAS). No exceptions. Full Machine: user still only sees their own 15GB. (only for stateful users). For public users, only their worked jupyter file will be saved in the system (application) not in the machine (like how google colab works). The public user can only spin up ephemeral instances either with notebook mode or CLI (depending on the config they choose)
+
+---
+
+## ISOLATION REQUIREMENTS (Non-Negotiable)
+
+All isolations are enforced simultaneously. All user sessions (every tier, stateful and ephemeral) run as Docker containers with container-level (strong) isolation:
+
+### Data Isolation — Absolute
+- User data lives on NAS via NFS — separate ZFS dataset per user with hard quota. No cross-user access.
+- Base image is read-only (Docker image layers). No user can modify base software.
+- Docker storage and VG_CONTAINERS are on separate NVMe partitions. User persistent data lives on the NAS via NFS — ephemeral container corruption cannot touch user data or base images.
+
+### Memory Isolation — Strong
+- cgroups v2 hard memory limits enforced per container (`--memory`). Kernel-enforced, cannot be exceeded.
+
+### Process Isolation — Strong
+- All sessions: Docker containers with PID namespaces, seccomp profiles, AppArmor, no-new-privileges. Users cannot see each other's processes.
+- Sufficient for authenticated educational/research users. Tradeoff vs VM-level (absolute) isolation accepted in exchange for seamless cross-tier switching and uniform user experience.
+
+### GPU Isolation — Software-Enforced (GPU sessions only)
+- VRAM allocation: dual-layer enforcement (HAMi-core at CUDA API level + CUDA MPS at driver level). Hard limit — cannot be exceeded.
+- Compute (SM) partitioning: HAMi-core + MPS ACTIVE_THREAD_PERCENTAGE. Prevents one user from monopolizing GPU.
+- GPU virtual address space: MPS Volta+ provides per-client isolated GPU address spaces.
+- GPU L2 cache / DRAM bandwidth: shared — cannot be partitioned on consumer GPUs. Noisy neighbor possible (10-30% variability).
+- GPU fatal fault: propagates to co-resident containers. MPS auto-recovers (Volta+). Watchdog service restarts affected containers in 30-60 seconds. User data safe on NAS.
+
+### Session Isolation — Enforced
+
+
+---
+
+## STORAGE ARCHITECTURE
+The disk storage in each host machine will be hard split into handle stateful machines and ephemeral instances (for absolute data isolation and ensure no empheral instance ruins of corrupts the data at the stateful side as it would have user personal data, proprietory software and configs)
+ 
+### Per-Node NVMe Layout (2TB per machine)
+```
+nvme0n1p1  128GB  EXT4   → OS + swap
+nvme0n1p2  500GB  EXT4   → /var/lib/docker (Docker images, container overlays, writeable layers)
+nvme0n1p3  1100GB LVM PV → VG_CONTAINERS (container scratch, ephemeral temp, wiped on session end)
+nvme0n1p4  240GB  EXT4   → Shared read-only datasets
+```
+
+Note: With all sessions as containers (no KVM VMs), the previous VG_STATEFUL partition for VM templates and thin clones is no longer needed. The space is redistributed: a dedicated partition for Docker storage (images, overlays) and a larger VG_CONTAINERS for ephemeral scratch. User persistent data lives entirely on the NAS via NFS, not on local NVMe.
+
+### Centralized NAS (5th machine — required for multi-user scale)
+- TrueNAS Scale or Synology with ZFS, 4×4TB HDDs (~12TB usable RAIDZ1)
+- Hosts ALL user 15GB personal volumes (NFS over 15GbE to all 4 nodes)
+- Benefit: any user can run on any available node — their files follow them
+- Node failure: user reconnects on a different node, same files
+- Backup target: daily ZFS snapshots
+
+### Base Image on Each Node (Replicated)
+- **Selkies Docker image** (`selkies-egl-desktop:ubuntu2204-custom`) — pre-pulled on all 4 nodes. Docker read-only image layers serve as the base for ALL sessions (stateful and ephemeral, all tiers). Container writable overlay is ephemeral — destroyed when container stops.
+- Single image = single build process, single software stack, seamless cross-tier switching.
+
+---
+
+## NETWORKING REQUIREMENTS
+
+- Add **10GbE PCIe NIC** (Intel X550-T1) to each machine — onboard 2.5GbE is insufficient for multi-user remote desktop streaming
+- **VLAN separation**: Management (10), Stateful containers (20), Ephemeral containers (30), User-facing proxy (40)
+- **Remote access**: Cloudflare Tunnel (browser users, zero port-forwarding) + Tailscale (SSH/Moonlight power users, works through university firewalls)
+- **Dummy HDMI dongle** required on each RTX 5090 for headless GPU operation (needed for Selkies EGL backend initialization, NVENC desktop stream encoding, and GPU-accelerated OpenGL rendering across all GPU tiers)
+
+---
+
+## USER EXPERIENCE — KEY FLOWS
+
+### Onboarding (once)
+1. User registers on `lab.youragency.in` with university email
+2. Chooses OS: (permanent until they explicitly switch)
+3. Account Registered: account created → 15GB ZFS dataset provisioned on NAS
+4. Logs in with university SSO (same credentials as their college portal)
+
+### Booking and Launching a Session
+1. Login → Dashboard shows storage usage, upcoming bookings, fleet status
+2. Click "Book Session" → select compute config → select time (now or scheduled)
+3. At session time: "Launch" button appears → click → ~15–20 seconds → desktop appears in browser
+4. Work. Save files to personal home directory. Files persist on NAS.
+5. 15-min and 5-min warnings sent before session end
+6. Graceful shutdown → container stopped and removed → resources freed → billing recorded
+
+### Session Reconnection
+- If browser closes mid-session: container continues running (till the subscribed time)
+- User reopens portal → "Reconnect" button → WebRTC reconnects → resumes exactly where they left off
+
+### OS Switch (with consent)
+- Account Settings → Switch OS → explicit "DELETE" confirmation → all 15GB wiped → fresh environment
+
+---
+
+## ADMIN / AUDIT CAPABILITIES
+
+Every session generates complete audit data:
+- Session start/end timestamps, user identity, IP address, device
+- Resource utilization: CPU%, RAM%, GPU%, VRAM peak, disk written, network transferred
+- Duration and billable hours
+- All events: connect, disconnect, reconnect, warnings sent, shutdown sequence
+- Real-time Grafana dashboards: per-user, per-node, GPU health, fleet overview
+- Alerts: GPU temperature, disk usage, GPU unresponsive events, login anomalies
+
+---
+
+Implemented as a Python FastAPI microservice with Redis state store, talking to Docker API for all user session lifecycle (Selkies desktop containers + ephemeral containers). Proxmox VE remains the host hypervisor for node management but is not used for user compute sessions.
+
+
+## WHAT THIS PROJECT IS NOT
+
+- Not a cloud service (AWS/Azure) — all on-premises, client's hardware
+- Not VMware Horizon or Citrix (expensive enterprise licensing)
+
+---
+
+Also, look for consideration, or points i would have failed to list out or false assumption or misleading points!! and reflect evaluate your findings critically for multiple pass through with feedbacks. Since you are senior solutions architect, product manager, and technical consultant** with deep expertise in networking, cloud, IT infrastructure, virtualization, and security (think like you are building such a system from scratch, gain every essential expertise first and the build the response).
+
+this whole learning and research to get the solid infra setup and backend foundations and understand or get the best approach for implementation! (software implementation we''ll  consider later)

@@ -1,0 +1,51 @@
+%% LaaS Architecture - High-Level Design (Simplified)
+%% Clean 8-layer vertical architecture
+
+graph TD
+    USER["User Browser"]
+    ACCESS["Access Layer<br/>(Cloudflare · Tailscale · TURN)"]
+    FRONTEND["Frontend<br/>(Next.js 15 · React 19 · Tailwind · Zustand)"]
+    BACKEND["Backend API<br/>(NestJS 11 / Fastify · JWT · Keycloak SSO)"]
+    
+    subgraph MODULES["Core Modules"]
+        AUTH["Auth"]
+        STORAGE["Storage"]
+        BILLING["Billing"]
+        DASHBOARD["Dashboard"]
+        SESSIONS["Sessions"]
+    end
+    
+    DATA["Data Layer<br/>(PostgreSQL · Prisma · Redis)"]
+    HOST["Host Services<br/>(Python Flask · MPS Daemon · HAMi-core)"]
+    COMPUTE["Compute Fleet<br/>(4× RTX 5090 · Docker · Selkies EGL · ZFS NAS)"]
+    MONITOR["Monitoring<br/>(Prometheus · Grafana · Loki · Alertmanager)"]
+
+    USER --> ACCESS
+    ACCESS --> FRONTEND
+    FRONTEND --> BACKEND
+    BACKEND --> AUTH
+    BACKEND --> STORAGE
+    BACKEND --> BILLING
+    BACKEND --> DASHBOARD
+    BACKEND --> SESSIONS
+    AUTH --> DATA
+    STORAGE --> HOST
+    SESSIONS --> HOST
+    HOST --> COMPUTE
+    COMPUTE --> MONITOR
+
+    %% Warm color theme
+    style USER fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style ACCESS fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style FRONTEND fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style BACKEND fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style MODULES fill:#FDF8F0,stroke:#8B7355,color:#2C2C2C
+    style AUTH fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style STORAGE fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style BILLING fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style DASHBOARD fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style SESSIONS fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style DATA fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style HOST fill:#D4C4A8,stroke:#8B7355,color:#2C2C2C
+    style COMPUTE fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style MONITOR fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C

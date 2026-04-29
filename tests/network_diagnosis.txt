@@ -1,0 +1,169 @@
+zenith@zenith:~$ speedtest-cli --simple
+Ping: 5.433 ms
+Download: 105.43 Mbit/s
+Upload: 4.55 Mbit/s
+zenith@zenith:~$ ip -s link show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    RX:  bytes packets errors dropped  missed   mcast
+    9668201937 4213279      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+    9668201937 4213279      0       0       0       0
+2: eno2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000
+    link/ether 10:7c:61:49:07:10 brd ff:ff:ff:ff:ff:ff
+    RX:  bytes packets errors dropped  missed   mcast
+     941834450 1521110      0       5       0  348780
+    TX:  bytes packets errors dropped carrier collsns
+       9219032  125087      0       0       0       0
+    altname enp10s0
+3: eno1: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 10:7c:61:49:08:15 brd ff:ff:ff:ff:ff:ff
+    RX:  bytes packets errors dropped  missed   mcast
+             0       0      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+             0       0      0       0       0       0
+    altname enp9s0
+6: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN mode DEFAULT group default
+    link/ether ee:a6:e0:94:08:3d brd ff:ff:ff:ff:ff:ff
+    RX:  bytes packets errors dropped  missed   mcast
+             0       0      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+             0       0      0       0       0       0
+7: br-80ce3db71243: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether f2:66:dd:41:24:60 brd ff:ff:ff:ff:ff:ff
+    RX:  bytes packets errors dropped  missed   mcast
+    4269356628 7772788      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+    2859939949 2392627      0       0       0       0
+8: br-afd53b1bc0aa: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether fe:5b:35:b3:3b:dc brd ff:ff:ff:ff:ff:ff
+    RX:  bytes packets errors dropped  missed   mcast
+     911633147  518510      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+     897082907  515960      0       0       0       0
+9: veth2d13465@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 52:da:b9:36:f5:43 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    RX:  bytes packets errors dropped  missed   mcast
+     162841942  105275      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+      43946128  153012      0       0       0       0
+10: veth880d5cb@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 12:c2:7f:ad:c6:82 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+    RX:  bytes packets errors dropped  missed   mcast
+      95417204  122901      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+      68537169  245982      0       0       0       0
+12: veth78bfb15@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 26:4c:d9:ce:5f:2b brd ff:ff:ff:ff:ff:ff link-netnsid 3
+    RX:  bytes packets errors dropped  missed   mcast
+     759382263  221220      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+      23607488  221403      0       0       0       0
+13: veth1f9e4dc@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 22:d6:8c:b0:2b:b6 brd ff:ff:ff:ff:ff:ff link-netnsid 4
+    RX:  bytes packets errors dropped  missed   mcast
+      61192725  128465      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+       8399146   75331      0       0       0       0
+14: veth3bb4c91@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether a2:71:a8:a3:41:6a brd ff:ff:ff:ff:ff:ff link-netnsid 5
+    RX:  bytes packets errors dropped  missed   mcast
+     151195541  441882      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+      58430154  469721      0       0       0       0
+15: veth746db85@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 3e:5f:70:a0:ea:02 brd ff:ff:ff:ff:ff:ff link-netnsid 6
+    RX:  bytes packets errors dropped  missed   mcast
+      40166217  147166      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+      19817181  159875      0       0       0       0
+16: vethb6b9387@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether c2:7e:95:a7:5a:09 brd ff:ff:ff:ff:ff:ff link-netnsid 7
+    RX:  bytes packets errors dropped  missed   mcast
+       8387692   75146      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+      61203897  128645      0       0       0       0
+17: vetheb7f76f@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 66:61:5e:cf:06:04 brd ff:ff:ff:ff:ff:ff link-netnsid 8
+    RX:  bytes packets errors dropped  missed   mcast
+     283006783 1741192      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+    2575407350 1432657      0       0       0       0
+18: vethbbd0501@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 3e:5d:6b:e7:e5:f1 brd ff:ff:ff:ff:ff:ff link-netnsid 9
+    RX:  bytes packets errors dropped  missed   mcast
+           126       3      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+         11286     183      0       0       0       0
+19: vethd795f73@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 02:19:28:70:3e:d3 brd ff:ff:ff:ff:ff:ff link-netnsid 10
+    RX:  bytes packets errors dropped  missed   mcast
+     867117109  221121      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+      25222636  245878      0       0       0       0
+20: veth6d7dcc4@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 5e:ee:d7:fe:9c:88 brd ff:ff:ff:ff:ff:ff link-netnsid 11
+    RX:  bytes packets errors dropped  missed   mcast
+     497662007  147476      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+      41524077  221387      0       0       0       0
+47: wlp8s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DORMANT group default qlen 1000
+    link/ether 4c:82:a9:f0:8b:0b brd ff:ff:ff:ff:ff:ff
+    RX:  bytes packets errors dropped  missed   mcast
+    2663762868 3612364      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+    3457125506 7454855      0       0       0       0
+49: veth9c9c676@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-afd53b1bc0aa state UP mode DEFAULT group default
+    link/ether 76:db:11:c5:76:ce brd ff:ff:ff:ff:ff:ff link-netnsid 2
+    RX:  bytes packets errors dropped  missed   mcast
+      25070629   28549      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+       3658636   25945      0       0       0       0
+71: tailscale0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1280 qdisc fq_codel state UNKNOWN mode DEFAULT group default qlen 500
+    link/none
+    RX:  bytes packets errors dropped  missed   mcast
+            86       1      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+           576      12      0       0       0       0
+77: veth7d47165@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-80ce3db71243 state UP mode DEFAULT group default
+    link/ether ee:fe:e9:d4:61:03 brd ff:ff:ff:ff:ff:ff link-netnsid 12
+    RX:  bytes packets errors dropped  missed   mcast
+     206959427  203542      0       0       0       0
+    TX:  bytes packets errors dropped carrier collsns
+     122641034   20679      0       0       0       0
+zenith@zenith:~$ ping -c 10 8.8.8.8
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+
+--- 8.8.8.8 ping statistics ---
+10 packets transmitted, 0 received, 100% packet loss, time 9194ms
+
+zenith@zenith:~$ sudo systemctl status coturn
+● coturn.service - coTURN STUN/TURN Server
+     Loaded: loaded (/lib/systemd/system/coturn.service; enabled; vendor preset: enabled)
+     Active: active (running) since Mon 2026-04-06 09:47:16 UTC; 10min ago
+       Docs: man:coturn(1)
+             man:turnadmin(1)
+             man:turnserver(1)
+   Main PID: 714402 (turnserver)
+      Tasks: 51 (limit: 75815)
+     Memory: 14.3M
+        CPU: 4.543s
+     CGroup: /system.slice/coturn.service
+             └─714402 /usr/bin/turnserver -c /etc/turnserver.conf --pidfile=
+
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : turn server id=19 created
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : turn server id=20 created
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : IO method (general relay thread): epoll (with changelist)
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : turn server id=18 created
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : IO method (general relay thread): epoll (with changelist)
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : turn server id=21 created
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : IO method (general relay thread): epoll (with changelist)
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : IO method (general relay thread): epoll (with changelist)
+Apr 06 09:47:16 zenith turnserver[714402]: 0: : IO method (general relay thread): epoll (with changelist)
+Apr 06 09:47:16 zenith systemd[1]: Started coTURN STUN/TURN Server.
+zenith@zenith:~$ sudo grep external-ip /etc/turnserver.conf
+external-ip=192.168.10.92
+zenith@zenith:~$ docker ps --filter "ancestor=ghcr.io/selkies-project/nvidia-egl-desktop:latest" --format "{{.Names}}"
+zenith@zenith:~$ docker inspect <NEW_CONTAINER_NAME> --format '{{range .Config.Env}}{{println .}}{{end}}' | grep TURN
+-bash: NEW_CONTAINER_NAME: No such file or directory
+zenith@zenith:~$

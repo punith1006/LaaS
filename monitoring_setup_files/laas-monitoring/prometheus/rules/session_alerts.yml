@@ -1,0 +1,88 @@
+groups:
+
+  # ──────────────────────────────────────────────────────────
+  # SESSION LIFECYCLE ANOMALIES
+  # ──────────────────────────────────────────────────────────
+  - name: session_lifecycle
+    rules:
+      - alert: SessionStartupTimeout
+        expr: laas_session_startup_seconds > 60
+        for: 0s
+        labels:
+          severity: warning
+          category: session
+        annotations:
+          summary: "Session taking too long to start: {{ $labels.session_id }}"
+          description: "Session {{ $labels.session_id }} (user: {{ $labels.user_id }}, tier: {{ $labels.tier }}) has taken {{ $value }}s to start. Expected: 15-25s. Possible: image not pre-pulled, NFS mount slow, GPU OOM."
+
+      - alert: TooManyConcurrentSessions
+        expr: laas_active_sessions_total > 8
+        for: 2m
+        labels:
+          severity: warning
+          category: session
+        annotations:
+          summary: "More than 8 concurrent sessions on single node"
+          description: "{{ $value }} concurrent sessions detected. With --network=host (MVP), port space is limited. Verify GPU VRAM is not overcommitted."
+
+      - alert: ZeroActiveSessions
+        expr: laas_active_sessions_total == 0 and laas_session_exporter_up == 1
+        for: 1h
+        labels:
+          severity: info
+          category: session
+        annotations:
+          summary: "No active sessions for 1 hour"
+          description: "Platform has been idle for 1 hour. Could be normal off-hours activity."
+
+  # ──────────────────────────────────────────────────────────
+  # WEBRTC STREAM QUALITY
+  # Scraped from per-session Selkies metrics endpoints
+  # ──────────────────────────────────────────────────────────
+  - name: webrtc_quality
+    rules:
+      - alert: WebRTCFramerateDrop
+        expr: selkies_stream_fps < 20
+        for: 2m
+        labels:
+          severity: warning
+          category: streaming
+        annotations:
+          summary: "WebRTC framerate degraded for session {{ $labels.session_id }}"
+          description: "Session {{ $labels.session_id }} (user: {{ $labels.user_id }}) framerate dropped to {{ $value }}fps. Expected: 30-60fps. Possible: NVENC throttle, CPU overload, network congestion."
+
+      - alert: WebRTCUsingTURNRelay
+        expr: selkies_ice_connection_type{type="relay"} == 1
+        for: 5m
+        labels:
+          severity: info
+          category: streaming
+        annotations:
+          summary: "Session {{ $labels.session_id }} using TURN relay"
+          description: "User {{ $labels.user_id }} is behind a NAT that requires TURN relay. Consuming TURN server bandwidth. Monitor if many users hit relay simultaneously."
+
+      - alert: TURNServerDown
+        expr: probe_success{job="blackbox-tcp", instance="localhost:3478"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: streaming
+        annotations:
+          summary: "TURN server (coturn) is unreachable"
+          description: "coturn port 3478 is not responding. Users behind firewalls/symmetric NAT will lose WebRTC connectivity. Check: sudo systemctl status coturn"
+
+  # ──────────────────────────────────────────────────────────
+  # SESSION IDLE DETECTION (integrates with future orchestrator)
+  # When orchestrator is built, it should expose these metrics
+  # ──────────────────────────────────────────────────────────
+  - name: session_idle
+    rules:
+      - alert: SessionIdleTooLong
+        expr: laas_session_idle_seconds > 2700   # 45 minutes
+        for: 5m
+        labels:
+          severity: info
+          category: session
+        annotations:
+          summary: "Session {{ $labels.session_id }} idle for 45+ minutes"
+          description: "User {{ $labels.user_id }} session has been idle. Per platform policy: warn at 30min, suspend at 45min, terminate at 60min."

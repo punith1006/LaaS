@@ -1,0 +1,46 @@
+%% LaaS Architecture - Infrastructure (Simplified)
+%% Physical topology with clean layout
+
+graph TD
+    INTERNET["Internet"]
+    CF["Cloudflare Tunnel"]
+    TS["Tailscale VPN"]
+    
+    SWITCH["Management Switch<br/>(Mikrotik 10GbE)"]
+    
+    subgraph FLEET["Compute Fleet"]
+        NODE1["Node 1<br/>9950X3D · 5090 · 64GB"]
+        NODE2["Node 2<br/>9950X3D · 5090 · 64GB"]
+        NODE3["Node 3<br/>9950X3D · 5090 · 64GB"]
+        NODE4["Node 4<br/>9950X3D · 5090 · 64GB"]
+    end
+    
+    NAS["NAS<br/>(TrueNAS · 12TB ZFS RAIDZ1)"]
+    
+    VLANS["VLANs: Mgmt:10 · Stateful:20<br/>Ephemeral:30 · Proxy:40"]
+
+    INTERNET --> CF
+    TS --> SWITCH
+    CF --> SWITCH
+    SWITCH --> NODE1
+    SWITCH --> NODE2
+    SWITCH --> NODE3
+    SWITCH --> NODE4
+    NODE1 -->|"10GbE NFS"| NAS
+    NODE2 -->|"10GbE NFS"| NAS
+    NODE3 -->|"10GbE NFS"| NAS
+    NODE4 -->|"10GbE NFS"| NAS
+    SWITCH -.- VLANS
+
+    %% Warm color theme
+    style INTERNET fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C
+    style CF fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style TS fill:#E8D5B7,stroke:#8B7355,color:#2C2C2C
+    style SWITCH fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style FLEET fill:#FDF8F0,stroke:#8B7355,color:#2C2C2C
+    style NODE1 fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style NODE2 fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style NODE3 fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style NODE4 fill:#C9E4DE,stroke:#8B7355,color:#2C2C2C
+    style NAS fill:#D4C4A8,stroke:#8B7355,color:#2C2C2C
+    style VLANS fill:#F5E6D3,stroke:#8B7355,color:#2C2C2C

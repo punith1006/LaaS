@@ -1,0 +1,47 @@
+docker run -d \
+  --name laas-bridge-test \
+  --hostname ws-bridgetest \
+  --add-host ws-bridgetest:127.0.0.1 \
+  --gpus all \
+  --cpus=4 --cpuset-cpus=0-3 --memory=8g \
+  --ipc=host \
+  --network=laas-sessions \
+  --dns 8.8.8.8 --dns 8.8.4.4 \
+  -p 8081:8080 -p 19081:19080 \
+  --tmpfs /dev/shm:rw \
+  --pids-limit=2048 \
+  --cap-drop=ALL \
+  --cap-add=CHOWN --cap-add=DAC_OVERRIDE --cap-add=FOWNER \
+  --cap-add=SETUID --cap-add=SETGID --cap-add=NET_BIND_SERVICE \
+  --cap-add=KILL --cap-add=SYS_CHROOT --cap-add=MKNOD \
+  --cap-add=NET_RAW --cap-add=FSETID --cap-add=AUDIT_WRITE \
+  --security-opt seccomp=/etc/laas/seccomp-gpu-desktop.json \
+  --security-opt apparmor=docker-default \
+  --security-opt no-new-privileges=false \
+  -e DISPLAY=:20 -e DISPLAY_SIZEW=1920 -e DISPLAY_SIZEH=1080 -e DISPLAY_REFRESH=60 \
+  -e SELKIES_ENCODER=nvh264enc \
+  -e SELKIES_ENABLE_BASIC_AUTH=true \
+  -e SELKIES_BASIC_AUTH_PASSWORD=testpass123 \
+  -e SELKIES_ENABLE_RESIZE=false \
+  -e SELKIES_TURN_HOST=100.100.66.101 \
+  -e SELKIES_TURN_PORT=3478 \
+  -e SELKIES_TURN_USERNAME=selkies \
+  -e SELKIES_TURN_PASSWORD=wVIAbfwkgkxjaCiZVX4BDsdU \
+  -e SELKIES_TURN_PROTOCOL=tcp \
+  -e NGINX_PORT=8080 \
+  -e SELKIES_PORT=9080 \
+  -e SELKIES_METRICS_HTTP_PORT=19080 \
+  -v /etc/laas/sudo-bin:/usr/bin/sudo \
+  -v /etc/laas/sudoers:/etc/sudoers:ro \
+  -v /etc/laas/sudoers-laas-user:/etc/sudoers.d/laas-user:ro \
+  -v /etc/laas/bash.bashrc:/etc/bash.bashrc:ro \
+  -v /etc/laas/nvidia-smi-wrapper:/usr/local/bin/nvidia-smi:ro \
+  -v /etc/laas/passwd-wrapper:/usr/local/bin/passwd:ro \
+  -v /etc/laas/supervisord-hami.conf:/etc/supervisor/supervisord.conf:ro \
+  -v /var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:ro \
+  -v /var/lib/lxcfs/proc/meminfo:/proc/meminfo:ro \
+  -v /var/lib/lxcfs/proc/stat:/proc/stat:ro \
+  -v /var/lib/lxcfs/proc/uptime:/proc/uptime:ro \
+  -v /var/lib/lxcfs/proc/diskstats:/proc/diskstats:ro \
+  -v /var/lib/lxcfs/proc/swaps:/proc/swaps:ro \
+  ghcr.io/selkies-project/nvidia-egl-desktop:latest

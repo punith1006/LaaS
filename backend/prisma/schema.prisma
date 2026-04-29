@@ -1,0 +1,2237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum AuthType {
+  university_sso
+  public_local
+  public_oauth
+}
+
+enum OrgType {
+  university
+  partner_college
+  enterprise
+  public_
+}
+
+enum SessionStatus {
+  pending
+  starting
+  running
+  reconnecting
+  stopping
+  ended
+  failed
+  terminated_idle
+  terminated_overuse
+}
+
+enum SessionType {
+  stateful_desktop
+  ephemeral_jupyter
+  ephemeral_codeserver
+  ephemeral_cli
+}
+
+enum StorageVolumeStatus {
+  provisioning
+  active
+  wiping
+  wiped
+  error
+}
+
+enum BookingStatus {
+  scheduled
+  launched
+  completed
+  cancelled
+  no_show
+  expired
+}
+
+enum WalletHoldStatus {
+  active
+  captured
+  released
+  expired
+}
+
+enum NodeStatus {
+  healthy
+  degraded
+  offline
+  maintenance
+  draining
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  cancelled
+  expired
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  waiting_on_user
+  resolved
+  closed
+}
+
+enum TicketPriority {
+  low
+  medium
+  high
+  critical
+}
+
+enum StorageMode {
+  stateful
+  ephemeral
+}
+
+enum SessionTerminationReason {
+  user_requested
+  idle_timeout
+  resource_exhaustion
+  spend_limit_exceeded
+  credit_exhausted
+  node_failure
+  node_maintenance
+  admin_terminated
+  session_expired
+  booking_expired
+  error_unrecoverable
+  network_disconnect
+  quota_exceeded
+}
+
+enum ReferralConversionStatus {
+  SIGNUP_COMPLETED
+  PAYMENT_PENDING
+  QUALIFIED
+  REWARD_CREDITED
+  REWARD_VOIDED
+  EXPIRED
+}
+
+enum ReferralRewardStatus {
+  PENDING
+  CREDITED
+  VOIDED
+}
+
+// ============================================================================
+// DOMAIN 0: CORE AUTH & IDENTITY
+// ============================================================================
+
+model User {
+  id                        String    @id @default(uuid()) @db.Uuid
+  email                     String    @unique
+  emailVerifiedAt           DateTime? @map("email_verified_at")
+  passwordHash              String?   @map("password_hash")
+  firstName                 String    @map("first_name")
+  lastName                  String    @map("last_name")
+  displayName               String?   @map("display_name")
+  avatarUrl                 String?   @map("avatar_url")
+  phone                     String?
+  timezone                  String?   @default("Asia/Kolkata")
+  keycloakSub               String?   @unique @map("keycloak_sub")
+  authType                  String    @map("auth_type")
+  oauthProvider             String?   @map("oauth_provider")
+  defaultOrgId              String?   @map("default_org_id") @db.Uuid
+  storageUid                String?   @unique @map("storage_uid")
+  storageProvisioningStatus String?   @map("storage_provisioning_status")
+  storageProvisioningError  String?   @map("storage_provisioning_error")
+  storageProvisionedAt      DateTime? @map("storage_provisioned_at")
+  tokenVersion              Int       @default(0) @map("token_version")
+  twoFactorEnabled          Boolean   @default(false) @map("two_factor_enabled")
+  lastLoginAt               DateTime? @map("last_login_at")
+  lastLoginIp               String?   @map("last_login_ip")
+  onboardingCompletedAt     DateTime? @map("onboarding_completed_at")
+  isActive                  Boolean   @default(true) @map("is_active")
+  osChoice                  String?   @map("os_choice")
+  lockedAt                  DateTime? @map("locked_at")
+  lockReason                String?   @map("lock_reason")
+  lockExpiresAt             DateTime? @map("lock_expires_at")
+  pendingEmail              String?   @map("pending_email")
+  keycloakLastSyncAt        DateTime? @map("keycloak_last_sync_at")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+  deletedAt                 DateTime? @map("deleted_at")
+  createdBy                 String?   @map("created_by") @db.Uuid
+  updatedBy                 String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  organization     Organization?       @relation(fields: [defaultOrgId], references: [id], onDelete: Restrict)
+  profile          UserProfile?
+  departments      UserDepartment[]
+  groupMembers     UserGroupMember[]
+  otpVerifications OtpVerification[]
+  policyConsents   UserPolicyConsent[]
+  refreshTokens    RefreshToken[]
+  loginHistories   LoginHistory[]
+  userOrgRoles     UserOrgRole[]
+
+  // Self-referential for audit/verification
+  departmentHead   Department[]      @relation("DepartmentHead")
+  profileVerifier  UserProfile[]     @relation("ProfileVerifier")
+  groupMemberAdder UserGroupMember[] @relation("GroupMemberAdder")
+
+  // Domain 4: Storage and OS Lifecycle
+  storageVolumes    UserStorageVolume[]
+  storageExtensions StorageExtension[]  @relation("StorageExtensionUser")
+  osSwitchHistories OsSwitchHistory[]
+  userFiles         UserFile[]
+
+  // Domain 7: Sessions and Bookings
+  bookings Booking[]
+  sessions Session[]
+
+  // Domain 8: Billing, Wallet, Subscriptions
+  wallet              Wallet?
+  walletHolds         WalletHold[]
+  walletTransactions  WalletTransaction[]
+  subscriptions       Subscription[]
+  billingCharges      BillingCharge[]
+  paymentTransactions PaymentTransaction[]
+  invoices            Invoice[]
+
+  // Domain 9: Academic / LMS
+  coursesInstructed Course[]             @relation("CourseInstructor")
+  courseEnrollments CourseEnrollment[]
+  labsCreated       Lab[]                @relation("LabCreator")
+  labGroupsAssigned LabGroupAssignment[] @relation("LabGroupAssigner")
+  labSubmissions    LabSubmission[]
+  labGradesGiven    LabGrade[]           @relation("Grader")
+
+  // Domain 10: Mentorship
+  mentorProfile  MentorProfile?
+  mentorBookings MentorBooking[] @relation("MentorBookingStudent")
+  mentorReviews  MentorReview[]  @relation("MentorReviewer")
+
+  // Domain 11: Community and Gamification
+  discussions       Discussion[]
+  discussionReplies DiscussionReply[]
+  projectShowcases  ProjectShowcase[]
+  userAchievements  UserAchievement[]
+
+  // Domain 12: Notifications
+  notifications Notification[]
+
+  // Domain 13: Audit
+  auditLogs AuditLog[] @relation("AuditLogActor")
+
+  // Domain 13b: User Lifecycle
+  deletionRequests   UserDeletionRequest[] @relation("DeletionRequestUser")
+  deletionRequestsBy UserDeletionRequest[] @relation("DeletionRequestedBy")
+
+  // Domain 15: Support and Feedback
+  supportTickets         SupportTicket[] @relation("SupportTicketUser")
+  supportTicketsAssigned SupportTicket[] @relation("TicketAssignee")
+  ticketMessages         TicketMessage[] @relation("TicketMessageSender")
+  userFeedback           UserFeedback[]  @relation("UserFeedbackUser")
+  feedbackResponses      UserFeedback[]  @relation("FeedbackResponder")
+
+  // Referral System
+  referredByCode                String?              @map("referred_by_code") @db.VarChar(20)
+  referralLink                  Referral?
+  referralConversionsAsReferrer ReferralConversion[] @relation("ReferralConversionReferrer")
+  referralConversionAsReferred  ReferralConversion?  @relation("ReferralConversionReferred")
+
+  // Compute Recommendation
+  recommendationSessions RecommendationSession[]
+
+  @@map("users")
+}
+
+model OtpVerification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String?   @map("user_id") @db.Uuid
+  email     String
+  codeHash  String    @map("code_hash")
+  purpose   String
+  attempts  Int       @default(0)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("otp_verifications")
+}
+
+model UserPolicyConsent {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  policySlug    String   @map("policy_slug")
+  policyVersion String?  @map("policy_version")
+  agreedAt      DateTime @map("agreed_at")
+  ipAddress     String?  @map("ip_address")
+  createdAt     DateTime @default(now()) @map("created_at")
+  createdBy     String?  @map("created_by") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("user_policy_consents")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @map("token_hash")
+  tokenVersion Int       @default(0) @map("token_version")
+  deviceInfo   Json?
+  ipAddress    String?   @map("ip_address")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("refresh_tokens")
+}
+
+model LoginHistory {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  loginMethod   String?  @map("login_method")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  geoLocation   Json?
+  success       Boolean
+  failureReason String?  @map("failure_reason")
+  createdAt     DateTime @default(now()) @map("created_at")
+  createdBy     String?  @map("created_by") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("login_history")
+}
+
+model Organization {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String
+  slug         String    @unique
+  orgType      OrgType   @map("org_type")
+  universityId String?   @map("university_id") @db.Uuid
+  logoUrl      String?   @map("logo_url")
+  billingEmail String?   @map("billing_email")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdBy    String?   @map("created_by") @db.Uuid
+  updatedBy    String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  university   University?   @relation(fields: [universityId], references: [id], onDelete: Restrict)
+  users        User[]
+  userOrgRoles UserOrgRole[]
+  userGroups   UserGroup[]
+
+  // Domain 6: Compute Configs
+  computeConfigAccess ComputeConfigAccess[]
+
+  // Domain 7: Sessions and Bookings
+  bookings Booking[]
+  sessions Session[]
+
+  // Domain 8: Billing, Wallet, Subscriptions
+  subscriptions    Subscription[]
+  orgContracts     OrgContract[]
+  orgResourceQuota OrgResourceQuota?
+  invoices         Invoice[]
+
+  // Domain 9: Academic / LMS
+  courses           Course[]
+  labs              Lab[]
+  courseworkContent CourseworkContent[]
+
+  // Domain 11: Community and Gamification
+  discussions      Discussion[]
+  projectShowcases ProjectShowcase[]
+
+  // Domain 13: Audit
+  auditLogs AuditLog[] @relation("AuditLogOrg")
+
+  // Domain 14: Utility and Platform Config
+  announcements Announcement[]
+
+  // Domain 15: Support and Feedback
+  supportTickets SupportTicket[]
+
+  @@map("organizations")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  displayName String?  @map("display_name")
+  description String?
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  rolePermissions RolePermission[]
+  userOrgRoles    UserOrgRole[]
+
+  // Domain 6: Compute Configs
+  computeConfigAccess ComputeConfigAccess[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  description String?
+  module      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserOrgRole {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  roleId         String    @map("role_id") @db.Uuid
+  grantedBy      String?   @map("granted_by") @db.Uuid
+  expiresAt      DateTime? @map("expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  updatedBy      String?   @map("updated_by") @db.Uuid
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, organizationId, roleId])
+  @@map("user_org_roles")
+}
+
+// ============================================================================
+// DOMAIN 1: UNIVERSITIES & IDP CONFIGURATION
+// ============================================================================
+
+model University {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String
+  shortName      String?   @map("short_name")
+  slug           String    @unique
+  domainSuffixes String[]  @map("domain_suffixes")
+  logoUrl        String?   @map("logo_url")
+  websiteUrl     String?   @map("website_url")
+  contactEmail   String?   @map("contact_email")
+  contactPhone   String?   @map("contact_phone")
+  city           String?
+  state          String?
+  country        String?   @default("IN")
+  timezone       String?   @default("Asia/Kolkata")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  updatedBy      String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  organizations        Organization[]
+  departments          Department[]
+  universityIdpConfigs UniversityIdpConfig[]
+
+  @@map("universities")
+}
+
+model UniversityIdpConfig {
+  id               String   @id @default(uuid()) @db.Uuid
+  universityId     String   @map("university_id") @db.Uuid
+  idpType          String   @map("idp_type")
+  idpEntityId      String?  @map("idp_entity_id")
+  idpMetadataUrl   String?  @map("idp_metadata_url")
+  idpConfig        Json?    @map("idp_config")
+  keycloakIdpAlias String?  @map("keycloak_idp_alias")
+  displayName      String?  @map("display_name")
+  isPrimary        Boolean  @default(false) @map("is_primary")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  createdBy        String?  @map("created_by") @db.Uuid
+  updatedBy        String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  university University @relation(fields: [universityId], references: [id], onDelete: Restrict)
+
+  @@unique([universityId, idpType])
+  @@map("university_idp_configs")
+}
+
+// ============================================================================
+// DOMAIN 2: DEPARTMENTS, GROUPS & USER PROFILES
+// ============================================================================
+
+model Department {
+  id           String    @id @default(uuid()) @db.Uuid
+  universityId String    @map("university_id") @db.Uuid
+  parentId     String?   @map("parent_id") @db.Uuid
+  name         String
+  code         String?
+  slug         String
+  headUserId   String?   @map("head_user_id") @db.Uuid
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdBy    String?   @map("created_by") @db.Uuid
+  updatedBy    String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  university      University       @relation(fields: [universityId], references: [id], onDelete: Restrict)
+  parent          Department?      @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children        Department[]     @relation("DepartmentHierarchy")
+  headUser        User?            @relation("DepartmentHead", fields: [headUserId], references: [id], onDelete: Restrict)
+  userDepartments UserDepartment[]
+  userGroups      UserGroup[]
+  userProfiles    UserProfile[]
+
+  // Domain 9: Academic / LMS
+  courses Course[]
+
+  @@unique([universityId, slug])
+  @@index([universityId])
+  @@index([parentId])
+  @@map("departments")
+}
+
+model UserGroup {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String?   @map("organization_id") @db.Uuid
+  departmentId    String?   @map("department_id") @db.Uuid
+  parentId        String?   @map("parent_id") @db.Uuid
+  groupType       String    @map("group_type")
+  name            String
+  slug            String?
+  description     String?
+  keycloakGroupId String?   @map("keycloak_group_id")
+  maxMembers      Int?      @map("max_members")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+  createdBy       String?   @map("created_by") @db.Uuid
+  updatedBy       String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  organization     Organization?     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  department       Department?       @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  parent           UserGroup?        @relation("UserGroupHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children         UserGroup[]       @relation("UserGroupHierarchy")
+  userGroupMembers UserGroupMember[]
+
+  // Domain 9: Academic / LMS
+  labGroupAssignments LabGroupAssignment[]
+
+  @@index([organizationId])
+  @@index([departmentId])
+  @@index([parentId])
+  @@map("user_groups")
+}
+
+model UserProfile {
+  id                      String    @id @default(uuid()) @db.Uuid
+  userId                  String    @unique @map("user_id") @db.Uuid
+  bio                     String?
+  enrollmentNumber        String?   @map("enrollment_number")
+  idProofUrl              String?   @map("id_proof_url")
+  idProofVerifiedAt       DateTime? @map("id_proof_verified_at")
+  idProofVerifiedBy       String?   @map("id_proof_verified_by") @db.Uuid
+  collegeName             String?   @map("college_name")
+  graduationYear          Int?      @map("graduation_year")
+  courseName              String?   @map("course_name")
+  academicYear            Int?      @map("academic_year")
+  departmentId            String?   @map("department_id") @db.Uuid
+  githubUrl               String?   @map("github_url")
+  linkedinUrl             String?   @map("linkedin_url")
+  websiteUrl              String?   @map("website_url")
+  skills                  String[]
+  themePreference         String    @default("dark") @map("theme_preference")
+  notificationPreferences Json      @default("{}") @map("notification_preferences")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+  createdBy               String?   @map("created_by") @db.Uuid
+  updatedBy               String?   @map("updated_by") @db.Uuid
+
+  // Onboarding profile fields
+  profession           String?  @map("profession")
+  expertiseLevel       String?  @map("expertise_level")
+  yearsOfExperience    Int?     @map("years_of_experience")
+  operationalDomains   String[] @map("operational_domains")
+  useCasePurposes      String[] @map("use_case_purposes")
+  useCaseOther         String?  @map("use_case_other")
+  country              String?
+  isOnboardingComplete Boolean  @default(false) @map("onboarding_complete")
+
+  // Relations
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verifier   User?       @relation("ProfileVerifier", fields: [idProofVerifiedBy], references: [id], onDelete: Restrict)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@map("user_profiles")
+}
+
+model UserDepartment {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  departmentId String   @map("department_id") @db.Uuid
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdBy    String?  @map("created_by") @db.Uuid
+  updatedBy    String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, departmentId])
+  @@index([userId])
+  @@index([departmentId])
+  @@map("user_departments")
+}
+
+model UserGroupMember {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  userGroupId String   @map("user_group_id") @db.Uuid
+  addedBy     String?  @map("added_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userGroup   UserGroup @relation(fields: [userGroupId], references: [id], onDelete: Restrict)
+  addedByUser User?     @relation("GroupMemberAdder", fields: [addedBy], references: [id], onDelete: Restrict)
+
+  @@unique([userId, userGroupId])
+  @@index([userId])
+  @@index([userGroupId])
+  @@map("user_group_members")
+}
+
+// ============================================================================
+// DOMAIN 4: STORAGE AND OS LIFECYCLE
+// ============================================================================
+
+model UserStorageVolume {
+  id                   String              @id @default(uuid()) @db.Uuid
+  userId               String              @map("user_id") @db.Uuid
+  name                 String              @map("name") @db.VarChar(128)
+  storageUid           String              @map("storage_uid") @db.VarChar(64)
+  zfsDatasetPath       String?             @map("zfs_dataset_path")
+  nfsExportPath        String?             @map("nfs_export_path")
+  containerMountPath   String?             @map("container_mount_path")
+  osChoice             String              @map("os_choice") @db.VarChar(32)
+  quotaBytes           BigInt              @map("quota_bytes")
+  allocationType       String              @map("allocation_type") // 'sso_default' / 'purchased' / 'admin_granted' / 'user_created'
+  pricePerGbCentsMonth Int                 @default(700) @map("price_per_gb_cents_month") // Rs.7 = 700 paise per GB per month
+  usedBytes            BigInt              @default(0) @map("used_bytes")
+  usedBytesUpdatedAt   DateTime?           @map("used_bytes_updated_at")
+  status               StorageVolumeStatus
+  provisionedAt        DateTime?           @map("provisioned_at")
+  wipedAt              DateTime?           @map("wiped_at")
+  wipeReason           String?             @map("wipe_reason")
+  quotaWarningSentAt   DateTime?           @map("quota_warning_sent_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  createdBy            String?             @map("created_by") @db.Uuid
+  updatedBy            String?             @map("updated_by") @db.Uuid
+
+  // Relations
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  storageExtensions    StorageExtension[]
+  billingCharges       BillingCharge[]
+  osSwitchHistoriesOld OsSwitchHistory[]  @relation("OsSwitchOldVolume")
+  osSwitchHistoriesNew OsSwitchHistory[]  @relation("OsSwitchNewVolume")
+
+  @@unique([userId, name])
+  @@index([userId, status])
+  @@index([createdAt])
+  @@map("user_storage_volumes")
+}
+
+// ─── Domain 4: Storage Extension History ───
+model StorageExtension {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @map("user_id") @db.Uuid
+  storageVolumeId      String   @map("storage_volume_id") @db.Uuid
+  extensionType        String   @map("extension_type") // 'sso_initial' / 'purchase' / 'admin_granted' / 'bonus'
+  previousQuotaBytes   BigInt   @map("previous_quota_bytes") // quota before this extension
+  newQuotaBytes        BigInt   @map("new_quota_bytes") // quota after this extension
+  extensionBytes       BigInt   @map("extension_bytes") // how much was added
+  amountCents          Int      @default(0) @map("amount_cents") // price paid (0 for free SSO/bonus)
+  currency             String   @default("INR")
+  paymentTransactionId String?  @map("payment_transaction_id") @db.Uuid // FK -> PaymentTransaction (if purchased)
+  walletTransactionId  String?  @map("wallet_transaction_id") @db.Uuid // FK -> WalletTransaction (if wallet debit)
+  notes                String? // admin notes or purchase description
+  createdAt            DateTime @default(now()) @map("created_at")
+  createdBy            String?  @map("created_by") @db.Uuid
+
+  // Relations
+  user               User                @relation("StorageExtensionUser", fields: [userId], references: [id], onDelete: Restrict)
+  storageVolume      UserStorageVolume   @relation(fields: [storageVolumeId], references: [id], onDelete: Restrict)
+  paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id], onDelete: SetNull)
+  walletTransaction  WalletTransaction?  @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([storageVolumeId])
+  @@index([createdAt])
+  @@map("storage_extensions")
+}
+
+model OsSwitchHistory {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  oldOs            String?  @map("old_os")
+  newOs            String   @map("new_os")
+  oldVolumeId      String?  @map("old_volume_id") @db.Uuid
+  newVolumeId      String?  @map("new_volume_id") @db.Uuid
+  confirmationText String?  @map("confirmation_text")
+  ipAddress        String?  @map("ip_address")
+  createdAt        DateTime @default(now()) @map("created_at")
+  createdBy        String?  @map("created_by") @db.Uuid
+
+  // Relations
+  user      User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  oldVolume UserStorageVolume? @relation("OsSwitchOldVolume", fields: [oldVolumeId], references: [id], onDelete: Restrict)
+  newVolume UserStorageVolume? @relation("OsSwitchNewVolume", fields: [newVolumeId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("os_switch_history")
+}
+
+model UserFile {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  fileName            String    @map("file_name")
+  filePath            String    @map("file_path")
+  fileSizeBytes       BigInt?   @map("file_size_bytes")
+  mimeType            String?   @map("mime_type")
+  fileType            String?   @map("file_type")
+  sessionId           String?   @map("session_id") @db.Uuid
+  isPinned            Boolean   @default(false) @map("is_pinned")
+  storageBackend      String?   @map("storage_backend")
+  retentionDays       Int?      @map("retention_days")
+  scheduledDeletionAt DateTime? @map("scheduled_deletion_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  deletedAt           DateTime? @map("deleted_at")
+  createdBy           String?   @map("created_by") @db.Uuid
+  updatedBy           String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([deletedAt])
+  @@index([scheduledDeletionAt])
+  @@map("user_files")
+}
+
+// ============================================================================
+// DOMAIN 5: INFRASTRUCTURE
+// ============================================================================
+
+model Node {
+  id                    String     @id @default(uuid()) @db.Uuid
+  hostname              String     @unique
+  displayName           String?    @map("display_name")
+  ipManagement          String?    @map("ip_management")
+  ipCompute             String?    @map("ip_compute")
+  ipStorage             String?    @map("ip_storage")
+  cpuModel              String?    @map("cpu_model")
+  totalVcpu             Int        @map("total_vcpu")
+  totalMemoryMb         Int        @map("total_memory_mb")
+  totalGpuVramMb        Int        @map("total_gpu_vram_mb")
+  gpuModel              String?    @map("gpu_model")
+  nvmeTotalGb           Int?       @map("nvme_total_gb")
+  allocatedVcpu         Int        @default(0) @map("allocated_vcpu")
+  allocatedMemoryMb     Int        @default(0) @map("allocated_memory_mb")
+  allocatedGpuVramMb    Int        @default(0) @map("allocated_gpu_vram_mb")
+  maxConcurrentSessions Int?       @map("max_concurrent_sessions")
+  status                NodeStatus
+  lastHeartbeatAt       DateTime?  @map("last_heartbeat_at")
+  metadata              Json?
+  lastResourceSyncAt    DateTime?  @map("last_resource_sync_at")
+  currentSessionCount   Int        @default(0) @map("current_session_count")
+  createdAt             DateTime   @default(now()) @map("created_at")
+  updatedAt             DateTime   @updatedAt @map("updated_at")
+  createdBy             String?    @map("created_by") @db.Uuid
+  updatedBy             String?    @map("updated_by") @db.Uuid
+
+  // Relations
+  nodeBaseImages           NodeBaseImage[]
+  nodeResourceReservations NodeResourceReservation[]
+
+  // Domain 7: Sessions and Bookings
+  bookings Booking[]
+  sessions Session[]
+
+  @@index([status])
+  @@index([lastHeartbeatAt])
+  @@index([lastResourceSyncAt])
+  @@map("nodes")
+}
+
+model BaseImage {
+  id               String   @id @default(uuid()) @db.Uuid
+  tag              String   @unique
+  osName           String?  @map("os_name")
+  description      String?
+  sizeBytes        BigInt?  @map("size_bytes")
+  softwareManifest Json?    @map("software_manifest")
+  isDefault        Boolean  @default(false) @map("is_default")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  createdBy        String?  @map("created_by") @db.Uuid
+  updatedBy        String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  nodeBaseImages NodeBaseImage[]
+
+  // Domain 7: Sessions and Bookings
+  sessions Session[]
+
+  // Domain 9: Academic / LMS
+  labs Lab[]
+
+  @@index([isDefault])
+  @@map("base_images")
+}
+
+model NodeBaseImage {
+  nodeId       String    @map("node_id") @db.Uuid
+  baseImageId  String    @map("base_image_id") @db.Uuid
+  status       String
+  pulledAt     DateTime? @map("pulled_at")
+  errorMessage String?   @map("error_message")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdBy    String?   @map("created_by") @db.Uuid
+  updatedBy    String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  node      Node      @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  baseImage BaseImage @relation(fields: [baseImageId], references: [id], onDelete: Restrict)
+
+  @@id([nodeId, baseImageId])
+  @@index([status])
+  @@map("node_base_images")
+}
+
+// ============================================================================
+// DOMAIN 6: COMPUTE CONFIGS
+// ============================================================================
+
+model ComputeConfig {
+  id                    String      @id @default(uuid()) @db.Uuid
+  slug                  String      @unique
+  name                  String
+  description           String?
+  sessionType           SessionType @map("session_type")
+  tier                  String?
+  vcpu                  Int
+  memoryMb              Int         @map("memory_mb")
+  gpuVramMb             Int         @default(0) @map("gpu_vram_mb")
+  gpuExclusive          Boolean     @default(false) @map("gpu_exclusive")
+  hamiSmPercent         Int?        @map("hami_sm_percent")
+  gpuModel              String?     @map("gpu_model")
+  maxConcurrentPerNode  Int         @default(1) @map("max_concurrent_per_node")
+  bestFor               String?     @map("best_for")
+  basePricePerHourCents Int         @map("base_price_per_hour_cents")
+  currency              String      @default("INR")
+  sortOrder             Int         @default(0) @map("sort_order")
+  isActive              Boolean     @default(true) @map("is_active")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
+  createdBy             String?     @map("created_by") @db.Uuid
+  updatedBy             String?     @map("updated_by") @db.Uuid
+
+  // Relations
+  computeConfigAccess ComputeConfigAccess[]
+
+  // Domain 7: Sessions and Bookings
+  bookings Booking[]
+  sessions Session[]
+
+  // Domain 8: Billing
+  billingCharges BillingCharge[]
+
+  // Domain 9: Academic / LMS
+  courses Course[] @relation("CourseDefaultConfig")
+  labs    Lab[]
+
+  @@index([sessionType])
+  @@index([sortOrder])
+  @@index([isActive])
+  @@map("compute_configs")
+}
+
+model ComputeConfigAccess {
+  id                 String   @id @default(uuid()) @db.Uuid
+  computeConfigId    String   @map("compute_config_id") @db.Uuid
+  organizationId     String?  @map("organization_id") @db.Uuid
+  roleId             String?  @map("role_id") @db.Uuid
+  isAllowed          Boolean  @default(true) @map("is_allowed")
+  priceOverrideCents Int?     @map("price_override_cents")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  createdBy          String?  @map("created_by") @db.Uuid
+  updatedBy          String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  computeConfig ComputeConfig @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
+  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role          Role?         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([computeConfigId, organizationId, roleId])
+  @@index([organizationId])
+  @@index([roleId])
+  @@map("compute_config_access")
+}
+
+// ============================================================================
+// DOMAIN 7: SESSIONS AND BOOKINGS
+// ============================================================================
+
+model Booking {
+  id                 String        @id @default(uuid()) @db.Uuid
+  userId             String        @map("user_id") @db.Uuid
+  organizationId     String?       @map("organization_id") @db.Uuid
+  computeConfigId    String        @map("compute_config_id") @db.Uuid
+  nodeId             String?       @map("node_id") @db.Uuid
+  requiredVcpu       Int?          @map("required_vcpu")
+  requiredMemoryMb   Int?          @map("required_memory_mb")
+  requiredGpuVramMb  Int?          @map("required_gpu_vram_mb")
+  scheduledStartAt   DateTime      @map("scheduled_start_at")
+  scheduledEndAt     DateTime      @map("scheduled_end_at")
+  status             BookingStatus
+  cancellationReason String?       @map("cancellation_reason")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  createdBy          String?       @map("created_by") @db.Uuid
+  updatedBy          String?       @map("updated_by") @db.Uuid
+
+  // Relations
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  computeConfig ComputeConfig @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
+  node          Node?         @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  session       Session?
+  walletHolds   WalletHold[]
+
+  @@index([userId, status, scheduledStartAt])
+  @@index([nodeId, scheduledStartAt, scheduledEndAt])
+  @@map("bookings")
+}
+
+model Session {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  userId              String                    @map("user_id") @db.Uuid
+  organizationId      String?                   @map("organization_id") @db.Uuid
+  computeConfigId     String                    @map("compute_config_id") @db.Uuid
+  bookingId           String?                   @unique @map("booking_id") @db.Uuid
+  nodeId              String?                   @map("node_id") @db.Uuid
+  sessionType         SessionType               @map("session_type")
+  containerId         String?                   @map("container_id")
+  containerName       String?                   @map("container_name")
+  nginxPort           Int?                      @map("nginx_port")
+  selkiesPort         Int?                      @map("selkies_port")
+  displayNumber       Int?                      @map("display_number")
+  sessionTokenHash    String?                   @map("session_token_hash")
+  sessionUrl          String?                   @map("session_url")
+  status              SessionStatus
+  startedAt           DateTime?                 @map("started_at")
+  endedAt             DateTime?                 @map("ended_at")
+  scheduledEndAt      DateTime?                 @map("scheduled_end_at")
+  lastActivityAt      DateTime?                 @map("last_activity_at")
+  nfsMountPath        String?                   @map("nfs_mount_path")
+  baseImageId         String?                   @map("base_image_id") @db.Uuid
+  actualGpuVramMb     Int?                      @map("actual_gpu_vram_mb")
+  actualHamiSmPercent Int?                      @map("actual_hami_sm_percent")
+  reconnectCount      Int                       @default(0) @map("reconnect_count")
+  lastReconnectAt     DateTime?                 @map("last_reconnect_at")
+  autoPreserveFiles   Boolean                   @default(false) @map("auto_preserve_files")
+  avgRttMs            Int?                      @map("avg_rtt_ms")
+  avgPacketLossRatio  Decimal?                  @map("avg_packet_loss_ratio")
+  terminationReason   SessionTerminationReason? @map("termination_reason")
+  resourceSnapshot    Json?                     @map("resource_snapshot")
+
+  // User-facing instance name
+  instanceName String? @map("instance_name") @db.VarChar(256)
+
+  // Storage persistence mode
+  storageMode StorageMode @default(ephemeral) @map("storage_mode")
+
+  // Cumulative cost tracking (denormalized from BillingCharge for fast queries)
+  cumulativeCostCents BigInt    @default(0) @map("cumulative_cost_cents")
+  costLastUpdatedAt   DateTime? @map("cost_last_updated_at")
+
+  // Resource allocation snapshot at launch time (for billing accuracy even if config changes)
+  allocatedVcpu          Int?      @map("allocated_vcpu")
+  allocatedMemoryMb      Int?      @map("allocated_memory_mb")
+  allocatedGpuVramMb     Int?      @map("allocated_gpu_vram_mb")
+  allocatedHamiSmPercent Int?      @map("allocated_hami_sm_percent")
+  allocationSnapshotAt   DateTime? @map("allocation_snapshot_at")
+
+  // Duration tracking (computed: endedAt - startedAt in seconds)
+  durationSeconds Int? @map("duration_seconds")
+
+  // Enhanced termination tracking
+  terminatedBy       String?   @map("terminated_by") @db.Uuid
+  terminatedAt       DateTime? @map("terminated_at")
+  terminationDetails Json?     @map("termination_details")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization            Organization?            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  computeConfig           ComputeConfig            @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
+  booking                 Booking?                 @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  node                    Node?                    @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  baseImage               BaseImage?               @relation(fields: [baseImageId], references: [id], onDelete: Restrict)
+  sessionEvents           SessionEvent[]
+  billingCharges          BillingCharge[]
+  walletHolds             WalletHold[]
+  userFiles               UserFile[]
+  nodeResourceReservation NodeResourceReservation?
+
+  // Domain 9: Academic / LMS
+  labSubmissions LabSubmission[]
+
+  // Domain 15: Support and Feedback
+  supportTickets SupportTicket[]
+  userFeedback   UserFeedback[]
+
+  @@index([userId, status])
+  @@index([nodeId, status])
+  @@index([startedAt])
+  @@index([computeConfigId])
+  @@index([storageMode])
+  @@index([instanceName])
+  @@map("sessions")
+}
+
+model SessionEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  sessionId String   @map("session_id") @db.Uuid
+  eventType String   @map("event_type")
+  payload   Json?
+  clientIp  String?  @map("client_ip")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("session_events")
+}
+
+// AUDIT: Records must NEVER be deleted — required for resource allocation audit trail
+model NodeResourceReservation {
+  id        String @id @default(uuid()) @db.Uuid
+  nodeId    String @map("node_id") @db.Uuid
+  sessionId String @unique @map("session_id") @db.Uuid
+
+  reservedVcpu          Int  @map("reserved_vcpu")
+  reservedMemoryMb      Int  @map("reserved_memory_mb")
+  reservedGpuVramMb     Int  @map("reserved_gpu_vram_mb")
+  reservedHamiSmPercent Int? @map("reserved_hami_sm_percent")
+
+  reservedAt DateTime  @default(now()) @map("reserved_at")
+  releasedAt DateTime? @map("released_at")
+  status     String    @default("reserved") @map("status") // reserved, released, failed
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  node    Node    @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@unique([nodeId, sessionId])
+  @@index([nodeId, status])
+  @@index([sessionId])
+  @@index([releasedAt])
+  @@map("node_resource_reservations")
+}
+
+// ============================================================================
+// DOMAIN 8: BILLING, WALLET, SUBSCRIPTIONS
+// ============================================================================
+
+// AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
+model Wallet {
+  id                       String    @id @default(uuid()) @db.Uuid
+  userId                   String    @unique @map("user_id") @db.Uuid
+  balanceCents             BigInt    @default(0) @map("balance_cents")
+  currency                 String    @default("INR")
+  lifetimeCreditsCents     BigInt    @default(0) @map("lifetime_credits_cents")
+  lifetimeSpentCents       BigInt    @default(0) @map("lifetime_spent_cents")
+  lowBalanceThresholdCents Int       @default(10000) @map("low_balance_threshold_cents")
+  spendLimitCents          Int?      @map("spend_limit_cents") // Max spend allowed per period (null = no limit)
+  spendLimitPeriod         String?   @map("spend_limit_period") // 'daily' / 'monthly' / 'date_range' (null if no limit set)
+  spendLimitEnabled        Boolean   @default(false) @map("spend_limit_enabled") // Whether spend limit is active
+  spendLimitStartDate      DateTime? @map("spend_limit_start_date")
+  spendLimitEndDate        DateTime? @map("spend_limit_end_date")
+  spendLimitConsentedAt    DateTime? @map("spend_limit_consented_at")
+  spendLimitWarning85Sent  Boolean   @default(false) @map("spend_limit_warning_85_sent")
+  runwayWarning1HourSent   Boolean   @default(false) @map("runway_warning_1hour_sent")
+  isFrozen                 Boolean   @default(false) @map("is_frozen")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+  createdBy                String?   @map("created_by") @db.Uuid
+  updatedBy                String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  walletHolds        WalletHold[]
+  walletTransactions WalletTransaction[]
+
+  @@index([balanceCents])
+  @@map("wallets")
+}
+
+// AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
+model WalletHold {
+  id             String           @id @default(uuid()) @db.Uuid
+  walletId       String           @map("wallet_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  amountCents    BigInt           @map("amount_cents")
+  holdReason     String?          @map("hold_reason")
+  bookingId      String?          @map("booking_id") @db.Uuid
+  sessionId      String?          @map("session_id") @db.Uuid
+  status         WalletHoldStatus
+  expiresAt      DateTime?        @map("expires_at")
+  releasedAt     DateTime?        @map("released_at")
+  releaseReason  String?          @map("release_reason")
+  capturedAmount BigInt?          @map("captured_amount")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  wallet  Wallet   @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([walletId, status])
+  @@index([expiresAt])
+  @@map("wallet_holds")
+}
+
+// AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
+model WalletTransaction {
+  id                String   @id @default(uuid()) @db.Uuid
+  walletId          String   @map("wallet_id") @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  txnType           String   @map("txn_type")
+  amountCents       BigInt   @map("amount_cents")
+  balanceAfterCents BigInt   @map("balance_after_cents")
+  referenceType     String?  @map("reference_type")
+  referenceId       String?  @map("reference_id") @db.Uuid
+  description       String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  createdBy         String?  @map("created_by") @db.Uuid
+
+  // Relations
+  wallet         Wallet          @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  billingCharges BillingCharge[]
+
+  // Domain 4: Storage Extensions
+  storageExtensions StorageExtension[]
+
+  @@index([walletId, createdAt])
+  @@index([userId, createdAt])
+  @@map("wallet_transactions")
+}
+
+model CreditPackage {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  amountCents  Int      @map("amount_cents")
+  creditCents  Int      @map("credit_cents")
+  bonusCents   Int      @default(0) @map("bonus_cents")
+  validityDays Int?     @map("validity_days")
+  isActive     Boolean  @default(true) @map("is_active")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdBy    String?  @map("created_by") @db.Uuid
+  updatedBy    String?  @map("updated_by") @db.Uuid
+
+  @@index([sortOrder])
+  @@index([isActive])
+  @@map("credit_packages")
+}
+
+model SubscriptionPlan {
+  id                     String   @id @default(uuid()) @db.Uuid
+  slug                   String   @unique
+  name                   String
+  description            String?
+  priceCents             Int      @map("price_cents")
+  currency               String   @default("INR")
+  billingPeriod          String?  @map("billing_period")
+  gpuHoursIncluded       Int?     @map("gpu_hours_included")
+  mentorSessionsIncluded Int      @default(0) @map("mentor_sessions_included")
+  features               Json?
+  isActive               Boolean  @default(true) @map("is_active")
+  sortOrder              Int      @default(0) @map("sort_order")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+  createdBy              String?  @map("created_by") @db.Uuid
+  updatedBy              String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  subscriptions Subscription[]
+
+  @@index([sortOrder])
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                      String             @id @default(uuid()) @db.Uuid
+  userId                  String             @map("user_id") @db.Uuid
+  planId                  String             @map("plan_id") @db.Uuid
+  organizationId          String?            @map("organization_id") @db.Uuid
+  status                  SubscriptionStatus
+  startsAt                DateTime           @map("starts_at")
+  endsAt                  DateTime?          @map("ends_at")
+  gpuHoursRemaining       Decimal?           @map("gpu_hours_remaining")
+  mentorSessionsRemaining Int?               @map("mentor_sessions_remaining")
+  autoRenew               Boolean            @default(true) @map("auto_renew")
+  cancellationRequestedAt DateTime?          @map("cancellation_requested_at")
+  cancelAtPeriodEnd       Boolean            @default(false) @map("cancel_at_period_end")
+  gracePeriodUntil        DateTime?          @map("grace_period_until")
+  paymentTransactionId    String?            @map("payment_transaction_id") @db.Uuid
+  createdAt               DateTime           @default(now()) @map("created_at")
+  updatedAt               DateTime           @updatedAt @map("updated_at")
+  createdBy               String?            @map("created_by") @db.Uuid
+  updatedBy               String?            @map("updated_by") @db.Uuid
+
+  // Relations
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan               SubscriptionPlan    @relation(fields: [planId], references: [id], onDelete: Restrict)
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([endsAt])
+  @@map("subscriptions")
+}
+
+model OrgContract {
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  contractName      String?   @map("contract_name")
+  startsAt          DateTime  @map("starts_at")
+  endsAt            DateTime? @map("ends_at")
+  maxSeats          Int?      @map("max_seats")
+  billingModel      String?   @map("billing_model")
+  totalCreditsCents BigInt?   @map("total_credits_cents")
+  usedCreditsCents  BigInt    @default(0) @map("used_credits_cents")
+  status            String
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  createdBy         String?   @map("created_by") @db.Uuid
+  updatedBy         String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("org_contracts")
+}
+
+model OrgResourceQuota {
+  id                            String   @id @default(uuid()) @db.Uuid
+  organizationId                String   @unique @map("organization_id") @db.Uuid
+  maxConcurrentSessionsPerOrg   Int?     @map("max_concurrent_sessions_per_org")
+  maxConcurrentStatefulPerUser  Int      @default(1) @map("max_concurrent_stateful_per_user")
+  maxConcurrentEphemeralPerUser Int      @default(3) @map("max_concurrent_ephemeral_per_user")
+  maxRegisteredUsers            Int?     @map("max_registered_users")
+  maxStoragePerUserMb           Int      @default(15360) @map("max_storage_per_user_mb")
+  allowedSessionTypes           String[] @map("allowed_session_types")
+  maxBookingHoursPerDay         Int?     @map("max_booking_hours_per_day")
+  maxGpuVramMbTotal             Int?     @map("max_gpu_vram_mb_total")
+  createdAt                     DateTime @default(now()) @map("created_at")
+  updatedAt                     DateTime @updatedAt @map("updated_at")
+  createdBy                     String?  @map("created_by") @db.Uuid
+  updatedBy                     String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@map("org_resource_quotas")
+}
+
+model PaymentTransaction {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  gateway           String
+  gatewayTxnId      String?   @unique @map("gateway_txn_id")
+  gatewayOrderId    String?   @map("gateway_order_id")
+  amountCents       Int       @map("amount_cents")
+  currency          String    @default("INR")
+  status            String
+  gatewayResponse   Json?     @map("gateway_response")
+  refundAmountCents Int?      @map("refund_amount_cents")
+  refundedAt        DateTime? @map("refunded_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  createdBy         String?   @map("created_by") @db.Uuid
+  updatedBy         String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  subscriptions Subscription[]
+
+  // Domain 4: Storage Extensions
+  storageExtensions StorageExtension[]
+
+  // Domain 10: Mentorship
+  mentorBookings MentorBooking[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("payment_transactions")
+}
+
+// AUDIT: Records in this table must NEVER be deleted — required for financial audit trail
+model BillingCharge {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  chargeType          String   @default("compute") @map("charge_type") // 'compute' | 'storage'
+  sessionId           String?  @map("session_id") @db.Uuid // Nullable for storage charges
+  computeConfigId     String?  @map("compute_config_id") @db.Uuid // Nullable for storage charges
+  storageVolumeId     String?  @map("storage_volume_id") @db.Uuid // FK to UserStorageVolume (null for compute)
+  quotaGb             Int?     @map("quota_gb") // Storage GB being charged (null for compute)
+  durationSeconds     Int      @map("duration_seconds")
+  rateCentsPerHour    Int      @map("rate_cents_per_hour")
+  amountCents         BigInt   @map("amount_cents")
+  currency            String   @default("INR")
+  walletTransactionId String?  @map("wallet_transaction_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at")
+  createdBy           String?  @map("created_by") @db.Uuid
+
+  // Relations
+  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  session           Session?           @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  computeConfig     ComputeConfig?     @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
+  storageVolume     UserStorageVolume? @relation(fields: [storageVolumeId], references: [id], onDelete: Restrict)
+  walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: Restrict)
+
+  // Domain 15: Support and Feedback
+  supportTickets SupportTicket[]
+
+  @@index([userId, createdAt])
+  @@index([sessionId])
+  @@index([storageVolumeId])
+  @@map("billing_charges")
+}
+
+model Invoice {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  invoiceNumber  String    @unique @map("invoice_number")
+  periodStart    DateTime  @map("period_start")
+  periodEnd      DateTime  @map("period_end")
+  subtotalCents  BigInt    @map("subtotal_cents")
+  taxCents       BigInt    @default(0) @map("tax_cents")
+  totalCents     BigInt    @map("total_cents")
+  currency       String    @default("INR")
+  status         String
+  issuedAt       DateTime? @map("issued_at")
+  paidAt         DateTime? @map("paid_at")
+  pdfUrl         String?   @map("pdf_url")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  updatedBy      String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization     Organization?     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoiceLineItems InvoiceLineItem[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  invoiceId      String   @map("invoice_id") @db.Uuid
+  description    String
+  quantity       Int
+  unitPriceCents Int      @map("unit_price_cents")
+  totalCents     BigInt   @map("total_cents")
+  referenceType  String?  @map("reference_type")
+  referenceId    String?  @map("reference_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@map("invoice_line_items")
+}
+
+// ============================================================================
+// DOMAIN 9: ACADEMIC / LMS
+// ============================================================================
+
+model Course {
+  id                     String    @id @default(uuid()) @db.Uuid
+  organizationId         String    @map("organization_id") @db.Uuid
+  departmentId           String?   @map("department_id") @db.Uuid
+  instructorId           String    @map("instructor_id") @db.Uuid
+  title                  String    @db.VarChar(255)
+  code                   String?   @db.VarChar(32)
+  description            String?
+  semester               String?   @db.VarChar(32)
+  academicYear           String?   @map("academic_year") @db.VarChar(16)
+  status                 String    @default("draft") @db.VarChar(32)
+  defaultComputeConfigId String?   @map("default_compute_config_id") @db.Uuid
+  maxStudents            Int?      @map("max_students")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  deletedAt              DateTime? @map("deleted_at")
+  createdBy              String?   @map("created_by") @db.Uuid
+  updatedBy              String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  department           Department?        @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  instructor           User               @relation("CourseInstructor", fields: [instructorId], references: [id], onDelete: Restrict)
+  defaultComputeConfig ComputeConfig?     @relation("CourseDefaultConfig", fields: [defaultComputeConfigId], references: [id], onDelete: Restrict)
+  courseEnrollments    CourseEnrollment[]
+  labs                 Lab[]
+  discussions          Discussion[]
+
+  @@index([organizationId])
+  @@index([instructorId])
+  @@index([status])
+  @@map("courses")
+}
+
+model CourseEnrollment {
+  id         String    @id @default(uuid()) @db.Uuid
+  courseId   String    @map("course_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  status     String    @default("enrolled") @db.VarChar(32)
+  enrolledAt DateTime? @map("enrolled_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  createdBy  String?   @map("created_by") @db.Uuid
+  updatedBy  String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  course Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([courseId, userId])
+  @@index([courseId])
+  @@index([userId])
+  @@map("course_enrollments")
+}
+
+model Lab {
+  id                   String    @id @default(uuid()) @db.Uuid
+  courseId             String?   @map("course_id") @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  createdByUserId      String    @map("created_by_user_id") @db.Uuid
+  title                String    @db.VarChar(255)
+  description          String?
+  instructions         String?
+  computeConfigId      String?   @map("compute_config_id") @db.Uuid
+  baseImageId          String?   @map("base_image_id") @db.Uuid
+  preloadedNotebookUrl String?   @map("preloaded_notebook_url") @db.VarChar(512)
+  preloadedDatasetUrls String[]  @map("preloaded_dataset_urls")
+  maxDurationMinutes   Int?      @map("max_duration_minutes")
+  status               String    @default("draft") @db.VarChar(32)
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
+  createdBy            String?   @map("created_by") @db.Uuid
+  updatedBy            String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  course              Course?              @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  creator             User                 @relation("LabCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  computeConfig       ComputeConfig?       @relation(fields: [computeConfigId], references: [id], onDelete: Restrict)
+  baseImage           BaseImage?           @relation(fields: [baseImageId], references: [id], onDelete: Restrict)
+  labGroupAssignments LabGroupAssignment[]
+  labAssignments      LabAssignment[]
+  discussions         Discussion[]
+
+  @@index([courseId])
+  @@index([organizationId])
+  @@index([createdByUserId])
+  @@map("labs")
+}
+
+model LabGroupAssignment {
+  id             String    @id @default(uuid()) @db.Uuid
+  labId          String    @map("lab_id") @db.Uuid
+  userGroupId    String    @map("user_group_id") @db.Uuid
+  assignedBy     String    @map("assigned_by") @db.Uuid
+  availableFrom  DateTime? @map("available_from")
+  availableUntil DateTime? @map("available_until")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  updatedBy      String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  lab            Lab       @relation(fields: [labId], references: [id], onDelete: Restrict)
+  userGroup      UserGroup @relation(fields: [userGroupId], references: [id], onDelete: Restrict)
+  assignedByUser User      @relation("LabGroupAssigner", fields: [assignedBy], references: [id], onDelete: Restrict)
+
+  @@unique([labId, userGroupId])
+  @@map("lab_group_assignments")
+}
+
+model LabAssignment {
+  id                  String    @id @default(uuid()) @db.Uuid
+  labId               String    @map("lab_id") @db.Uuid
+  title               String    @db.VarChar(255)
+  description         String?
+  instructions        String?
+  dueAt               DateTime? @map("due_at")
+  maxScore            Decimal?  @default(100) @map("max_score") @db.Decimal(6, 2)
+  allowLateSubmission Boolean   @default(false) @map("allow_late_submission")
+  latePenaltyPercent  Int       @default(0) @map("late_penalty_percent")
+  maxAttempts         Int       @default(1) @map("max_attempts")
+  rubric              Json?
+  sortOrder           Int       @default(0) @map("sort_order")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  deletedAt           DateTime? @map("deleted_at")
+  createdBy           String?   @map("created_by") @db.Uuid
+  updatedBy           String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  lab            Lab             @relation(fields: [labId], references: [id], onDelete: Restrict)
+  labSubmissions LabSubmission[]
+
+  @@index([labId])
+  @@map("lab_assignments")
+}
+
+model LabSubmission {
+  id              String    @id @default(uuid()) @db.Uuid
+  labAssignmentId String    @map("lab_assignment_id") @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  sessionId       String?   @map("session_id") @db.Uuid
+  attemptNumber   Int       @default(1) @map("attempt_number")
+  status          String    @db.VarChar(32)
+  submittedAt     DateTime? @map("submitted_at")
+  fileIds         String[]  @map("file_ids")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdBy       String?   @map("created_by") @db.Uuid
+  updatedBy       String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  labAssignment LabAssignment @relation(fields: [labAssignmentId], references: [id], onDelete: Restrict)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  session       Session?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  labGrade      LabGrade?
+
+  @@index([labAssignmentId])
+  @@index([userId])
+  @@map("lab_submissions")
+}
+
+model LabGrade {
+  id           String    @id @default(uuid()) @db.Uuid
+  submissionId String    @unique @map("submission_id") @db.Uuid
+  gradedBy     String    @map("graded_by") @db.Uuid
+  score        Decimal?  @db.Decimal(6, 2)
+  maxScore     Decimal?  @map("max_score") @db.Decimal(6, 2)
+  feedback     String?
+  rubricScores Json?     @map("rubric_scores")
+  gradedAt     DateTime? @map("graded_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdBy    String?   @map("created_by") @db.Uuid
+  updatedBy    String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  submission LabSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  grader     User          @relation("Grader", fields: [gradedBy], references: [id], onDelete: Restrict)
+
+  @@map("lab_grades")
+}
+
+model CourseworkContent {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String?   @map("organization_id") @db.Uuid
+  category        String    @db.VarChar(64)
+  title           String    @db.VarChar(255)
+  description     String?
+  contentUrl      String?   @map("content_url") @db.VarChar(512)
+  thumbnailUrl    String?   @map("thumbnail_url") @db.VarChar(512)
+  difficultyLevel String?   @map("difficulty_level") @db.VarChar(32)
+  tags            String[]
+  isFeatured      Boolean   @default(false) @map("is_featured")
+  viewCount       Int       @default(0) @map("view_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+  createdBy       String?   @map("created_by") @db.Uuid
+  updatedBy       String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([category])
+  @@index([organizationId])
+  @@map("coursework_content")
+}
+
+// ============================================================================
+// DOMAIN 10: MENTORSHIP
+// ============================================================================
+
+model MentorProfile {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  headline          String?  @db.VarChar(255)
+  bio               String?
+  expertiseAreas    String[] @map("expertise_areas")
+  experienceYears   Int?     @map("experience_years")
+  pricePerHourCents Int      @map("price_per_hour_cents")
+  currency          String   @default("INR") @db.VarChar(3)
+  isAvailable       Boolean  @default(true) @map("is_available")
+  avgRating         Decimal? @default(0) @map("avg_rating") @db.Decimal(3, 2)
+  totalReviews      Int      @default(0) @map("total_reviews")
+  totalSessions     Int      @default(0) @map("total_sessions")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdBy         String?  @map("created_by") @db.Uuid
+  updatedBy         String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  mentorAvailabilitySlots MentorAvailabilitySlot[]
+  mentorBookings          MentorBooking[]
+
+  @@map("mentor_profiles")
+}
+
+model MentorAvailabilitySlot {
+  id              String    @id @default(uuid()) @db.Uuid
+  mentorProfileId String    @map("mentor_profile_id") @db.Uuid
+  dayOfWeek       Int?      @map("day_of_week")
+  specificDate    DateTime? @map("specific_date") @db.Date
+  startTime       String    @map("start_time")
+  endTime         String    @map("end_time")
+  isRecurring     Boolean   @default(true) @map("is_recurring")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdBy       String?   @map("created_by") @db.Uuid
+  updatedBy       String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  mentorProfile MentorProfile @relation(fields: [mentorProfileId], references: [id], onDelete: Restrict)
+
+  @@map("mentor_availability_slots")
+}
+
+model MentorBooking {
+  id                   String   @id @default(uuid()) @db.Uuid
+  mentorProfileId      String   @map("mentor_profile_id") @db.Uuid
+  studentUserId        String   @map("student_user_id") @db.Uuid
+  scheduledAt          DateTime @map("scheduled_at")
+  durationMinutes      Int      @default(60) @map("duration_minutes")
+  status               String   @db.VarChar(32)
+  meetingUrl           String?  @map("meeting_url") @db.VarChar(512)
+  paymentTransactionId String?  @map("payment_transaction_id") @db.Uuid
+  amountCents          Int?     @map("amount_cents")
+  notes                String?
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  createdBy            String?  @map("created_by") @db.Uuid
+  updatedBy            String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  mentorProfile      MentorProfile       @relation(fields: [mentorProfileId], references: [id], onDelete: Restrict)
+  student            User                @relation("MentorBookingStudent", fields: [studentUserId], references: [id], onDelete: Restrict)
+  paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id], onDelete: Restrict)
+  mentorReview       MentorReview?
+
+  @@index([mentorProfileId])
+  @@index([studentUserId])
+  @@map("mentor_bookings")
+}
+
+model MentorReview {
+  id              String   @id @default(uuid()) @db.Uuid
+  mentorBookingId String   @unique @map("mentor_booking_id") @db.Uuid
+  reviewerUserId  String   @map("reviewer_user_id") @db.Uuid
+  rating          Int
+  reviewText      String?  @map("review_text")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdBy       String?  @map("created_by") @db.Uuid
+  updatedBy       String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  mentorBooking MentorBooking @relation(fields: [mentorBookingId], references: [id], onDelete: Restrict)
+  reviewer      User          @relation("MentorReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
+
+  @@map("mentor_reviews")
+}
+
+// ============================================================================
+// DOMAIN 11: COMMUNITY AND GAMIFICATION
+// ============================================================================
+
+model Discussion {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  courseId       String?   @map("course_id") @db.Uuid
+  labId          String?   @map("lab_id") @db.Uuid
+  authorId       String    @map("author_id") @db.Uuid
+  title          String    @db.VarChar(255)
+  body           String
+  isPinned       Boolean   @default(false) @map("is_pinned")
+  isLocked       Boolean   @default(false) @map("is_locked")
+  replyCount     Int       @default(0) @map("reply_count")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  updatedBy      String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  organization      Organization?     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  course            Course?           @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  lab               Lab?              @relation(fields: [labId], references: [id], onDelete: Restrict)
+  author            User              @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  discussionReplies DiscussionReply[]
+
+  @@index([organizationId])
+  @@index([courseId])
+  @@index([authorId])
+  @@map("discussions")
+}
+
+model DiscussionReply {
+  id               String    @id @default(uuid()) @db.Uuid
+  discussionId     String    @map("discussion_id") @db.Uuid
+  parentReplyId    String?   @map("parent_reply_id") @db.Uuid
+  authorId         String    @map("author_id") @db.Uuid
+  body             String
+  isAcceptedAnswer Boolean   @default(false) @map("is_accepted_answer")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+  createdBy        String?   @map("created_by") @db.Uuid
+  updatedBy        String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  discussion   Discussion        @relation(fields: [discussionId], references: [id], onDelete: Restrict)
+  parentReply  DiscussionReply?  @relation("DiscussionReplyHierarchy", fields: [parentReplyId], references: [id], onDelete: Restrict)
+  childReplies DiscussionReply[] @relation("DiscussionReplyHierarchy")
+  author       User              @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([discussionId])
+  @@index([authorId])
+  @@map("discussion_replies")
+}
+
+model ProjectShowcase {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  title          String    @db.VarChar(255)
+  description    String?
+  projectUrl     String?   @map("project_url") @db.VarChar(512)
+  thumbnailUrl   String?   @map("thumbnail_url") @db.VarChar(512)
+  tags           String[]
+  isFeatured     Boolean   @default(false) @map("is_featured")
+  viewCount      Int       @default(0) @map("view_count")
+  likeCount      Int       @default(0) @map("like_count")
+  status         String    @default("draft") @db.VarChar(32)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  updatedBy      String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  user         User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@map("project_showcases")
+}
+
+model Achievement {
+  id          String   @id @default(uuid()) @db.Uuid
+  slug        String   @unique @db.VarChar(64)
+  name        String   @db.VarChar(128)
+  description String?
+  iconUrl     String?  @map("icon_url") @db.VarChar(512)
+  category    String?  @db.VarChar(64)
+  criteria    Json?
+  points      Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  achievementId String   @map("achievement_id") @db.Uuid
+  earnedAt      DateTime @map("earned_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdBy     String?  @map("created_by") @db.Uuid
+  updatedBy     String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+// ============================================================================
+// DOMAIN 12: NOTIFICATIONS
+// ============================================================================
+
+model NotificationTemplate {
+  id              String   @id @default(uuid()) @db.Uuid
+  slug            String   @unique @db.VarChar(128)
+  channel         String   @db.VarChar(32)
+  subjectTemplate String?  @map("subject_template") @db.VarChar(512)
+  bodyTemplate    String   @map("body_template")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdBy       String?  @map("created_by") @db.Uuid
+  updatedBy       String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  notifications Notification[]
+
+  @@map("notification_templates")
+}
+
+model Notification {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  templateId          String?   @map("template_id") @db.Uuid
+  channel             String    @db.VarChar(32)
+  title               String?   @db.VarChar(255)
+  body                String?
+  data                Json?
+  status              String    @db.VarChar(32)
+  sentAt              DateTime? @map("sent_at")
+  readAt              DateTime? @map("read_at")
+  deliveryAttempts    Int       @default(0) @map("delivery_attempts")
+  lastDeliveryError   String?   @map("last_delivery_error") @db.VarChar(512)
+  deliveryConfirmedAt DateTime? @map("delivery_confirmed_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status, createdAt])
+  @@map("notifications")
+}
+
+// ============================================================================
+// DOMAIN 13: AUDIT
+// ============================================================================
+
+// AUDIT: Records in this table must NEVER be deleted — required for security and compliance audit trail
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorId      String?  @map("actor_id") @db.Uuid
+  actorRole    String?  @map("actor_role") @db.VarChar(64)
+  orgId        String?  @map("org_id") @db.Uuid
+  action       String   @db.VarChar(64)
+  resourceType String   @map("resource_type") @db.VarChar(64)
+  resourceId   String?  @map("resource_id") @db.Uuid
+  oldData      Json?    @map("old_data")
+  newData      Json?    @map("new_data")
+  clientIp     String?  @map("client_ip")
+  userAgent    String?  @map("user_agent")
+  actionReason String?  @map("action_reason")
+  requestId    String?  @map("request_id") @db.VarChar(64)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  actor        User?         @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: Restrict)
+  organization Organization? @relation("AuditLogOrg", fields: [orgId], references: [id], onDelete: Restrict)
+
+  @@index([actorId])
+  @@index([action])
+  @@index([resourceType, resourceId])
+  @@index([orgId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+// ============================================================================
+// DOMAIN 13b: USER LIFECYCLE
+// ============================================================================
+
+model UserDeletionRequest {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  requestedAt         DateTime  @map("requested_at")
+  requestedBy         String?   @map("requested_by") @db.Uuid
+  reason              String?
+  gracePeriodDays     Int       @default(30) @map("grace_period_days")
+  scheduledDeletionAt DateTime  @map("scheduled_deletion_at")
+  status              String    @db.VarChar(32)
+  cancelledAt         DateTime? @map("cancelled_at")
+  completedAt         DateTime? @map("completed_at")
+  completionDetails   Json?     @map("completion_details")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  createdBy           String?   @map("created_by") @db.Uuid
+  updatedBy           String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  user            User  @relation("DeletionRequestUser", fields: [userId], references: [id], onDelete: Restrict)
+  requestedByUser User? @relation("DeletionRequestedBy", fields: [requestedBy], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledDeletionAt])
+  @@map("user_deletion_requests")
+}
+
+// ============================================================================
+// DOMAIN 14: UTILITY AND PLATFORM CONFIG
+// ============================================================================
+
+model SystemSetting {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique @db.VarChar(128)
+  value       String
+  valueType   String?  @map("value_type") @db.VarChar(32)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  @@map("system_settings")
+}
+
+model FeatureFlag {
+  id             String   @id @default(uuid()) @db.Uuid
+  key            String   @unique @db.VarChar(128)
+  enabled        Boolean  @default(false)
+  rolloutPercent Int      @default(100) @map("rollout_percent")
+  allowedOrgIds  String[] @map("allowed_org_ids")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdBy      String?  @map("created_by") @db.Uuid
+  updatedBy      String?  @map("updated_by") @db.Uuid
+
+  @@map("feature_flags")
+}
+
+model Announcement {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  title          String    @db.VarChar(255)
+  body           String?
+  severity       String    @db.VarChar(32)
+  publishedAt    DateTime? @map("published_at")
+  expiresAt      DateTime? @map("expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  updatedBy      String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([publishedAt])
+  @@map("announcements")
+}
+
+// ============================================================================
+// DOMAIN 15: SUPPORT AND FEEDBACK
+// ============================================================================
+
+model SupportTicket {
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @map("user_id") @db.Uuid
+  organizationId     String?        @map("organization_id") @db.Uuid
+  subject            String         @db.VarChar(255)
+  description        String
+  category           String         @db.VarChar(64)
+  priority           TicketPriority @default(medium)
+  status             TicketStatus
+  assignedTo         String?        @map("assigned_to") @db.Uuid
+  relatedSessionId   String?        @map("related_session_id") @db.Uuid
+  relatedBillingId   String?        @map("related_billing_id") @db.Uuid
+  resolvedAt         DateTime?      @map("resolved_at")
+  resolutionNotes    String?        @map("resolution_notes")
+  satisfactionRating Int?           @map("satisfaction_rating")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+  deletedAt          DateTime?      @map("deleted_at")
+  createdBy          String?        @map("created_by") @db.Uuid
+  updatedBy          String?        @map("updated_by") @db.Uuid
+
+  // Relations
+  user           User            @relation("SupportTicketUser", fields: [userId], references: [id], onDelete: Restrict)
+  organization   Organization?   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assignee       User?           @relation("TicketAssignee", fields: [assignedTo], references: [id], onDelete: Restrict)
+  relatedSession Session?        @relation(fields: [relatedSessionId], references: [id], onDelete: Restrict)
+  relatedBilling BillingCharge?  @relation(fields: [relatedBillingId], references: [id], onDelete: Restrict)
+  ticketMessages TicketMessage[]
+
+  @@index([userId, status, createdAt])
+  @@index([assignedTo, status])
+  @@index([organizationId, status])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  ticketId    String   @map("ticket_id") @db.Uuid
+  senderId    String   @map("sender_id") @db.Uuid
+  body        String
+  isInternal  Boolean  @default(false) @map("is_internal")
+  attachments Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  sender User          @relation("TicketMessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+model UserFeedback {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  sessionId     String?   @map("session_id") @db.Uuid
+  feedbackType  String    @map("feedback_type") @db.VarChar(64)
+  rating        Int?
+  subject       String?   @db.VarChar(255)
+  body          String?
+  status        String    @default("submitted") @db.VarChar(32)
+  adminResponse String?   @map("admin_response")
+  respondedBy   String?   @map("responded_by") @db.Uuid
+  respondedAt   DateTime? @map("responded_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdBy     String?   @map("created_by") @db.Uuid
+  updatedBy     String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  user      User     @relation("UserFeedbackUser", fields: [userId], references: [id], onDelete: Restrict)
+  session   Session? @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  responder User?    @relation("FeedbackResponder", fields: [respondedBy], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@map("user_feedback")
+}
+
+// ============================================================================
+// DOMAIN 16: REFERRAL SYSTEM
+// ============================================================================
+
+model Referral {
+  id                String    @id @default(uuid()) @db.Uuid
+  referrerUserId    String    @unique @map("referrer_user_id") @db.Uuid
+  referralCode      String    @unique @map("referral_code") @db.VarChar(20)
+  referralUrl       String    @map("referral_url") @db.VarChar(500)
+  isActive          Boolean   @default(true) @map("is_active")
+  totalClicks       Int       @default(0) @map("total_clicks")
+  totalSignups      Int       @default(0) @map("total_signups")
+  totalRewardsCents BigInt    @default(0) @map("total_rewards_cents")
+  expiresAt         DateTime? @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  referrer    User                 @relation(fields: [referrerUserId], references: [id])
+  conversions ReferralConversion[]
+  events      ReferralEvent[]
+
+  @@index([referralCode])
+  @@index([referrerUserId])
+  @@map("referrals")
+}
+
+model ReferralConversion {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  referralId              String                   @map("referral_id") @db.Uuid
+  referrerUserId          String                   @map("referrer_user_id") @db.Uuid
+  referredUserId          String                   @unique @map("referred_user_id") @db.Uuid
+  status                  ReferralConversionStatus @default(SIGNUP_COMPLETED) @map("status")
+  signupMethod            String                   @map("signup_method") @db.VarChar(50)
+  signupCompletedAt       DateTime                 @default(now()) @map("signup_completed_at")
+  firstPaymentAt          DateTime?                @map("first_payment_at")
+  firstPaymentAmountCents BigInt?                  @map("first_payment_amount_cents")
+  firstPaymentTxnId       String?                  @map("first_payment_txn_id") @db.Uuid
+  rewardAmountCents       Int                      @default(5000) @map("reward_amount_cents")
+  rewardStatus            ReferralRewardStatus     @default(PENDING) @map("reward_status")
+  rewardCreditedAt        DateTime?                @map("reward_credited_at")
+  rewardWalletTxnId       String?                  @map("reward_wallet_txn_id") @db.Uuid
+  metadata                Json?
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+
+  referral     Referral        @relation(fields: [referralId], references: [id])
+  referrer     User            @relation("ReferralConversionReferrer", fields: [referrerUserId], references: [id])
+  referredUser User            @relation("ReferralConversionReferred", fields: [referredUserId], references: [id])
+  events       ReferralEvent[]
+
+  @@index([referrerUserId])
+  @@index([referralId, status])
+  @@index([status])
+  @@map("referral_conversions")
+}
+
+model ReferralEvent {
+  id                   String   @id @default(uuid()) @db.Uuid
+  referralId           String   @map("referral_id") @db.Uuid
+  referralConversionId String?  @map("referral_conversion_id") @db.Uuid
+  eventType            String   @map("event_type") @db.VarChar(50)
+  previousStatus       String?  @map("previous_status") @db.VarChar(50)
+  newStatus            String?  @map("new_status") @db.VarChar(50)
+  metadata             Json?
+  actorType            String   @map("actor_type") @db.VarChar(20)
+  actorId              String?  @map("actor_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  referral   Referral            @relation(fields: [referralId], references: [id])
+  conversion ReferralConversion? @relation(fields: [referralConversionId], references: [id])
+
+  @@index([referralId, createdAt])
+  @@index([eventType])
+  @@map("referral_events")
+}
+
+// === Domain 16: Compute Recommendation ===
+
+model RecommendationSession {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  // User Inputs
+  workloadDescription   String? @map("workload_description")
+  documentFileName      String? @map("document_file_name")
+  documentExtractedText String? @map("document_extracted_text")
+
+  // LLM Analysis Results
+  analysisResult        Json?    @map("analysis_result")
+  analysisQuality       String?  @map("analysis_quality")
+  analysisConfidence    Float?   @map("analysis_confidence")
+  detectedGoal          String?  @map("detected_goal")
+  detectedVramGb        Float?   @map("detected_vram_gb")
+  detectedIntensity     String?  @map("detected_intensity")
+  detectedFrameworks    String[] @default([]) @map("detected_frameworks")
+
+  // User Selections (final values after possible manual override)
+  selectedGoal          String? @map("selected_goal")
+  selectedDatasetSize   String? @map("selected_dataset_size")
+  selectedIntensity     Int?    @map("selected_intensity")
+  selectedBudgetType    String? @map("selected_budget_type")
+  selectedBudgetAmount  Int?    @map("selected_budget_amount")
+  selectedDuration      String? @map("selected_duration")
+
+  // Auto-selection tracking
+  goalAutoSelected      Boolean @default(false) @map("goal_auto_selected")
+  datasetAutoSelected   Boolean @default(false) @map("dataset_auto_selected")
+  intensityAutoSelected Boolean @default(false) @map("intensity_auto_selected")
+
+  // Recommendation Output
+  recommendations    Json?   @map("recommendations")
+  selectedConfigSlug String? @map("selected_config_slug")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  completedAt DateTime? @map("completed_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("recommendation_sessions")
+}
+
+// === END OF SCHEMA ===

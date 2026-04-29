@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Daily Spend – Chart Mock</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+<style>
+  :root {
+    --bg:        #00094a;
+    --card:      #00114f;
+    --border:    #6c9aff;
+    --area-fill: rgba(108,154,255,0.13);
+    --line:      #6c9aff;
+    --rate:      #f0c050;
+    --text:      #e8eeff;
+    --muted:     rgba(232,238,255,0.45);
+    --dot-glow:  rgba(240,192,80,0.7);
+    --glow:      rgba(108,154,255,0.18);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Syne', sans-serif;
+    color: var(--text);
+    padding: 32px;
+    background-image:
+      radial-gradient(ellipse 60% 40% at 70% 20%, rgba(108,154,255,0.07) 0%, transparent 65%),
+      radial-gradient(ellipse 40% 30% at 20% 80%, rgba(108,154,255,0.05) 0%, transparent 60%);
+  }
+
+  .card {
+    width: 680px;
+    background: var(--card);
+    border: 1.5px solid rgba(108,154,255,0.35);
+    border-radius: 18px;
+    padding: 28px 28px 20px;
+    box-shadow:
+      0 0 0 1px rgba(108,154,255,0.08),
+      0 8px 40px rgba(0,0,0,0.55),
+      0 0 80px rgba(108,154,255,0.06);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* subtle corner accent */
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 120px; height: 2px;
+    background: linear-gradient(90deg, var(--border) 0%, transparent 100%);
+    border-radius: 18px 0 0 0;
+  }
+
+  /* Header row */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .title {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--text);
+  }
+  .badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--border);
+    background: rgba(108,154,255,0.12);
+    border: 1px solid rgba(108,154,255,0.28);
+    padding: 3px 10px;
+    border-radius: 100px;
+  }
+  .subtitle {
+    font-size: 12.5px;
+    color: var(--muted);
+    font-weight: 400;
+    margin-bottom: 20px;
+  }
+
+  /* Stat row */
+  .stats {
+    display: flex;
+    gap: 36px;
+    margin-bottom: 22px;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .stat-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .stat-val .unit {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 400;
+  }
+  .stat-val.live {
+    color: var(--rate);
+  }
+  .live-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    background: var(--rate);
+    border-radius: 50%;
+    margin-right: 6px;
+    box-shadow: 0 0 8px var(--dot-glow);
+    animation: pulse 1.6s ease-in-out infinite;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(0.7); }
+  }
+
+  /* divider */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, rgba(108,154,255,0.25) 0%, transparent 80%);
+    margin-bottom: 16px;
+  }
+
+  /* Chart area */
+  .chart-wrap {
+    width: 100%;
+    height: 180px;
+    position: relative;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 20px;
+    margin-top: 14px;
+    justify-content: flex-end;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.04em;
+  }
+  .legend-line {
+    width: 18px; height: 2px;
+    border-radius: 2px;
+  }
+  .legend-area { background: var(--border); opacity: 0.5; }
+  .legend-rate  { background: var(--rate); }
+
+  /* Chart draw-on animation */
+  svg { overflow: visible; }
+  .recharts-area-area { animation: fadein 1.1s cubic-bezier(.4,0,.2,1) forwards; opacity: 0; }
+  .recharts-line-curve { animation: fadein 1.3s cubic-bezier(.4,0,.2,1) 0.1s forwards; opacity: 0; }
+  @keyframes fadein { to { opacity: 1; } }
+
+  /* Tooltip */
+  .custom-tooltip {
+    background: rgba(0,9,74,0.95);
+    border: 1px solid rgba(108,154,255,0.4);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+  .tt-time { color: var(--muted); font-size: 10px; margin-bottom: 6px; }
+  .tt-row  { display: flex; justify-content: space-between; gap: 16px; margin-top: 3px; }
+  .tt-key  { color: var(--muted); }
+  .tt-val-area { color: var(--border); font-weight: 500; }
+  .tt-val-rate { color: var(--rate);   font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <span class="title">Daily Spend</span>
+    <span class="badge">Real-time</span>
+  </div>
+  <div class="subtitle">Keep an eye on your daily spend with real-time insights.</div>
+
+  <div class="stats">
+    <div>
+      <div class="stat-label">Rolling Average</div>
+      <div class="stat-val">$3.24 <span class="unit">/ day</span></div>
+    </div>
+    <div>
+      <div class="stat-label">Current Spend Rate</div>
+      <div class="stat-val live">
+        <span class="live-dot"></span>$0.18 <span class="unit">/ hr</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-line legend-area"></div> Rolling avg
+    </div>
+    <div class="legend-item">
+      <div class="legend-line legend-rate"></div> Spend rate
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+  const labels = ['00:00','02:00','04:00','06:00','08:00','10:00','12:00','14:00','16:00','18:00','20:00','22:00','Now'];
+
+  const rollingAvg  = [1.2, 1.5, 1.4, 1.8, 2.4, 2.9, 3.1, 3.6, 3.4, 3.8, 3.5, 3.3, 3.24];
+  const currentRate = [0.05,0.07,0.06,0.09,0.12,0.16,0.15,0.19,0.17,0.21,0.19,0.18,0.18];
+
+  const ctx = document.getElementById('chart').getContext('2d');
+
+  // gradient fill
+  const grad = ctx.createLinearGradient(0, 0, 0, 180);
+  grad.addColorStop(0,   'rgba(108,154,255,0.30)');
+  grad.addColorStop(0.6, 'rgba(108,154,255,0.07)');
+  grad.addColorStop(1,   'rgba(108,154,255,0.00)');
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Rolling Avg ($/day)',
+          data: rollingAvg,
+          yAxisID: 'yAvg',
+          fill: true,
+          backgroundColor: grad,
+          borderColor: '#6c9aff',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: '#6c9aff',
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 2,
+          tension: 0.45,
+        },
+        {
+          label: 'Spend Rate ($/hr)',
+          data: currentRate,
+          yAxisID: 'yRate',
+          fill: false,
+          borderColor: '#f0c050',
+          borderWidth: 2,
+          pointRadius: (ctx) => ctx.dataIndex === currentRate.length - 1 ? 6 : 0,
+          pointHoverRadius: 5,
+          pointBackgroundColor: '#f0c050',
+          pointBorderColor: '#f0c050',
+          pointHoverBackgroundColor: '#f0c050',
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 2,
+          borderDash: [0],
+          tension: 0.38,
+        }
+      ]
+    },
+    options: {
+      animation: {
+        duration: 1200,
+        easing: 'easeOutQuart',
+      },
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(0,9,74,0.96)',
+          borderColor: 'rgba(108,154,255,0.4)',
+          borderWidth: 1,
+          titleColor: 'rgba(232,238,255,0.5)',
+          bodyColor: '#e8eeff',
+          titleFont: { family: 'DM Mono', size: 11 },
+          bodyFont: { family: 'DM Mono', size: 12 },
+          padding: 12,
+          cornerRadius: 10,
+          callbacks: {
+            label: (ctx) => {
+              if (ctx.datasetIndex === 0) return `  avg  $${ctx.parsed.y.toFixed(2)} / day`;
+              return `  rate  $${ctx.parsed.y.toFixed(2)} / hr`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(108,154,255,0.07)', drawTicks: false },
+          ticks: {
+            color: 'rgba(232,238,255,0.35)',
+            font: { family: 'DM Mono', size: 10 },
+            maxTicksLimit: 7,
+            maxRotation: 0,
+          },
+          border: { display: false }
+        },
+        yAvg: {
+          position: 'left',
+          grid: { color: 'rgba(108,154,255,0.07)', drawTicks: false },
+          ticks: {
+            color: '#6c9aff',
+            font: { family: 'DM Mono', size: 10 },
+            callback: v => `$${v.toFixed(1)}`,
+            maxTicksLimit: 5,
+          },
+          border: { display: false }
+        },
+        yRate: {
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: {
+            color: '#f0c050',
+            font: { family: 'DM Mono', size: 10 },
+            callback: v => `$${v.toFixed(2)}`,
+            maxTicksLimit: 5,
+          },
+          border: { display: false }
+        }
+      }
+    }
+  });
+
+  // Animate live dot glow on last point
+  let glowUp = true;
+  setInterval(() => {
+    const ds = chart.data.datasets[1];
+    const last = ds.pointRadius;
+    if (Array.isArray(last)) {
+      last[last.length - 1] = glowUp ? 7 : 5;
+      glowUp = !glowUp;
+      chart.update('none');
+    }
+  }, 900);
+</script>
+</body>
+</html>

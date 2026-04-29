@@ -1,0 +1,68 @@
+Project Understanding Document: KSRCE-GKT AI Lab-as-a-Service (LaaS)
+Date: March 07, 2026
+Version: 2.0
+1. Introduction
+This document provides a comprehensive overview of the AI Lab-as-a-Service (LaaS) project, a strategic partnership between K.S.R. College of Engineering (KSRCE) and Global Knowledge Technologies (GKT). The core objective is to establish and manage a state-of-the-art AI Supercomputing Lab at the KSRCE campus, operated under a revenue-sharing model. The project involves the deployment of a cutting-edge, mobile-first web platform that will serve as the single point of access for managing the lab’s resources. This platform aims to be modern, attractive, and feature-rich, providing a seamless experience for a diverse user base, including students, faculty, and industry partners. This document serves as a foundational agreement on the project's scope, technical specifications, business model, and functional requirements for all stakeholders.
+2. Market Context and Project Vision
+The initiative is a direct response to the explosive demand for AI compute resources within Indian academia, where a significant number of institutions lack the necessary GPU infrastructure. The success of existing cloud-based LaaS offerings and the establishment of NVIDIA DGX-based AI labs at prominent universities have demonstrated a strong and growing market for managed AI lab services. 
+
+The vision for this project is to create a cutting-edge, self-sustaining ecosystem for AI research and development. The platform will provide a seamless, intuitive experience for users to sign up, book GPU slots, manage payments, request mentorship, and track their usage analytics, thereby democratizing access to high-performance computing resources.
+3. Design and User Experience
+The website's design is a key differentiator, aiming for a futuristic, AI-themed aesthetic that reflects the innovative nature of the lab. The professional branding for the "KSRCE–GKT AI Supercomputing Lab" will be prominent throughout the user journey.
+
+Aspect	Description
+Design Philosophy	Futuristic and AI-themed, with neon accents, soft gradients, glowing edges, and animated circuit board patterns in the background.
+User Interface	A dashboard-inspired layout with a focus on interactive elements and data visualization.
+User Flow	The user journey will be simple and intuitive, optimized for students and researchers who need quick and easy access to resources.
+Theme	The platform will support both dark and light modes to cater to user preferences.
+4. Lab Infrastructure and Hardware
+The project establishes a dedicated, on-premises AI hardware stack, jointly branded as the “KSRCE–GKT AI Supercomputing Lab.” Access to this facility is controlled exclusively via the GKT-provided LaaS platform. The lab is equipped with the following high-performance components:
+Component	Model
+CPU	AMD Ryzen 9 9950X3D Processor
+Motherboard	Asus Pro Art X670E-Creator WiFi DDR5 Board
+GPU	Zotac RTX 5090 Solid OC 32GB Graphics Card
+RAM	G.SKILL DDR5 TRIDENT Z5 NEO RGB 6000Mhz 32GB x2 CL30
+Storage	Samsung 2 TB 990 EVO Plus NVMe (7250 MB/s)
+Power Supply	Corsair AX1600i SMPS
+Cabinet	Corsair 3500X Cabinet Black (3 ARGB Fans)
+Cooler	Corsair Nautilus Rs ARGB 360MM Cooler
+Monitor	Asus ROG Strix XG27ACS USB Type-C Gaming Monitor
+Keyboard & Mouse	Zebronics RGB Gaming Keyboard & Mouse Transformer 1 Black
+5. LaaS Business Model and Revenue Streams
+The project operates on a multi-faceted business model designed to ensure sustainability and profitability through diverse revenue streams. The core pillars of this model are mandatory academic integration, premium student access, and external partnerships.
+5.1. Revenue Streams
+1	Academic Integration Fees: A recurring LaaS fee will be charged per academic section for lab courses each semester. This fee bundles GPU-hour credits, curated educational content, and dedicated support, and is pre-paid by the college.
+2	Premium Student Passes: Tiered packages (e.g., Bronze, Silver, Gold) will be sold directly to students, offering a combination of fixed GPU-hours, exclusive mentor sessions, and certification vouchers.
+3	Pay-as-you-go Wallet: A wallet system, with a standard billing rate of ₹100/hour, allows for flexible, real-time consumption of GPU resources. The platform will offer recharge packages with bonus minutes to incentivize larger payments.
+4	Partner-College LaaS Subscriptions: Annual subscriptions will be offered to external colleges, providing their students with remote access to the lab and dedicated support.
+5	Mentor Booking Fees: Students can book one-on-one guidance sessions with experienced AI mentors, with pricing tiered based on the mentor's experience.
+6. Platform Functionalities
+The LaaS platform is built around a set of core functionalities that enable a seamless service model, from user onboarding to resource management and administration.
+6.1. User Roles and Permissions
+The platform supports multiple user roles with distinct permissions to cater to the needs of its diverse user base.
+
+User Type	Key Features & Permissions
+Internal Students (KSRCE)	Free signup and access to book slots, with an optional wallet for extended usage beyond curriculum-allocated hours.
+External Students	Mandatory wallet-based payment system with a detailed signup process, including ID proof upload for verification.
+Faculty	Can create courses, approve student projects, and track lab attendance and resource consumption for their classes.
+Mentors	Can create detailed profiles, set their availability and pricing, and be booked by students for guidance sessions.
+Administrators (GKT & KSRCE)	Full control over the platform, including user management, hardware status monitoring, payment settlements, and comprehensive reporting.
+6.2. Core Platform Features
+•	Signup and Onboarding: A secure and comprehensive signup process collecting necessary user information (Name, Email, Phone, College, etc.) with OTP verification and optional SSO via Google or College Email. Two-factor authentication (2FA) will be enforced.
+•	Wallet and Payment System: A robust system integrated with Stripe and Razorpay for seamless payments. It supports real-time wallet deduction and provides automated low-balance notifications via web push, email, and SMS.
+•	Slot Booking Engine: A real-time booking system where users can select 1-hour blocks. It features real-time availability checks, auto-locking of GPU nodes upon booking, countdown timers, and automated wallet deduction. The system will handle over-usage by prompting users to extend their session or by automatically terminating GPU access.
+•	Mentor Booking System: An add-on feature allowing students to book sessions with AI mentors. It includes automatic calendar scheduling, detailed mentor profiles, integrated chat/video-call functionality, and automated payment and invoicing.
+6.3. Extended and Administrative Features
+•	AI Coursework Integration: Provides access to a rich library of tutorials, preloaded notebooks, sample datasets, and project templates.
+•	Gamification: A leaderboard and achievement system to encourage engagement and recognize top-performing students.
+•	Project Showcase Portal: A dedicated space for students to publish their AI models, research papers, and hackathon results.
+•	Industry Projects Marketplace: A platform for local companies to post small-scale AI tasks and projects for students to work on for a fee.
+•	Faculty and Partner College Portals: Dedicated dashboards for faculty to integrate the lab into their curriculum and for regional colleges to manage their students' access.
+•	Administrative Dashboard: A comprehensive panel providing a complete overview of lab operations, including metrics on total revenue, GPU utilization, active users, wallet balances, and hardware health.
+7. Security
+Security is a top priority. The platform will incorporate modern security best practices, including OTP login, JWT-based secure APIs, granular role-based access control (RBAC), end-to-end data encryption, a GDPR-compliant privacy policy, and automatic session timeouts to protect user data and ensure system integrity.
+8. Recommendations
+To elevate the KSRCE-GKT Supercomputer Lab into a world-class, self-sustaining AI innovation hub, I recommend a multi-pronged strategy focusing on scalability, revenue diversification, and user engagement. Technologically, the platform should adopt a hybrid cloud architecture with containerization (Kubernetes) and AIOps to ensure seamless scalability and operational efficiency, allowing for "bursting" to public clouds during peak demand. Finally, to drive high user retention and a thriving community, the user experience should be enhanced with gamified learning paths, real-time collaborative coding environments, and a native mobile app for on-the-go management, positioning KSRCE not just as a facility, but as a premier ecosystem for AI research and development.
+
+
+

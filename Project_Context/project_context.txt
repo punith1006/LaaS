@@ -1,0 +1,601 @@
+COMPREHENSIVE INVESTIGATION REPORT: LaaS (Lab as a Service) PROJECT
+Executive Summary
+The LaaS project is an ambitious on-premises Lab-as-a-Service platform designed to monetize high-performance computing hardware by providing remote access to university students, researchers, and public users. The platform has completed Phase 2 validation and is transitioning toward production deployment on 4 identical enterprise compute nodes with unified container-based architecture.
+1. PROJECT OVERVIEW AND PURPOSE
+Core Business Model
+Client Context: Software services startup (agency owner with limited infrastructure/networking knowledge) owns 4 high-performance on-premises machines. Mission-critical project for agency survival and revenue generation.Revenue Model: Multi-faceted approach combining academic integration, premium student packages, pay-as-you-go wallets, and partner-college subscriptions.Geographic Scope: Initially KSRCE-GKT AI Supercomputing Lab (partnership between K.S.R. College of Engineering and Global Knowledge Technologies), expandable to other institutions.Hardware Fleet:
+4 identical nodes with:
+AMD Ryzen 9 9950X3D (16 cores/32 threads, 3D V-Cache)
+Zotac RTX 5090 32GB GPU (Blackwell architecture sm_100)
+64GB DDR5 RAM (G.SKILL Trident Z5 NEO 6000MHz)
+2TB Samsung 990 EVO Plus NVMe (7,250 MB/s)
+Total fleet capacity: 64 cores, 256GB RAM, 128GB VRAM, 8TB NVMe
+Additional infrastructure: Centralized NAS with TrueNAS Scale or Synology, 10GbE networking, 5kVA UPS
+2. TARGET USERS AND USE CASES
+User Personas
+Tier 1 – University Members (Primary Revenue)
+Students (all courses), faculty, researchers from university institutions
+Access via institution SSO (Keycloak federated with university Google Workspace or LDAP)
+Individual accounts with unique identity (not shared logins)
+Assigned to university groups/departments via Keycloak groups for authorization
+Tier 2 – Public Users (Secondary Revenue)
+No institutional affiliation; temporary compute needs
+Authenticated via Google OAuth (SSO with Google)
+Ephemeral sessions only (no stateful persistent access)
+Account-level storage for notebooks/results (like Google Colab model)
+Use Case Categories
+Mode 1: Stateful GUI Desktop Sessions (Persistent)
+Full Linux desktop experience (KDE Plasma) with remote access via WebRTC
+Users maintain persistent 15GB personal storage across all sessions
+Can install user-profile-level software (pip, conda, npm) which persists
+Cannot modify base system software (read-only base image)
+Available with or without GPU acceleration
+Multiple users can run simultaneously on same node in isolated containers
+Users can seamlessly switch between CPU and GPU tiers with same environment
+Mode 2: Ephemeral Compute Sessions (Temporary)
+Jupyter Notebook, Code-Server (VS Code in browser), or SSH CLI
+Session data (scratch) wiped after end; only user's saved notebook files persist
+For public users: work saved in the platform (like Google Colab)
+Available as CPU-only or fractional GPU
+No booking required; launch immediately
+Concurrent multi-user sharing of resources on same node
+3. HIGH-LEVEL ARCHITECTURE
+System Architecture Diagram
+plaintext
+End Users (University + Public)
+    ↓
+Access Layer (Cloudflare Tunnel / Tailscale / TURN)
+    ↓
+Platform Services Layer:
+├─ Frontend (Next.js React SPA)
+├─ Backend API (NestJS FastAPI Orchestrator)
+├─ Authentication (Keycloak dual-realm)
+└─ Database (PostgreSQL via Prisma ORM)
+    ↓
+Compute Fleet (4 identical nodes):
+├─ Node 1-4 (identical config):
+│  ├─ Proxmox VE (host OS, node management only)
+│  ├─ NVIDIA driver (GPU access)
+│  ├─ Docker daemon (session containerization)
+│  ├─ Selkies EGL Desktop containers (stateful GUI)
+│  ├─ Ephemeral containers (Jupyter/CLI)
+│  └─ HAMi-core + CUDA MPS (fractional GPU enforcement)
+    ↓
+Storage Layer:
+├─ Per-node NVMe (2TB, hard-partitioned):
+│  ├─ nvme0n1p1: OS + swap (128GB)
+│  ├─ nvme0n1p2: /var/lib/docker (500GB)
+│  ├─ nvme0n1p3: VG_CONTAINERS ephemeral (1100GB)
+│  └─ nvme0n1p4: Read-only datasets (240GB)
+└─ Centralized NAS (5th machine):
+   ├─ ZFS pool `datapool` (RAIDZ1, ~12TB usable)
+   ├─ User datasets `datapool/users/<uid>` (15GB quota each)
+   └─ NFS export/mount to all nodes (10GbE)
+Key Architectural Principles
+Container-Based (NOT VM-Based):
+All user sessions run as Docker containers, not KVM VMs
+Eliminates RTX 5090 D3cold reset bug that affects VM passthrough
+Enables 4-8 concurrent GPU users per node (vs. 1-2 per node with VMs)
+Faster startup (~15-25 seconds vs. 30-60+ for VMs)
+Single base image guarantees identical software environment across all tiers
+Unified Environment:
+One Selkies EGL Desktop base image for ALL tiers (Starter through Full Machine)
+Same KDE Plasma desktop, same WebRTC streaming, same libraries
+CPU-only tiers launch same container without GPU access
+Seamless cross-tier switching: user switching from CPU to GPU tier finds exact same desktop
+Fractional GPU Sharing (Unique Differentiator):
+Multiple concurrent GPU users on single RTX 5090
+Dual-layer VRAM enforcement: HAMi-core (CUDA API interception) + CUDA MPS (driver-level)
+Compute partitioning: SM% allocation via MPS ACTIVE_THREAD_PERCENTAGE
+GPU fault isolation and auto-recovery: 30-60 second recovery with no data loss
+4. INFRASTRUCTURE SETUP
+Node Configuration (Per Compute Node)
+Host OS & Management:
+Ubuntu 22.04 LTS bare metal
+Proxmox VE installed but used only for node management (not user sessions)
+NVIDIA driver 570 (target) for GPU access
+CUDA Toolkit 12.8 for CUDA applications
+Critical Services:
+Docker CE (29.3.0+) for session containerization
+NVIDIA Container Toolkit for GPU access from containers
+lxcfs for /proc spoofing (RAM/CPU visibility matching container limits)
+CUDA MPS daemon (systemd service) for GPU compute sharing
+Networking:
+Add Intel X550-T1 10GbE NIC to each node
+VLAN separation:
+VLAN 10: Management
+VLAN 20: Stateful containers
+VLAN 30: Ephemeral containers
+VLAN 40: User-facing proxy
+Backbone: Mikrotik CRS309-1G-8S+ 10GbE managed switch
+Cluster Formation:
+All 4 nodes form a cluster via Proxmox but operate independently for user sessions
+No Kubernetes in current design (direct Docker API orchestration)
+Tailscale for internal VPN access; Cloudflare Tunnel for external remote users
+Centralized Storage (NAS)
+Hardware:
+Option A (Build): Budget ATX + 4x 4TB WD Red Plus HDDs + 10GbE NIC + 16GB RAM
+Option B (Buy): Synology DS923+ or similar + 10GbE expansion
+Recommended: TrueNAS Scale (free, superior ZFS flexibility)
+ZFS Architecture:
+Pool: datapool (RAIDZ1, 4x4TB = ~12TB usable)
+Parent dataset: datapool/users
+Per-user datasets: datapool/users/<storage_uid> with hard 15GB quota
+Snapshot strategy: Daily ZFS snapshots for backup
+NFS Export:
+CRITICAL: Export each user subdataset individually (NOT parent /datapool/users)
+One export per user: /datapool/users/<storage_uid> <client>(rw,sync,no_subtree_check,no_root_squash)
+One mount point per user on each compute node: /mnt/nfs/users/<storage_uid>
+NFS over 10GbE for performance
+Network Requirements
+External Remote Access:
+Cloudflare Tunnel (browser users, zero port-forwarding, no public IP exposure)
+Tailscale VPN (SSH/Moonlight for power users, works through firewalls)
+Internal Connectivity:
+10GbE between compute nodes and NAS (bottleneck elimination)
+Minimum 500Mbps symmetric upstream ISP requirement (verified with 2 ISP quotes)
+TURN server for WebRTC (Selkies desktop streaming) through NAT/firewalls
+Procurement Checklist (Before Phase 0)
+Item	Quantity	Approx Cost
+Intel X550-T1 10GbE NIC	4	Rs 26,000
+Mikrotik CRS309-1G-8S+ 10GbE Switch	1	Rs 25,000
+SFP+ DAC Cables	6	Rs 5,000
+TP-Link TL-SG108E 1GbE Switch	1	Rs 3,000
+HDMI 2.1 Dummy Dongles	4	Rs 2,800
+NAS Hardware (drives + NICs)	1	Rs 40,000
+5kVA Online UPS	1	Rs 40,000–80,000
+Total		Rs 2,25,000 – 3,50,000
+5. AUTHENTICATION (KEYCLOAK/SSO)
+Dual-Realm Architecture
+Keycloak Setup:
+laas realm (BROKER for all OAuth + SSO)
+Acts as the centralized authentication broker
+Clients: laas-frontend (public SPA), laas-backend (confidential)
+Identity providers: Google, GitHub, institution SSO (identity brokering)
+ALL user sessions created here (regardless of auth method)
+Issues JWTs to frontend; backend validates and issues own JWTs
+laas-academy realm (Test Institution IdP)
+Simulates real university's identity provider (SAML/OIDC endpoint)
+Client: laas-realm-broker (for brokering from laas)
+Test users: student@laas-academy.example.com (for testing)
+Used for identity brokering; does NOT maintain sessions for app
+Authentication Flows
+Flow 1: University SSO (Primary Revenue)
+Student selects institution → "Continue with SSO"
+Frontend redirects to Keycloak with kc_idp_hint=<institution>
+Keycloak redirects to institution's IdP (e.g., IIT-Delhi SAML/OIDC)
+Student authenticates against institution (credentials owned by institution, never shared)
+Institution IdP returns assertion to Keycloak
+Keycloak creates user in laas realm, issues tokens to frontend
+Frontend sends token to backend; backend verifies via Keycloak userinfo
+Backend creates/links LaaS user record (authType='university_sso')
+Storage provisioning triggered: 15GB ZFS dataset created on NAS
+Flow 2: Public OAuth (Secondary Revenue)
+User clicks "Sign in with Google" or "Sign in with GitHub"
+Frontend redirects to Keycloak with kc_idp_hint=google or kc_idp_hint=github
+Keycloak redirects to Google/GitHub
+User authenticates, OAuth provider returns callback to Keycloak
+Keycloak creates user in laas realm, issues tokens
+Backend creates/links LaaS user record (authType='public_oauth')
+NO storage provisioning: user can only launch ephemeral sessions
+Session Management
+Key Insight: All sessions created in laas realm
+Regardless of auth method (Google, GitHub, institution SSO), Keycloak session cookies are set by laas realm
+laas-academy only authenticates users; it does NOT create sessions for laas-frontend
+Sign-out must target laas realm and include id_token_hint
+Sign-Out Implementation (CRITICAL):
+Frontend stores id_token during login (in localStorage)
+On sign-out: retrieves id_token, calls Keycloak logout endpoint with id_token_hint + post_logout_redirect_uri
+Keycloak terminates laas realm session, clears cookies
+Frontend redirected to app signin page
+Proper logout prevents "Already authenticated" errors during auth method switching
+Real-World Institution Integration
+Setup with IIT-Delhi (or any university):
+Agree on protocol (SAML 2.0 or OIDC)
+Exchange metadata (IIT-Delhi provides IdP metadata/endpoints)
+Create Identity Provider in Keycloak with IIT-Delhi metadata
+Configure attribute mappers (email, name, sub → Keycloak fields)
+Register IIT-Delhi in backend DB (universities table + university_idp_configs)
+Add IIT-Delhi to frontend institutions config
+Live Login Scenario (Student Punith via IIT-Delhi SSO):
+Punith selects IIT-Delhi → Keycloak redirects to IIT-Delhi login
+Punith authenticates at IIT-Delhi (IIT owns credential, never shared)
+IIT-Delhi returns SAML assertion with claims (email, name, uid) to Keycloak
+Keycloak maps to realm user or creates new user via identity brokering
+Keycloak issues token to app; backend receives via callback
+Backend normalizes email, checks if user exists, links via keycloakSub
+On first SSO login: backend creates user, provisions 15GB storage on NAS
+On subsequent SSO logins: backend reuses existing user and storage
+6. STORAGE ARCHITECTURE (ZFS/NFS)
+Per-User Storage Model
+What Each User Gets:
+Exactly 15GB persistent ZFS dataset on centralized NAS
+Mounted to /home/ubuntu inside their containers
+Persists indefinitely across ALL sessions and tiers
+Hard quota enforced at ZFS level (cannot be exceeded)
+Content: home directory, user-installed packages, project files
+What User CANNOT Modify:
+Base Docker image (read-only layers)
+Pre-installed software (MATLAB, Blender, CUDA toolkit, Python, development tools)
+System-level changes (no root/sudo inside containers)
+What User CAN Modify:
+User-profile-level installations (pip install --user, conda, npm to ~/)
+Any files in /home/ubuntu
+Application configurations, project work
+All persists across sessions via NFS mount
+NFS/ZFS Architecture (CORRECTED)
+CRITICAL FIX: POC Runbook's pattern (exporting parent /datapool/users once) breaks per-user quotas.Correct Pattern:
+plaintext
+NFS Server (NAS):
+├─ datapool/users/u_a1b2c3d4e5f6g7h8i9j0k1l2 (quota 15G)
+│  └─ exported as: /datapool/users/u_a1b2c3d4e5f6g7h8i9j0k1l2 <client_ip>(rw,sync,...)
+├─ datapool/users/u_x2y3z4a5b6c7d8e9f0g1h2i3 (quota 15G)
+│  └─ exported as: /datapool/users/u_x2y3z4a5b6c7d8e9f0g1h2i3 <client_ip>(rw,sync,...)
+
+Compute Node:
+├─ /mnt/nfs/users/u_a1b2c3d4e5f6g7h8i9j0k1l2 (mounted from NAS)
+├─ /mnt/nfs/users/u_x2y3z4a5b6c7d8e9f0g1h2i3 (mounted from NAS)
+
+Container (user u_a1b2c3d4e5f6g7h8i9j0k1l2):
+└─ -v /mnt/nfs/users/u_a1b2c3d4e5f6g7h8i9j0k1l2:/home/ubuntu
+Why This Matters:
+zfs list shows correct USED/AVAIL for each user dataset
+df -h /home/ubuntu inside container shows user's 15GB quota (not full pool)
+ZFS quota is actually enforced (user cannot overflow)
+Users are truly isolated; corruption in one dataset doesn't affect others
+Storage Provisioning Flow
+Trigger: New university SSO user created in backendProcess:
+Backend generates unique storageUid (e.g., u_<24 hex>)
+Backend calls host provision service: HTTP POST to http://100.100.66.101:9999/provision
+Headers: X-Provision-Secret (shared secret), X-Request-Id (UUID)
+Body: { "storageUid": "u_...", "quotaGb": 5 }
+Host service (Flask app on NAS):
+Validates secret (returns 401 if wrong)
+Validates storageUid format and quotaGb range
+Pre-check: verifies datapool and datapool/users exist
+Checks available space (must have ≥5GB)
+Runs shell script: sudo /usr/local/bin/provision-user-storage.sh <storageUid>
+Provision script:
+Validates input format
+Idempotent: if dataset already exists, exits 0 (no changes)
+Creates dataset: zfs create -o quota=5G datapool/users/<storageUid>
+Verifies quota was set: zfs get quota
+Gets mountpoint, validates it (no ..), confirms it's absolute path
+chown 1000:1000 <mountpoint> (uid 1000 = ubuntu user inside container)
+Verifies ownership via stat
+Host service verifies:
+Post-script: confirms dataset exists and quota is exactly 5GB
+Returns 200 + JSON { "ok": true, "path": "..." }
+Backend updates user record:
+storageProvisioningStatus = 'provisioned'
+storageProvisionedAt = now
+storageProvisioningError = null
+Dashboard shows: "Storage ready" (15GB available)
+On Failure:
+Backend sets storageProvisioningStatus = 'failed'
+Stores error message in storageProvisioningError (truncated to 500 chars)
+Dashboard shows: "Disk provisioning failed" with error and "Retry storage setup" button
+Retry endpoint available; retries provisioning without re-creating user
+Sudoers & Security
+bash
+# On NAS (host running Flask service)
+zenith ALL=(root) NOPASSWD: /usr/local/bin/provision-user-storage.sh
+
+# Flask app runs as normal user (zenith); only this one script can be run as root
+# No password required (safe in private network)
+NFS Post-Provisioning (Automation)
+Host service optional feature (ENABLE_NFS_AUTOMOUNT=true):
+After provisioning ZFS dataset, service automatically:
+Appends export line to /etc/exports
+Runs exportfs -ra
+Creates mount point on container node
+Mounts the NFS subdataset
+Adds fstab entry for persistence
+Production approach (recommended):
+Turn automount off in production
+Use Ansible or config management to centrally manage:
+NFS exports on NAS
+Mounts on each compute node
+Fstab entries
+7. CURRENT PROJECT STATUS AND MILESTONES
+Completed (Phase 2)
+Infrastructure Validation:
+✅ POC machine (RTX 4090, Ada sm_89) fully validated
+✅ Selkies EGL Desktop container working (ghcr.io prebuilt image)
+✅ HAMi-core (libvgpu.so) built and VRAM limits enforced
+✅ CUDA MPS daemon running; SM% partitioning verified
+✅ 4 concurrent Selkies containers confirmed operational
+✅ NFS storage provisioning working (ZFS + per-user mount)
+✅ lxcfs /proc spoofing for RAM/CPU visibility
+✅ NVENC hardware video encoding for desktop streams
+✅ Container startup: 15-25 seconds cold start confirmed
+✅ Supervisord configuration validated (HAMi injection only in gstreamer + user shells, not VGL)
+✅ Binary wrappers (nvidia-smi, passwd) preventing LD_PRELOAD segfaults
+Backend Software (In Progress):
+✅ NestJS backend with Prisma ORM + PostgreSQL
+✅ Keycloak integration (OAuth + SSO identity brokering)
+✅ Storage service (HTTP-based provisioning to host)
+✅ User auth model (authType, storageUid, provisioning status)
+✅ Auth flows (local, public OAuth, university SSO)
+⚠️ API endpoints and orchestration (partial)
+⚠️ Frontend dashboard (Next.js, partial)
+DevOps & Documentation:
+✅ POC Runbook v2.0 (as-executed, validated procedures)
+✅ Node Setup Guide v1.0 (complete installation walkthrough)
+✅ Auth and Storage Architecture docs (dev env setup)
+✅ Storage Provisioning guides (end-to-end flow)
+✅ Keycloak setup guides (SSO testing, troubleshooting)
+✅ Infrastructure Plan (comprehensive, architecture A vs B decision)
+Pending / In Progress (Phase 3 Onward)
+Hardware-Specific Validation (Production Nodes):
+⬜ RTX 5090 (Blackwell sm_100) validation:
+NVENC concurrent stream limits (POC was sm_89)
+HAMi enforcement behavior on Blackwell
+MPS fault propagation on Blackwell
+D3cold reset bug (if Architecture B ever used)
+All POC validations must re-run on first production node before fleet deployment
+⬜ Update all container launch commands: CUDA_NVRTC_ARCH=100 (not 89)
+Network Deployment:
+⬜ 10GbE NIC procurement and installation (4 nodes + NAS)
+⬜ Mikrotik switch setup and VLAN configuration
+⬜ Firewall rules and port management
+⬜ Cloudflare Tunnel configuration for remote browser access
+⬜ Tailscale VPN setup for SSH/power users
+Orchestration Platform (MVP):
+⬜ Session launch orchestrator (Docker API + resource tracking)
+⬜ VRAM budget accounting (per-node allocation logic)
+⬜ Port registry and dynamic assignment
+⬜ Session lifecycle management (launch, health check, terminate, reconnect)
+⬜ Pre-warming pool (optional, for instant sessions)
+⬜ Monitoring & alerting (GPU health, disk usage, login anomalies)
+⬜ Billing integration (session duration, resource usage, rates)
+Frontend & API:
+⬜ Dashboard (session management, storage usage, billing)
+⬜ Booking engine (real-time slot availability)
+⬜ Payment integration (Stripe, Razorpay)
+⬜ Mentor booking system
+⬜ Admin panel (user management, hardware monitoring, billing)
+Security & Production Hardening:
+⬜ HTTPS certificate and TLS setup
+⬜ Network isolation: switch --network=host → --network=bridge in production
+⬜ Kata Containers evaluation (VM-level isolation with Docker API)
+⬜ Sudoers hardening and audit logging
+⬜ License audit (MATLAB, proprietary software compliance)
+⬜ ISP redundancy (2 ISPs, 500Mbps+ symmetric upstream confirmed)
+Known Blockers
+BLOCKER 1: MATLAB Network License
+Must resolve MATLAB network license server setup before building base images
+Needs audit of all proprietary software licensing
+Current status: unresolved
+BLOCKER 2: ISP Upstream
+Requires 500Mbps+ symmetric upstream for multi-user desktop streaming
+Must verify with 2 ISP quotes and commitments
+Current status: pending verification
+BLOCKER 3: Production Hardware Readiness
+All 4 production nodes must be commissioned and in rack
+BIOS configuration and burn-in required
+Memtest86+ for 48+ hours on each node
+Current status: pending (Phase 0 Week 1)
+8. KEY TECHNICAL DECISIONS MADE
+Decision 1: Unified Container Architecture (Architecture A) — COMMITTED
+What Was Decided:
+ALL user sessions (CPU-only, GPU, stateful, ephemeral, Starter through Full Machine) run as Docker containers, NOT KVM VMs
+NOT Architecture B (VM passthrough) as primary approach
+Why:
+Eliminates D3cold bug: RTX 5090 (Blackwell) has confirmed reset bug after VM shutdown → host lockup. Containers avoid this entirely (GPU never changes ownership).
+Maximizes GPU concurrency: 4-8 concurrent GPU users per node vs. 1-2 with VMs (VM passthrough one-GPU-per-VM limitation).
+Enables fractional tiers: Original pricing table (Pro 4GB, Power 8GB, Max 16GB) ONLY possible with container-based architecture + HAMi + MPS. VMs would require all-or-nothing 32GB per user.
+Simpler infrastructure: Single NVIDIA driver mode (no vfio-pci switching), all nodes identical, dynamic scheduling.
+Faster startup: 15-25 seconds vs. 30-60+ for VMs.
+Seamless cross-tier switching: One base image guarantees identical software.
+Tradeoff Accepted:
+Container isolation (strong) vs. VM isolation (absolute) for CPU-only sessions
+Container-level isolation + PID namespaces sufficient for authenticated educational/research users
+Matches university HPC cluster model (SLURM + MPS)
+Architecture B (VM Passthrough) Retained As:
+Optional fallback if burn-in fails (not primary plan)
+Static node roles: 2 passthrough + 2 containers only
+One concurrent GPU user per passthrough node (fleet-wide 2 users max)
+No fractional tiers; all-or-nothing 32GB GPU
+Requires 5-layer D3cold mitigation stack with residual risk
+Decision 2: Three Breakthrough Technologies (HAMi + Selkies + MPS)
+What Was Decided:
+Combine three OSS technologies to unlock fractional GPU on consumer hardware
+Technologies:
+Selkies EGL Desktop (docker-nvidia-egl-desktop)
+Full KDE Plasma desktop in container
+VirtualGL with EGL backend for GPU-accelerated OpenGL/Vulkan
+Explicitly supports sharing one GPU with many containers
+WebRTC streaming (Selkies-GStreamer) to browser, 60fps+ 1080p
+NVENC hardware encoding
+Used in production: NRP Nautilus, universities, HPC clusters
+HAMi-core (libvgpu.so)
+Intercepts CUDA API calls (cuMemAlloc, cuLaunchKernel) to enforce per-container limits
+VRAM allocation: hard limit (OOM if exceeded)
+Compute rate-limiting: SM% allocation
+No kernel module; pure LD_PRELOAD library
+Works standalone with Docker (no Kubernetes required)
+Per-container isolation via file-backed shared memory (/tmp/cudevshr.cache)
+CUDA MPS (Multi-Process Service)
+Second enforcement layer for VRAM (CUDA_MPS_PINNED_DEVICE_MEM_LIMIT)
+Compute partitioning via CUDA_MPS_ACTIVE_THREAD_PERCENTAGE
+Volta+ isolated GPU virtual address spaces (one client cannot read/write another's GPU memory)
+Auto-recovery from GPU faults (FAULT → ACTIVE after affected clients exit)
+Up to 48 concurrent CUDA contexts
+Works on consumer GPUs (compute capability 3.5+)
+Why No Single Technology Solves This:
+Selkies alone: shares GPU but no VRAM limits
+HAMi alone: limits VRAM but not GPU isolation (shared context, potential interference)
+MPS alone: provides compute partitioning but not hard VRAM limits
+Combined: Hard VRAM limits (HAMi) + GPU isolation + compute partitioning (MPS) + streaming desktop (Selkies) = fractional GPU desktop tiers
+Differentiator:
+No commercial GPU cloud (RunPod, Vast.ai, Lambda Labs) offers fractional GPU tiers with desktop streaming
+Google Colab has shared GPU but no persistent desktop
+This is believed to be first commercial implementation of fractional GPU desktops on consumer hardware
+Decision 3: Dual-Realm Keycloak Architecture
+What Was Decided:
+Two separate Keycloak realms:
+laas realm: Centralized broker for all auth (Google, GitHub, institution SSO)
+laas-academy realm: Test institution IdP (simulates real university)
+Why:
+Identity brokering pattern: Separates institution IdP from app's auth realm
+Real-world institution integration: Tested pattern (swap laas-academy with IIT-Delhi SAML/OIDC)
+Session isolation: All sessions created in laas realm (regardless of auth method)
+Multi-institution support: Easy to add more realms / identity brokers
+SAML + OIDC flexibility: Keycloak supports both; institutions choose their protocol
+Session Management Key Insight:
+laas-academy only authenticates; it does NOT create sessions for laas-frontend
+All sessions are in laas realm
+Sign-out must include id_token_hint to properly terminate session
+Prevents "Already authenticated" errors during auth method switching
+Decision 4: Hard Disk Partitioning (Stateful vs. Ephemeral)
+What Was Decided:
+Dedicated storage partitions for stateful and ephemeral sessions (hard isolation):
+/var/lib/docker (500GB): Docker images and container overlays (both stateful and ephemeral)
+VG_CONTAINERS (1100GB LVM): Ephemeral container scratch, wiped on session end
+Read-only datasets (240GB): Shared base images
+NOT on local NVMe: User persistent data lives entirely on NAS via NFS
+Why:
+Non-negotiable hard partition to ensure ephemeral session corruption cannot ruin user data or base images
+Base image (Docker read-only layers) on local NVMe for speed
+User data on centralized NAS for mobility (any node can serve any user)
+Ephemeral scratch on local partition for performance
+Decision 5: Per-User NFS Datasets (NOT Shared Mount)
+What Was Decided:
+Each user gets one ZFS dataset (datapool/users/<uid>)
+Each dataset exported individually in NFS (not parent)
+Each dataset mounted per-user on compute nodes
+Why:
+Fixes POC pattern that broke per-user quotas
+ZFS quota actually enforced (user cannot overflow 15GB)
+df -h inside container shows correct quota (not full pool size)
+Users truly isolated; dataset corruption doesn't affect others
+Matches production NAS best practice
+Decision 6: Selkies Over VNC/RDP
+What Was Decided:
+WebRTC streaming via Selkies-GStreamer (not VNC, RDP, or Citrix)
+Why:
+No client install: Works in any browser (Chrome, Firefox, Safari)
+P2P capable: Can bypass firewalls via STUN/TURN
+Hardware acceleration: NVENC encoding offloads to GPU
+Modern protocol: Better than 30-year-old VNC/RDP
+Open source: Community support, no licensing
+University HPC proven: Used in production at NRP Nautilus and other HPC clusters
+9. RISKS AND CAVEATS
+Technical Risks
+Risk	Severity	Mitigation	Status
+RTX 5090 Blackwell validation	HIGH	Re-run all POC tests on first production node before fleet deployment	PENDING
+GPU fault propagation	MEDIUM	MPS auto-recovery (30-60s), watchdog service restarts affected containers, data safe on NAS	ARCHITECTURE CHOICE
+GPU L2 cache/bandwidth sharing	MEDIUM	Noisy neighbor possible (10-30% variability under peak co-tenancy). Acceptable tradeoff for fractional tiers.	KNOWN LIMITATION
+MATLAB network license	HIGH	Licensing must be resolved before base image build	BLOCKER
+ISP upstream 500Mbps+	HIGH	Verify with 2 ISP quotes, symmetric required for desktop streaming	BLOCKER
+NVENC concurrent stream limits	MEDIUM	POC showed 4 concurrent streams OK; may differ on Blackwell	PENDING VALIDATION
+Proxmox Zen5 stability	MEDIUM	Multiple reports of VM instability on Ryzen 9950X3D; disable XMP, update BIOS + microcode, pin kernel 6.8.x LTS	KNOWN ISSUE
+IOMMU grouping (ASUS ProArt)	LOW	Reported issues; apply ACS override patch if needed for VM passthrough (Architecture B)	FALLBACK ONLY
+Operational Risks
+Risk	Severity	Mitigation
+User data on single NAS	MEDIUM	Daily ZFS snapshots; plan 3-2-1 backup strategy (on-site, off-site, isolated)
+10GbE network bottleneck	MEDIUM	Implement QoS / traffic shaping if needed; monitor link utilization
+Session orphan cleanup	MEDIUM	Implement session timeout + watchdog to auto-kill stale containers
+Billing discrepancy	MEDIUM	Detailed session logging (start/end, resource usage); audit trail for disputes
+Proprietary software usage tracking	MEDIUM	Audit all proprietary software (MATLAB, Blender, others); document licensing terms
+Security Gaps (Pre-Production)
+Gap	Mitigation
+--network=host (POC)	Switch to --network=bridge in production (proper network namespace isolation)
+--ipc=host (POC)	Evaluate if --ipc=private breaks WebRTC; test before production
+Sudo NOPASSWD (host provision)	OK in private network; document that firewall must restrict port 9999 to backend only
+HTTP provision service	Plan HTTPS upgrade with certificate (currently unencrypted, acceptable on private network)
+nvidia-smi shows full GPU	Document in ToS; cannot be fixed at kernel level; real enforcement is HAMi (verified)
+df -h leaks mount paths	Use abstract NFS paths (hostname not IP, obfuscated user IDs); limits info leakage
+No SSH shell access (feature)	Desktop-only UX minimizes exposure; no shell means limited command execution surface
+Capability Gaps (Not Yet Implemented)
+Orchestration platform: Container launch, resource tracking, VRAM budgeting, port registry
+Monitoring & alerting: GPU health, disk usage, login anomalies, user support
+Billing system: Session metering, rate calculation, payment integration
+Frontend dashboard: Session management, storage usage, billing history
+Admin panel: User management, hardware monitoring, support tools
+Multi-institution support: Institution management API, bulk user import, custom branding
+10. EVIDENCE SUMMARY
+Where to Find Everything
+Project Context & Business Model:
+/project_context_Beta.txt – Detailed project requirements, user model, pricing tiers
+/Project_Understanding_Document_KSRCE-GKT_AI_Lab-as-a-Service_(LaaS).txt – Market context, business model, feature list
+Architecture & Infrastructure:
+/laas_infrastructure_plan_Beta.md – Comprehensive infrastructure plan, Architecture A vs B, hardware, procurement
+/Important_docs/LaaS_POC_Runbook_v2.txt – As-executed POC validation, all tested procedures
+/Important_docs/LaaS_Node_Setup_Guide_v1.txt – Complete installation guide from bare metal
+Storage & Provisioning:
+/ReadMe/Auth-and-Storage-Architecture.md – Backend storage model, user provisioning flow
+/ReadMe/Storage-Provisioning.md – End-to-end provisioning conceptual overview
+/ReadMe/Storage-Provisioning-Setup.md – Deployment checklist
+/ReadMe/Storage-Provisioning-Step-by-Step.md – Linear step-by-step setup guide
+Authentication (Keycloak/SSO):
+/docs/keycloak-laas-academy-setup.md – Test institution setup, SSO testing
+/docs/keycloak_learnings.txt – Real-world IIT-Delhi integration, session management, troubleshooting
+Source Code References:
+backend/src/storage/storage.service.ts – HTTP-based provisioning service
+backend/scripts/provision-user-storage.sh – ZFS provisioning script
+host-services/storage-provision/app.py – Flask provision service on host
+backend/prisma/schema.prisma – User model, auth types, storage fields
+backend/src/auth/ – Auth flows, Keycloak integration
+11. RECOMMENDATIONS FOR NEXT STEPS
+Immediate (Week 1-2, Pre-Production Deployment)
+Hardware Commissioning (Phase 0 Week 1):
+Receive all 4 production nodes
+BIOS configuration (AMD-Vi, SVM, Resizable BAR, XMP enabled)
+Memtest86+ 48+ hours on each node
+Update BIOS to latest version (ASUS EZ Flash 3)
+Production Validation (Phase 0 Week 2):
+Install Ubuntu 22.04, NVIDIA driver 570, CUDA 12.8 on first node
+Build HAMi-core, test VRAM enforcement on RTX 5090 (Blackwell sm_100)
+Test CUDA MPS, concurrent containers, SM% partitioning
+Test NVENC concurrent streams (4+)
+Validate MPS fault propagation behavior
+Critical: Update all container launch commands CUDA_NVRTC_ARCH=100 (not 89)
+Test D3cold behavior if Architecture B ever needed
+Resolve Blockers:
+MATLAB network license: coordinate with MATLAB licensing team
+ISP verification: obtain quotes from 2 ISPs, confirm 500Mbps+ symmetric upstream
+Short-term (Week 3-6)
+Network Infrastructure (Phase 0 Week 3):
+Install 10GbE NICs (4 nodes + NAS)
+Configure Mikrotik switch + VLAN setup
+Setup 10GbE cabling, TURN server
+Production Rollout (Phase 1 Week 3-4):
+Replicate validated config to all 4 nodes (Ansible playbooks recommended)
+Apply comprehensive security hardening
+--network=host → --network=bridge switch
+HTTPS certificate and TLS setup
+Orchestration MVP (Phase 1 Week 4-6):
+Build session orchestrator (Docker API, resource tracking, port registry)
+Implement VRAM budget accounting logic
+Session lifecycle management (launch, health, terminate, reconnect)
+Monitoring and alerting infrastructure
+Medium-term (Week 7-12)
+Platform Features:
+Frontend dashboard (session management, storage, billing)
+Booking engine (real-time availability)
+Payment integration (Stripe/Razorpay)
+Admin panel (user management, hardware monitoring)
+Mentor booking system (optional, v1+)
+Production Hardening:
+Security audit (penetration testing, code review)
+Load testing (concurrent sessions, resource limits)
+Disaster recovery / backup procedures
+Incident response playbook
+CONCLUSION
+The LaaS project represents an innovative approach to democratizing access to GPU-accelerated computing through a unified container-based architecture. The combination of Selkies EGL Desktop, HAMi-core, and CUDA MPS enables fractional GPU tiers that are not available from any commercial provider, positioning this platform as a potential market differentiator.Key Strengths:
+Eliminated D3cold GPU reset bug through container architecture
+Unified environment across all tiers (seamless cross-tier switching)
+Innovative fractional GPU sharing on consumer hardware
+Dual-realm Keycloak enables real-world institution SSO integration
+Comprehensive storage provisioning with per-user ZFS quotas
+Production-ready runbooks and validation procedures
+Critical Path to Launch:
+Hardware commissioning and Phase 0 validation (RTX 5090 testing)
+Resolve MATLAB licensing and ISP upstream blockers
+Production deployment and orchestration platform MVP
+Frontend/backend API completion and testing
+Security hardening and launch
+Timeline Estimate: 12-16 weeks to production launch (pending blocker resolution).
+This report synthesized findings from 9 comprehensive documents totaling ~15,000 lines. All evidence is traceable to source files listed in Section 10.

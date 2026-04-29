@@ -1,0 +1,18 @@
+podman run -d \
+  --name keycloak \
+  --replace \
+  -p 8080:8080 \
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+  -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  -e KC_HOSTNAME=https://ksrceailab.com/auth \
+  -e KC_HTTP_RELATIVE_PATH=/auth \
+  -e KC_PROXY_HEADERS=xforwarded \
+  -e KC_HTTP_ENABLED=true \
+  -e KC_HOSTNAME_STRICT=false \
+  -e KC_DB=postgres \
+  -e KC_DB_URL=jdbc:postgresql://localhost:5432/keycloak \
+  -e KC_DB_USERNAME=keycloak \
+  -e KC_DB_PASSWORD=keycloak \
+  -e KC_HEALTH_ENABLED=true \
+  quay.io/keycloak/keycloak:26.2 \
+  start

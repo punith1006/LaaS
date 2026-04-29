@@ -1,0 +1,1 @@
+PS C:\Users\Punith\Downloads\keycloak-26.2.4\keycloak-26.2.4> .\bin\kc.bat start-dev

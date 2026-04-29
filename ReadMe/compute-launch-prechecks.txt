@@ -1,0 +1,684 @@
+INVESTIGATION REPORT: Production Session Orchestration Prerequisites for Node 192.168.10.88
+Objective
+Identify all host prerequisites, configurations, network setup, and environment variables required on compute node 192.168.10.88 before the production session orchestration service (app.py) can launch GPU desktop containers (192.168.10.99).
+SECTION 1: DOCKER BRIDGE NETWORK
+Network Configuration Expected by app.py
+Network Name: laas-sessions (configurable via LAAS_USER_NETWORK_NAME env var; default "laas-sessions")Network Mode: Bridge (configurable via LAAS_NETWORK_MODE env var; default "bridge")
+Default fallback is "host" for legacy deployments, but production MUST use "bridge" for container isolation
+Exact Docker Network Create Command
+bash
+docker network create \
+  --driver bridge \
+  --subnet 172.31.0.0/16 \
+  --gateway 172.31.0.1 \
+  -o "com.docker.network.bridge.enable_icc=false" \
+  laas-sessions
+Subnet: 172.31.0.0/16
+Gateway: 172.31.0.1
+ICC (Inter-Container Communication): Disabled (containers cannot communicate directly with each other)
+DNS: Google DNS (8.8.8.8, 8.8.4.4) injected into containers for apt install, pip, external package downloads
+Port Mapping with Bridge Networking
+Internal nginx port (in container): 8080 (fixed, INTERNAL_NGINX_PORT)
+External nginx port (host): Dynamically allocated from 8100-8199
+Port publishing: -p {nginx_port}:8080 maps host port to container internal port
+Port formula:
+nginx_port = allocated port (8100-8199)
+selkies_port = nginx_port + 1000
+metrics_port = nginx_port + 11000
+Reserved Infrastructure Ports (NEVER allocated to user containers):
+plaintext
+3000    Grafana
+3001    Uptime Kuma
+3100    Loki
+8080    cAdvisor (internal)
+8999    cAdvisor (published)
+9090    Prometheus
+9093    Alertmanager
+9100    Node Exporter
+9115    Blackbox Exporter
+9400    DCGM Exporter
+9500    MPS Exporter
+9501    Session Exporter
+9998    Session Orchestration API
+8180    Keycloak
+Critical: Network Health Verification After Creation
+After creating or recreating the bridge:
+bash
+# Verify kernel route exists
+ip route show | grep 172.31
+
+# Expected output: 172.31.0.0/16 dev br-XXXXXXXXX proto kernel scope link src 172.31.0.1
+
+# Verify iptables forwarding (check for 0 packets = broken)
+sudo iptables -L DOCKER-CT -n -v
+
+# Restart Docker daemon to reset bridge iptables rules
+sudo systemctl restart docker
+Critical Issue History: The laas-sessions bridge can enter a broken state after Docker daemon restarts or IP changes. When broken:
+TCP connections to container ports complete SYN/ACK but data doesn't flow
+nginx inside container responds fine, but host cannot reach it via docker-proxy
+iptables DOCKER-CT chain shows 0 packets to bridge interface
+Fix requires: delete network, recreate it, restart Docker daemon, verify kernel routes
+SECTION 2: HOST PREREQUISITES FROM app.py
+Binaries & Commands Required
+Path	Purpose	Existence on .88	Notes
+/usr/bin/docker	Container lifecycle management	MUST exist	Core requirement; used for create, start, stop, rm, inspect, ps commands
+/usr/bin/nvidia-smi	GPU status check (wrapped)	MUST exist	Real binary at /usr/bin/nvidia-smi.real; wrapper at /etc/laas/nvidia-smi-wrapper
+/usr/bin/curl	HTTP health check & readiness probing	MUST exist	Used to poll container nginx port (127.0.0.1:{nginx_port}) for readiness
+/usr/bin/python3	Session orchestrator itself (app.py)	MUST exist	Requires Python 3.9+ with Flask 2.3.0+
+/usr/bin/pgrep	MPS daemon verification (optional)	Should exist	Used by check_mps_daemon(); fallback checks /tmp/nvidia-mps/control socket
+/bin/mkdir	Create temporary directories	MUST exist	Creates vgpulock dirs and CPU topology dirs
+Directories That MUST Exist
+Path	Purpose	Required State	Created By
+/tmp/nvidia-mps	CUDA MPS control/communication sockets	MUST exist, writable	CUDA MPS daemon (systemd service)
+/tmp/nvidia-log	MPS logging	MUST exist, writable	CUDA MPS daemon or manual creation
+/mnt/nfs/users	NFS mount root for stateful sessions	MUST exist if using stateful sessions	Manual mount setup or storage provision service
+/etc/laas/	Security & config files (8 files)	MUST exist with correct files	Manual deployment
+/var/lib/lxcfs/proc/*	lxcfs virtualized proc files (7 files)	MUST exist, readable	lxcfs daemon (systemd service)
+/tmp/container-{display_number}-cpu	CPU topology per-container	Created at launch by app.py	app.py creates at container spawn
+/tmp/vgpulock-{display_number}	vGPU lock files per-container	Created at launch by app.py	app.py creates at container spawn
+Security & Configuration Files (8 Required in /etc/laas/)
+File 1: /etc/laas/seccomp-gpu-desktop.json
+Purpose: Seccomp profile blocking dangerous syscalls (mount, unshare, bpf, kexec, etc.)
+Type: JSON policy
+Size: ~1KB
+Permissions: -rw-r--r-- (readable by all)
+Used in containers via: --security-opt seccomp=/etc/laas/seccomp-gpu-desktop.json
+Evidence: app.py line 528
+File 2: /etc/laas/sudoers-laas-user
+Purpose: Sudoers policy for ubuntu user inside container; full sudo with deny rules for mount, iptables, kernel modules, docker, python, etc.
+Type: sudoers fragment
+Size: ~2KB
+Permissions: -r--r----- (440, owner=root, group=root)
+Used in containers via: -v /etc/laas/sudoers-laas-user:/etc/sudoers.d/laas-user:ro
+Evidence: app.py line 620
+File 3: /etc/laas/sudoers
+Purpose: Base sudoers file; overrides base Selkies image to remove blanket ubuntu grant
+Type: sudoers root config
+Size: ~0.5KB
+Permissions: -r--r----- (440, owner=root)
+Used in containers via: -v /etc/laas/sudoers:/etc/sudoers:ro
+Evidence: app.py line 618
+File 4: /etc/laas/bash.bashrc
+Purpose: System-wide bash settings; HAMi LD_PRELOAD setup, VRAM limit enforcement, sudo wrapper (strips LD_PRELOAD)
+Type: bash configuration
+Size: ~3.8KB
+Permissions: -rw-r--r-- (644)
+Used in containers via: -v /etc/laas/bash.bashrc:/etc/bash.bashrc:ro
+Evidence: app.py line 613
+Critical Function: Sets LD_PRELOAD environment for HAMi-core VRAM/SM enforcement; wraps sudo/apt/pip to prevent LD_PRELOAD issues
+File 5: /etc/laas/supervisord-hami.conf
+Purpose: supervisord configuration inside container; manages entrypoint, selkies-gstreamer, nginx, dbus, pipewire services
+Type: INI config
+Size: ~4.3KB
+Permissions: -rw-r--r-- (644)
+Used in containers via: -v /etc/laas/supervisord-hami.conf:/etc/supervisord.conf:ro
+Evidence: app.py line 612
+Critical Function: Ensures all required services start in correct order; configures logging
+File 6: /etc/laas/nvidia-smi-wrapper
+Purpose: Wrapper around nvidia-smi that reports VRAM limit instead of full GPU memory
+Type: bash script (executable)
+Size: ~0.9KB
+Permissions: -rwxr-xr-x (755)
+Used in containers via: -v /etc/laas/nvidia-smi-wrapper:/usr/bin/nvidia-smi:ro and -v /usr/bin/nvidia-smi:/usr/bin/nvidia-smi.real
+Evidence: app.py lines 605-606
+Critical Function: Reads CUDA_DEVICE_MEMORY_LIMIT_0 env var and reports it to user instead of full GPU VRAM
+File 7: /etc/laas/passwd-wrapper
+Purpose: Wrapper around passwd that strips LD_PRELOAD to prevent HAMi conflicts
+Type: bash script (executable)
+Size: ~0.1KB
+Permissions: -rwxr-xr-x (755)
+Used in containers via: -v /etc/laas/passwd-wrapper:/usr/bin/passwd and -v /usr/bin/passwd:/usr/bin/passwd.real
+Evidence: app.py lines 608-609
+File 8: /etc/laas/sudo-bin
+Purpose: Real setuid sudo binary (overrides fakeroot-symlinked sudo in base image)
+Type: ELF binary (setuid)
+Permissions: -rwsr-xr-x (4755, setuid bit set)
+Used in containers via: -v /etc/laas/sudo-bin:/usr/bin/sudo
+Evidence: app.py line 622
+Critical Function: Allows sudo to work inside container; base image's fakeroot version breaks with LD_PRELOAD
+Libraries Required (2 files from Host)
+Path	Purpose	Mount Destination	Mode
+/usr/lib/libvgpu.so	HAMi-core fractional GPU enforcement	/usr/lib/libvgpu.so	read-only
+/usr/lib/fake_sysconf.so	HAMi-core sysconf interception (RAM reporting fix)	/usr/lib/fake_sysconf.so	read-only
+Evidence: app.py lines 597-598
+NVIDIA/GPU Files Required
+Path	Purpose	Notes
+/tmp/nvidia-mps	MPS control directory	Created/managed by CUDA MPS daemon
+/tmp/nvidia-log	MPS logging directory	Created/managed by CUDA MPS daemon
+MPS control socket: /tmp/nvidia-mps/control	CUDA MPS communication	Checked by health check at line 442
+Evidence: app.py lines 589-590, 436-444
+lxcfs Files Required (7 proc virtualization files)
+plaintext
+/var/lib/lxcfs/proc/cpuinfo     → /proc/cpuinfo (read-only)
+/var/lib/lxcfs/proc/meminfo     → /proc/meminfo (read-only)
+/var/lib/lxcfs/proc/stat        → /proc/stat (read-only)
+/var/lib/lxcfs/proc/uptime      → /proc/uptime (read-only)
+/var/lib/lxcfs/proc/loadavg     → /proc/loadavg (read-only)
+/var/lib/lxcfs/proc/diskstats   → /proc/diskstats (read-only)
+/var/lib/lxcfs/proc/swaps       → /proc/swaps (read-only)
+Evidence: app.py lines 625-631Critical Purpose: Virtualize /proc inside container to show only allocated resources (not full host resources), preventing containers from seeing other containers' activity
+SECTION 3: ENVIRONMENT VARIABLES & CONFIGURATION
+Required Environment Variables for app.py
+Session Secret (CRITICAL)
+plaintext
+SESSION_SECRET = os.environ.get("SESSION_SECRET")
+Type: Fixed 32-64 character hex/alphanumeric string
+Default: None (required; service returns 500 if missing)
+Purpose: Shared secret for X-Session-Secret header validation on all protected endpoints
+Used: Every POST /sessions/launch, /sessions/{name}/stop, /sessions/{name}/restart
+Example: export SESSION_SECRET="a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+Evidence: app.py lines 40, 1047-1052
+Network Configuration
+plaintext
+LAAS_NETWORK_MODE = os.environ.get("LAAS_NETWORK_MODE", "bridge")
+LAAS_USER_NETWORK_NAME = os.environ.get("LAAS_USER_NETWORK_NAME", "laas-sessions")
+Default network mode: "bridge" (recommended) OR "host" (legacy)
+Default network name: "laas-sessions"
+Purpose: Configure container network isolation
+Evidence: app.py lines 47-48, 502-513
+Host & TURN Server
+plaintext
+HOST_IP = os.environ.get("HOST_IP", "192.168.10.92")
+TURN_HOST = os.environ.get("TURN_HOST", "192.168.10.92")
+TURN_PORT = os.environ.get("TURN_PORT", "3478")
+TURN_USERNAME = os.environ.get("TURN_USERNAME", "selkies")
+TURN_PASSWORD = os.environ.get("TURN_PASSWORD", "wVIAbfwkgkxjaCiZVX4BDsdU")
+TURN_PROTOCOL = os.environ.get("TURN_PROTOCOL", "tcp")
+HOST_IP: External IP for session connection URLs returned to users
+TURN_HOST: TURN server IP reachable from both browser (WebRTC client) AND container (bridge network)
+For bridge mode: TURN_HOST must be reachable from laas-sessions network (172.31.0.0/16)
+Note: FortiClient VPN IP (192.168.10.92) used; iptables DOCKER-USER chain must allow conntrack ESTABLISHED from containers
+Evidence: app.py lines 41-95
+Storage & NFS
+plaintext
+NFS_MOUNT_ROOT = os.environ.get("NFS_MOUNT_ROOT", "/mnt/nfs/users")
+Default: "/mnt/nfs/users"
+Purpose: Root directory for stateful session mounts
+Structure: {NFS_MOUNT_ROOT}/{storage_uid} = per-user NFS mount point
+Example: /mnt/nfs/users/u_1234567890abcdef12345678 → /home/ubuntu in container
+Evidence: app.py lines 43, 594
+Image
+plaintext
+SELKIES_IMAGE = os.environ.get("SELKIES_IMAGE", "ghcr.io/selkies-project/nvidia-egl-desktop:latest")
+Default: "ghcr.io/selkies-project/nvidia-egl-desktop:latest"
+Purpose: Docker image to use for desktop sessions
+Evidence: app.py lines 42, 646
+Flask App Port
+plaintext
+PORT = int(os.environ.get("PORT", "9998"))
+Default: 9998
+Purpose: Session orchestration service listen port
+Evidence: app.py line 1428
+Environment Variables Injected INTO Containers
+Display & Resolution
+plaintext
+DISPLAY=:{display_number}              # 20-99
+DISPLAY_SIZEW=1920                     # Fixed
+DISPLAY_SIZEH=1080                     # Fixed
+DISPLAY_REFRESH=60                     # Fixed Hz
+TZ=UTC                                 # Timezone
+Selkies Settings
+plaintext
+SELKIES_ENCODER=nvh264enc              # NVIDIA H.264 hardware encoding
+SELKIES_ENABLE_BASIC_AUTH=true         # Basic auth enabled
+SELKIES_BASIC_AUTH_PASSWORD={password} # Unique per session
+NGINX_PORT=8080                        # Internal (bridge mode)
+SELKIES_PORT=9080                      # Internal (bridge mode)
+SELKIES_METRICS_HTTP_PORT=19080        # Internal (bridge mode)
+SELKIES_TURN_HOST={TURN_HOST}
+SELKIES_TURN_PORT={TURN_PORT}
+SELKIES_TURN_USERNAME={TURN_USERNAME}
+SELKIES_TURN_PASSWORD={TURN_PASSWORD}
+SELKIES_TURN_PROTOCOL={TURN_PROTOCOL}
+Ubuntu User
+plaintext
+PASSWD={password}                      # Ubuntu user password (16 random chars)
+CUDA/GPU
+plaintext
+CUDA_VISIBLE_DEVICES=0                 # Always 0 in container (mapped to host GPU)
+CUDA_NVRTC_ARCH=89                     # Ada architecture (RTX 4090)
+__NV_PRIME_RENDER_OFFLOAD=1
+__GLX_VENDOR_LIBRARY_NAME=nvidia
+CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps
+CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log
+HAMi-core GPU Limits
+plaintext
+CUDA_DEVICE_MEMORY_LIMIT_0={vram_mb}m  # Per-container VRAM cap (e.g., "8192m")
+CUDA_DEVICE_SM_LIMIT={hami_sm_percent} # SM percentage cap (1-100)
+CUDA_MPS_PINNED_DEVICE_MEM_LIMIT=0={vram_gb}G
+CUDA_MPS_ACTIVE_THREAD_PERCENTAGE={hami_sm_percent}
+CUDA_MPS_ENABLE_PER_CTX_DEVICE_MULTIPROCESSOR_PARTITIONING=1
+Container Memory
+plaintext
+CONTAINER_MEMORY_LIMIT_BYTES={container_memory_bytes}  # Passed to lxcfs
+Evidence: app.py lines 534-586
+SECTION 4: PORT ALLOCATION LOGIC
+Port Ranges
+plaintext
+NGINX_PORT_MIN, NGINX_PORT_MAX = 8100, 8199 (100 possible ports)
+DISPLAY_MIN, DISPLAY_MAX = 20, 99                (80 possible displays)
+ALLOCATABLE_CORES = list(range(2, 16))           (14 cores; 0-1 reserved for OS)
+Port Allocation Process
+Acquire file lock on /tmp/laas-resource-lock (exclusive fcntl lock)
+Query running containers for currently used ports via docker inspect --format {{json .NetworkSettings.Ports}}
+Iterate 8100-8199:
+Skip if port already used by another container
+Skip if port in RESERVED_PORTS (monitoring stack)
+Skip if derived ports (nginx+1000, nginx+11000) conflict with RESERVED_PORTS
+Return first available port
+Allocate display (20-99) same process
+Allocate CPU cores (contiguous block of needed size from 2-15)
+Release lock
+Critical: Port allocation is not atomic with container creation — allocation happens under lock, but container launch is outside lock. Race conditions possible if multiple orchestration requests arrive simultaneously.Evidence: app.py lines 356-408, 706-739
+Example Port Allocation
+Nginx port allocated: 8101
+Selkies port (derived): 8101 + 1000 = 9101
+Metrics port (derived): 8101 + 11000 = 19101
+Display: :23
+Container listens internally: nginx on :8080, selkies on :9080, metrics on :19080
+Host port mapping: 8101:8080, (selkies not published), 19101:19080
+SECTION 5: HEALTH CHECKS
+Health Check Endpoint: GET /health
+Checks Performed:
+Docker daemon alive: docker info
+NVIDIA GPU accessible: nvidia-smi --query-gpu=name --format=csv,noheader
+Selkies image present: docker image inspect {SELKIES_IMAGE}
+CUDA MPS daemon running: pgrep -f nvidia-cuda-mps-control OR check /tmp/nvidia-mps/control socket
+Response:
+200 + "status": "healthy": All checks pass
+503 + "status": "degraded": Any check fails
+Evidence: app.py lines 982-1017
+Session Launch Health Checks
+Nginx readiness (120 second wait, 2 second poll):
+curl http://127.0.0.1:{nginx_port}/
+Any HTTP response (even 401 basic auth) = desktop ready
+If no response after 120s, session fails
+WebRTC stream check (non-fatal):
+Curl to same port after 2 second delay
+If fails, container may still launch (non-blocking)
+Evidence: app.py lines 831-892
+SECTION 6: STORAGE PROVISIONING INTEGRATION
+Stateful Session Storage
+Trigger: storage_type == "stateful" in launch request
+Mount point: {NFS_MOUNT_ROOT}/{storage_uid} → /home/ubuntu inside container
+Example: /mnt/nfs/users/u_1234567890abcdef12345678:/home/ubuntu
+Storage Validation Steps (at launch time)
+Parse storage_uid: Must match pattern ^u_[0-9a-f]{24}$ (25 characters: "u" + 24 hex)
+Check mount exists: os.path.exists({NFS_MOUNT_ROOT}/{storage_uid})
+Verify is directory: os.path.isdir(...)
+Test writability: Create/delete .laas-write-test-{session_id[:8]} file
+Emit event with mount path if success; fail session if any check fails
+Evidence: app.py lines 741-770
+Ephemeral Session Storage
+Trigger: storage_type == "ephemeral"
+Mount: None (container has no persistent /home/ubuntu)
+Effect: Container uses tmpfs only; data lost on stop
+NFS vs ZFS
+Production uses: NFS-mounted ZFS subdatasets
+Per-user isolation: Each user gets /datapool/users/{storage_uid} via NFS at /mnt/nfs/users/{storage_uid}
+Quota enforcement: Enforced by ZFS (not app.py; separate provisioning service)
+app.py role: Validate mount exists and is writable before container launch
+Evidence: app.py lines 43, 594
+SECTION 7: RESOURCE ALLOCATION & CONSTRAINTS
+CPU Allocation
+plaintext
+vcpu: 1-14 cores (validated at launch)
+cpuset format: "2-5" (contiguous range) or "2,3,4,5"
+Allocation: First contiguous block of needed cores from 2-15
+Memory Allocation
+plaintext
+memory_mb: ≥512 MB (host system memory)
+vram_mb: ≥512 MB (GPU VRAM)
+Limit flags:
+  --memory={memory_gb}g      (Docker memory limit)
+  --cpus={vcpu}              (CPU limit)
+  CUDA_DEVICE_MEMORY_LIMIT_0 (HAMi VRAM limit)
+  CUDA_DEVICE_SM_LIMIT       (HAMi SM percentage)
+  CONTAINER_MEMORY_LIMIT_BYTES (passed to lxcfs)
+Process Limit
+plaintext
+--pids-limit=2048 (KDE desktop + browser + dev tools need ~500+ PIDs)
+Evidence: app.py lines 490-494, 688-702
+SECTION 8: CONTAINER SECURITY & ISOLATION
+Network Isolation
+Mode: bridge (isolated) OR host (no isolation)
+ICC: Disabled (containers cannot talk to each other)
+DNS: 8.8.8.8, 8.8.4.4 (for external package downloads)
+Capabilities
+plaintext
+--cap-drop=ALL (drop all Linux capabilities)
+--cap-add CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, NET_BIND_SERVICE, KILL, SYS_CHROOT, MKNOD, NET_RAW, FSETID, AUDIT_WRITE
+Seccomp
+plaintext
+--security-opt seccomp=/etc/laas/seccomp-gpu-desktop.json
+Blocks: kexec_load, init_module, delete_module, bpf, process_vm, add_key, reboot, pivot_root, mount, umount2, unshare, setns, nfsservctl
+AppArmor
+plaintext
+--security-opt apparmor=docker-default
+Sudoers
+plaintext
+--security-opt no-new-privileges=false (must be false to allow sudo)
+Evidence: app.py lines 517-531
+SECTION 9: COMPLETE GAP ANALYSIS FOR NODE 192.168.10.88
+Based on the user's statement that .88 already has basic infrastructure, here is EVERYTHING that still needs to be verified/created:
+CRITICAL (App.py will crash/fail without these)
+C1: Docker Bridge Network "laas-sessions"
+Status: UNKNOWN (user suspects not created yet)
+Action Required: Create immediately
+bash
+docker network rm laas-sessions 2>/dev/null || true
+docker network create \
+  --driver bridge \
+  --subnet 172.31.0.0/16 \
+  --gateway 172.31.0.1 \
+  -o "com.docker.network.bridge.enable_icc=false" \
+  laas-sessions
+sudo systemctl restart docker
+ip route show | grep 172.31  # Verify kernel route
+C2: All 8 /etc/laas/ Configuration Files
+Status: Per memory, "all 8 /etc/laas/ files with correct permissions" already exist
+Verify Command:
+bash
+ls -la /etc/laas/
+# Must have: seccomp-gpu-desktop.json, sudoers, sudoers-laas-user, bash.bashrc, supervisord-hami.conf, nvidia-smi-wrapper, passwd-wrapper, sudo-bin
+If missing, copy from: c:\Users\Punith\LaaS\host-services\config\
+Permissions (must be exact):
+sudoers, sudoers-laas-user: 440 (owner=root, group=root)
+sudo-bin: 4755 (setuid)
+bash.bashrc, supervisord-hami.conf: 644
+nvidia-smi-wrapper, passwd-wrapper: 755
+seccomp-gpu-desktop.json: 644
+C3: HAMi-core Libraries
+Status: Per memory, "HAMi-core libvgpu.so (MD5 verified)" + fake_sysconf.so exists
+Paths: /usr/lib/libvgpu.so and /usr/lib/fake_sysconf.so
+Verify:
+bash
+ls -la /usr/lib/libvgpu.so /usr/lib/fake_sysconf.so
+ldd /usr/lib/libvgpu.so  # Check dependencies resolvable
+C4: CUDA MPS Daemon Running
+Status: Per memory, "CUDA MPS daemon (systemd)" exists
+Verify:
+bash
+systemctl status cuda-mps
+pgrep -f nvidia-cuda-mps-control
+ls -la /tmp/nvidia-mps/control
+If not running:
+bash
+sudo systemctl start cuda-mps
+sudo systemctl enable cuda-mps
+C5: lxcfs Installed & Running
+Status: Per memory, "lxcfs installed and running"
+Verify:
+bash
+systemctl status lxcfs
+ls -la /var/lib/lxcfs/proc/cpuinfo /var/lib/lxcfs/proc/meminfo
+If not running:
+bash
+sudo apt install -y lxcfs
+sudo systemctl start lxcfs
+sudo systemctl enable lxcfs
+C6: Selkies Docker Image Loaded
+Status: Per memory, "Selkies Docker image loaded"
+Verify:
+bash
+docker image inspect ghcr.io/selkies-project/nvidia-egl-desktop:latest
+# Or check locally:
+docker images | grep nvidia-egl-desktop
+If missing, load:
+bash
+docker pull ghcr.io/selkies-project/nvidia-egl-desktop:latest
+C7: Resource Lock File Accessible
+Path: /tmp/laas-resource-lock
+Verify: Writable by Flask process user
+Action: Create empty file if missing:
+bash
+touch /tmp/laas-resource-lock
+chmod 666 /tmp/laas-resource-lock
+C8: Session Orchestration Environment Variables Set
+At minimum, SESSION_SECRET must be set
+Recommended: Create a systemd service or .env file for app.py
+bash
+export SESSION_SECRET="YOUR_32_CHAR_HEX_SECRET"
+export HOST_IP="192.168.10.99"           # Or external IP for session URLs
+export LAAS_NETWORK_MODE="bridge"
+export LAAS_USER_NETWORK_NAME="laas-sessions"
+export NFS_MOUNT_ROOT="/mnt/nfs/users"
+export TURN_HOST="192.168.10.92"
+C9: Flask Runtime
+Python 3.9+
+Dependencies: Flask>=2.3.0, Werkzeug>=2.3.0
+Install:
+bash
+pip install Flask>=2.3.0 Werkzeug>=2.3.0
+HIGH (Containers launch but with incorrect behavior)
+H1: NFS Mount Root Permissions
+Path: /mnt/nfs/users
+Status: Per memory, "NFS export" exists
+Verify:
+bash
+ls -ld /mnt/nfs/users
+mount | grep nfs  # Should show NFS mounts
+If missing: Must be created by storage provisioning service or manual mount
+Permissions: 755, owned by root (or provisioning service user)
+H2: CPU Topology Static Files
+Path: /tmp/container-{display_number}-cpu (created per container at launch)
+Status: Per memory, "CPU topology static files (/tmp/container-N-cpu)" exist
+Evidence: app.py creates these at lines 787-792
+Verify: Not needed pre-launch; created by app.py before container start
+H3: vgpulock Directory
+Path: /tmp/vgpulock-{display_number} (created per container at launch)
+Status: Created by app.py at lines 780-784
+Verify: Not needed pre-launch
+H4: iptables DOCKER-USER Chain for TURN/VPN Access
+Issue: When using TURN server on FortiClient VPN IP (192.168.10.92), containers on bridge network (172.31.0.0/16) need return traffic allowed
+Verify:
+bash
+sudo iptables -L DOCKER-USER -n -v
+If not configured, add conntrack rule:
+bash
+sudo iptables -I DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+sudo iptables-save | sudo tee /etc/iptables/rules.v4
+H5: TURN Server (coturn) Running & Reachable
+Host: 192.168.10.92 (FortiClient VPN IP)
+Port: 3478/tcp
+Credentials: username="selkies", password="wVIAbfwkgkxjaCiZVX4BDsdU"
+Verify from .88:
+bash
+nc -zv 192.168.10.92 3478  # Should show: succeeded
+H6: Port 9998 (Session Orchestration API) Open
+Verify:
+bash
+curl http://127.0.0.1:9998/health
+# Should return 200 (or 503 if missing prereqs)
+MEDIUM (Degraded experience, non-blocking)
+M1: Monitoring Stack Accessible
+Services: Prometheus, Grafana, cAdvisor, etc. (reserved ports 3000, 9090, 8999, etc.)
+Status: Separate from session orchestration; not required for launch
+Action: Deploy if metrics collection desired
+M2: Session Exporter for Metrics
+Port: 9501
+Status: Not required; optional metrics collection from containers
+Action: Deploy if desired
+M3: Cloud-init/Automated Startup
+Status: Not required; app.py can be started manually or via tmux
+Action: Optional systemd service:
+ini
+[Unit]
+Description=LaaS Session Orchestration Service
+After=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/session-orchestration/app.py
+Environment=SESSION_SECRET=YOUR_SECRET
+Environment=HOST_IP=192.168.10.99
+Environment=LAAS_NETWORK_MODE=bridge
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+M4: Logging/Syslog Integration
+Status: app.py logs to stdout (captured by systemd journal if run as service)
+Action: Optional; setup journalctl integration if desired
+LOW (Nice to have, operational quality)
+L1: Firewall Rules
+Recommendation: UFW rules to restrict port 9998 to backend network only
+bash
+sudo ufw allow from 192.168.10.0/24 to any port 9998  # or backend subnet
+sudo ufw reload
+L2: Backup/Recovery Procedures
+Action: Document recovery procedures for bridge network recreation
+L3: Automated Tests
+Action: Deploy test harness to validate all prerequisites before accepting connections
+SECTION 10: DEPLOYMENT CHECKLIST (Step-by-Step)
+Pre-Launch Verification
+bash
+# 1. Verify bridge network exists
+docker network ls | grep laas-sessions
+
+# 2. Verify all 8 config files exist with correct perms
+ls -la /etc/laas/
+
+# 3. Verify libraries
+ls -la /usr/lib/libvgpu.so /usr/lib/fake_sysconf.so
+
+# 4. Verify MPS daemon running
+systemctl status cuda-mps
+
+# 5. Verify lxcfs running
+systemctl status lxcfs
+
+# 6. Verify Selkies image
+docker images | grep nvidia-egl-desktop
+
+# 7. Verify NFS root
+ls -ld /mnt/nfs/users
+
+# 8. Test Docker is working
+docker ps
+
+# 9. Test GPU access
+nvidia-smi
+
+# 10. Verify SESSION_SECRET set
+echo $SESSION_SECRET  # Must not be empty
+Start Session Orchestration Service
+bash
+# Option 1: Direct
+python3 /usr/local/bin/session-orchestration/app.py
+
+# Option 2: With env vars
+SESSION_SECRET="YOUR_SECRET" \
+HOST_IP="192.168.10.99" \
+LAAS_NETWORK_MODE="bridge" \
+LAAS_USER_NETWORK_NAME="laas-sessions" \
+NFS_MOUNT_ROOT="/mnt/nfs/users" \
+TURN_HOST="192.168.10.92" \
+python3 /usr/local/bin/session-orchestration/app.py
+
+# Option 3: Systemd service (recommended for production)
+sudo systemctl start laas-session-orchestration
+Verify Service Running
+bash
+curl http://127.0.0.1:9998/health
+# Expected: 200 OK + JSON with health status
+Test Session Launch (from backend or curl)
+bash
+SESSION_SECRET="YOUR_SECRET"
+curl -s -X POST http://192.168.10.99:9998/sessions/launch \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Secret: $SESSION_SECRET" \
+  -H "X-Request-Id: $(uuidgen)" \
+  -d '{
+    "session_id": "550e8400-e29b-41d4-a716-446655440000",
+    "user_id": "550e8400-e29b-41d4-a716-446655440001",
+    "user_email": "test@example.com",
+    "tier_slug": "blaze",
+    "vcpu": 4,
+    "memory_mb": 8192,
+    "vram_mb": 4096,
+    "hami_sm_percent": 25,
+    "storage_type": "ephemeral",
+    "node_hostname": "laas-node-01"
+  }'
+SECTION 11: COMMON FAILURE MODES & DIAGNOSTICS
+Symptom: "launch timed out after 120 seconds"
+Root Cause: Bridge network broken (nginx responds inside container but not externally)
+Diagnostic:
+bash
+# Inside container
+docker exec <container_name> curl -v http://127.0.0.1:8080/
+
+# From host (should fail if bridge broken)
+curl -v http://127.0.0.1:{nginx_port}/
+
+# Check iptables
+sudo iptables -L DOCKER-CT -n -v | head -20  # Look for 0 packets
+
+# Check bridge route
+ip route show | grep 172.31
+Fix: Recreate bridge network (see Section 1)
+Symptom: "No available ports in range 8100-8199"
+Root Cause: All 100 ports allocated to other containers
+Diagnostic:
+bash
+docker ps -a --filter "label=laas.session_id"
+curl http://127.0.0.1:9998/resources  # Check port utilization
+Fix: Clean up old containers or use larger port range
+Symptom: Container exits immediately after start
+Diagnostic:
+bash
+docker logs <container_name>
+docker inspect <container_name> | grep -i error
+Common Causes:
+Missing /etc/laas/ files (supervisord fails to start)
+HAMi library missing (LD_PRELOAD fails)
+lxcfs not running (proc files not available)
+Symptom: Container has no GPU access
+Diagnostic:
+bash
+docker exec <container_name> nvidia-smi
+Common Causes:
+NVIDIA Container Toolkit not installed
+--gpus all flag missing (check docker create command)
+CUDA_VISIBLE_DEVICES not set in container
+SECTION 12: CRITICAL FILES SUMMARY
+Locations on 192.168.10.88 (Host)
+plaintext
+/etc/laas/seccomp-gpu-desktop.json
+/etc/laas/sudoers
+/etc/laas/sudoers-laas-user
+/etc/laas/bash.bashrc
+/etc/laas/supervisord-hami.conf
+/etc/laas/nvidia-smi-wrapper
+/etc/laas/passwd-wrapper
+/etc/laas/sudo-bin
+
+/usr/lib/libvgpu.so
+/usr/lib/fake_sysconf.so
+
+/tmp/nvidia-mps/control (created by daemon)
+/tmp/nvidia-log/ (created by daemon)
+
+/var/lib/lxcfs/proc/cpuinfo
+/var/lib/lxcfs/proc/meminfo
+/var/lib/lxcfs/proc/stat
+/var/lib/lxcfs/proc/uptime
+/var/lib/lxcfs/proc/loadavg
+/var/lib/lxcfs/proc/diskstats
+/var/lib/lxcfs/proc/swaps
+
+/mnt/nfs/users (for stateful sessions)
+
+/usr/local/bin/session-orchestration/app.py (Flask app)
+Source Locations (c:\Users\Punith\LaaS)
+plaintext
+Config files: c:\Users\Punith\LaaS\host-services\config\
+App.py: c:\Users\Punith\LaaS\host-services\session-orchestration\app.py
+Storage provision: c:\Users\Punith\LaaS\host-services\storage-provision\app.py
+Hardened template: c:\Users\Punith\LaaS\tests\c1_hardened.txt
+Bridge fix doc: c:\Users\Punith\LaaS\ReadMe\Docker-Bridge-Network-Fix.md
+CONCLUSION
+The production session orchestration service (app.py) requires a well-orchestrated set of prerequisites before it can launch GPU desktop containers on 192.168.10.88. The most critical gap identified is the Docker bridge network "laas-sessions" which the user suspects is not yet created. Once this network is created and verified, the remaining prerequisites are primarily verification tasks (confirming HAMi libs, MPS daemon, lxcfs are running) and configuration (setting environment variables).

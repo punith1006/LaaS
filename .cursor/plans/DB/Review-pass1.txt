@@ -1,0 +1,283 @@
+I'll review all the relevant documents to critically analyze your database schema. Let me start by reading the key files in parallel.
+
+Let me read the database schema plan in chunks since it's quite large:
+
+
+
+Let me also check the current auth implementation to understand what's currently built:
+
+Now I have a comprehensive view. Let me analyze the database schema critically against the project requirements.
+
+Based on my analysis of all documents, here's my **critical review of your database schema**:
+
+---
+
+## Critical Findings: Database Schema Review
+
+### 🔴 CRITICAL GAPS (Must Address Before POC)
+
+#### 1. **No Session Management Tables**
+The current Prisma schema has **zero tables** for the core platform functionality:
+- No `sessions` table (container lifecycle, WebRTC streaming, node assignment)
+- No `bookings` table (scheduled reservations)
+- No `compute_configs` table (Starter/Pro/Max tiers)
+- No `nodes` table (infrastructure tracking)
+
+**Impact:** The platform cannot track user sessions at all. This is the absolute core of LaaS.
+
+#### 2. **Storage Model Mismatch**
+- **Current schema:** Stores `storageUid`, `storageProvisioningStatus`, `storageProvisioningError`, `storageProvisionedAt` directly on `User`
+- **Plan specifies:** Separate `user_storage_volumes` table with:
+  - `zfs_dataset_path`, `nfs_export_path`, `container_mount_path`
+  - `quota_bytes` (15GB), `used_bytes`, `used_bytes_updated_at`
+  - `status` ('provisioning'/'active'/'wiping'/'wiped'/'error')
+  - `os_choice` for multi-OS support
+
+**Issue:** The current design cannot support OS switching (a key requirement: "permanently wipes 15GB, requires explicit DELETE confirmation").
+
+#### 3. **Missing University/Multi-tenancy Tables**
+- No `universities` table (only `organizations`)
+- No `departments` table
+- No `user_groups` table (semester, batch, research groups)
+- No `university_idp_configs` table (SAML/OIDC/LDAP configs per university)
+
+**Impact:** Cannot federate with university SSO (Keycloak identity brokering per university).
+
+#### 4. **Access Control for Public Users**
+Per project context:
+> "for public users, only ephemeral instances either with notebook mode or CLI (depending on the config they choose)"
+
+- No `compute_config_access` table to enforce: public users → ephemeral only, university members → stateful + ephemeral
+
+---
+
+#### 5. **Missing `os_choice` on User**
+Project requirement: "Ubuntu 22.04 LTS for now! and I'll provide other distros later"
+- Current schema has no `os_choice` field
+- Plan includes `os_choice VARCHAR(32)` on users table
+- Required for the OS switch flow
+
+#### 6. **No `user_profiles` Table**
+Missing for:
+- `enrollment_number` (student roll number)
+- `id_proof_url`, `id_proof_verified_at` (required for external_student type)
+- `skills TEXT[]` (needed for mentorship matching)
+- `graduation_year` (for external students)
+
+#### 7. **No Wallet/Billing Foundation**
+Per project context, billing is core functionality:
+- No `wallets` table
+- No `wallet_transactions` table
+- No `billing_charges` table
+- No `credit_packages` table
+
+**Note:** For POC, you need at least basic wallet tracking even if full billing comes later.
+
+---
+
+### 🟡 TECHNICAL ISSUES
+
+#### 8. **Enum Storage as VARCHAR (Plan Convention)**
+Plan wisely uses VARCHAR for enums instead of PostgreSQL enum types. **However, the current Prisma schema uses raw strings without validation.**
+
+**Recommendation:** Add application-level enum validation or use Prisma's native enum types for better type safety:
+
+```prisma
+enum AuthType {
+  LOCAL
+  PUBLIC_OAUTH
+  UNIVERSITY_SSO
+}
+
+enum StorageProvisioningStatus {
+  PENDING
+  PROVISIONING
+  PROVISIONED
+  FAILED
+}
+```
+
+#### 9. **No Index Recommendations**
+High-cardinality fields that need indexes:
+- `users.keycloak_sub` ✓ (already unique)
+- `users.storage_uid` ✓ (already unique)
+- `sessions.user_id` - needs index
+- `sessions.node_id` - needs index
+- `sessions.status` - needs index (for filtering active sessions)
+- `bookings.user_id` - needs index
+- `bookings.scheduled_start_at` - needs index (for conflict detection)
+- `login_history.user_id` - needs index
+- `login_history.created_at` - needs index (for partition pruning)
+
+#### 10. **Missing `session_type` Field Differentiation**
+The plan has session types:
+- `stateful_desktop` / `ephemeral_jupyter` / `ephemeral_codeserver` / `ephemeral_cli`
+
+But no table tracks which type each user can access. This is critical for:
+- Public users: ephemeral ONLY
+- University members: stateful + ephemeral
+
+#### 11. **`os_switch_history` Missing**
+When a user switches OS, the old storage must be wiped and a new one created. Need audit trail:
+- Who approved (if admin-initiated)
+- What was the confirmation text ("DELETE")
+- IP at time of switch
+- Old/new volume IDs
+
+---
+
+### 🟢 GOOD DESIGN DECISIONS (Keep These)
+
+1. **Soft delete pattern** - Correct approach for users, organizations, courses
+2. **UUID PKs everywhere** - Consistent, non-guessable identifiers
+3. **Audit columns** - created_at, updated_at, created_by
+4. **Organization-level multi-tenancy** - Right abstraction level
+5. **Refresh token with device info** - Good for security tracking
+6. **Separate `user_org_roles` junction** - Allows users in multiple orgs with different roles
+
+---
+
+### 🔧 RECOMMENDATIONS BY PRIORITY
+
+#### **Phase 1 - MVP (Immediate)**
+
+| Table | Priority | Reason |
+|-------|----------|--------|
+| `nodes` | 🔴 CRITICAL | Track infrastructure, heartbeat, health |
+| `base_images` | 🔴 CRITICAL | Docker image management per node |
+| `compute_configs` | 🔴 CRITICAL | Tier definitions (Starter, Pro, etc.) |
+| `compute_config_access` | 🔴 CRITICAL | Enforce public vs university access |
+| `user_storage_volumes` | 🔴 CRITICAL | Replace storage fields on User |
+| `bookings` | 🔴 CRITICAL | Session scheduling |
+| `sessions` | 🔴 CRITICAL | Container lifecycle |
+| `wallets` | 🟡 HIGH | Billing foundation |
+| `wallet_transactions` | 🟡 HIGH | Transaction history |
+| `universities` | 🟡 HIGH | University SSO federation |
+| `university_idp_configs` | 🟡 HIGH | Per-university IdP settings |
+| `departments` | 🟡 HIGH | Org structure |
+| `user_groups` | 🟡 HIGH | Batch/semester grouping |
+| `os_switch_history` | 🟡 HIGH | OS switch audit trail |
+
+#### **Phase 2 - Billing + Academic**
+
+| Table | Priority |
+|-------|----------|
+| `billing_charges` | 🟡 HIGH |
+| `credit_packages` | 🟡 HIGH |
+| `payment_transactions` | 🟡 HIGH |
+| `invoices`, `invoice_line_items` | 🟡 HIGH |
+| `user_profiles` | 🟡 HIGH |
+| `courses`, `course_enrollments` | 🟠 MEDIUM |
+| `labs`, `lab_assignments`, `lab_submissions` | 🟠 MEDIUM |
+
+#### **Phase 3 - Future Scope**
+- Mentorship tables (mentor_profiles, mentor_bookings)
+- Community tables (discussions, project_showcases)
+- Gamification (achievements, user_achievements)
+
+---
+
+### 📋 SPECIFIC CORRECTIONS NEEDED
+
+#### A. **On `User` table - Add these fields:**
+```prisma
+osChoice         String?   @map("os_choice")  // 'ubuntu_22_04', 'ubuntu_24_04'
+```
+
+#### B. **On `Organization` table - Add university link:**
+```prisma
+universityId     String?   @map("university_id")  // Link to universities table
+```
+
+#### C. **Migrate storage fields to `user_storage_volumes`:**
+The plan correctly separates storage. Current storage fields on User should be deprecated after migration:
+- `storageUid` → stays on User as reference
+- Move `storageProvisioningStatus`, `storageProvisioningError`, `storageProvisionedAt` to `user_storage_volumes`
+
+#### D. **Add missing indexes in Prisma:**
+```prisma
+model Session {
+  // ... existing fields
+  @@index([userId])
+  @@index([nodeId])
+  @@index([status])
+  @@index([scheduledEndAt])
+}
+
+model Booking {
+  // ... existing fields
+  @@index([userId])
+  @@index([scheduledStartAt])
+  @@index([status])
+}
+
+model LoginHistory {
+  // ... existing fields
+  @@index([userId])
+  @@index([createdAt])
+}
+```
+
+#### E. **Auth type values inconsistency:**
+Current schema: `'local'`, `'public_oauth'`, `'university_sso'`
+Plan values: `'local'`, `'public_oauth'`, `'university_sso'`
+
+**Issue:** Current schema stores `auth_type` as plain String without validation. Document the allowed values and consider adding a check constraint in PostgreSQL.
+
+---
+
+### ⚠️ CRITICAL BUSINESS LOGIC GAPS
+
+1. **Public user ephemeral-only enforcement:**
+   - Need `compute_config_access` to restrict public users
+   - No application-level guard exists currently
+
+2. **Tier access for university members:**
+   - Need to verify which tiers are available per organization
+   - `org_resource_quotas` table missing max GPU VRAM per org
+
+3. **15GB storage enforcement:**
+   - `user_storage_volumes.quota_bytes` (15GB = 16106127360 bytes) hard limit
+   - Need trigger or check constraint at DB level
+   - `used_bytes` needs periodic polling from NFS/ZFS
+
+4. **Session cleanup on wallet exhaustion:**
+   - What happens when wallet hits ₹0?
+   - Need `is_frozen` on wallets + termination logic
+
+---
+
+---
+
+## Summary
+
+| Category | Status | Count |
+|----------|--------|-------|
+| **Critical Missing (Phase 1 MVP)** | 🔴 | ~12 tables |
+| **High Priority** | 🟡 | ~10 tables |
+| **Technical Issues** | 🟡 | 5 issues |
+| **Good Patterns to Keep** | 🟢 | 6 patterns |
+
+### Key Takeaways:
+
+1. **The current Prisma schema only covers authentication** — Sign-in, Sign-up, JWT tokens, basic org structure. This is correct for Phase 1 auth, but you have ~80% of the platform tables still to implement.
+
+2. **The enterprise database plan (63 tables) is comprehensive and well-designed** — it covers all the requirements from project_context_Beta.txt. The main work is implementation.
+
+3. **Critical gaps for POC:**
+   - Session management (sessions, bookings)
+   - Compute tiers (compute_configs, compute_config_access)
+   - Storage volumes (user_storage_volumes)
+   - Infrastructure (nodes, base_images)
+   - University SSO federation (universities, university_idp_configs)
+
+4. **Minor corrections needed:**
+   - Add `os_choice` field to User
+   - Add proper indexes
+   - Add enum validation/constraints
+   - Add `universityId` to Organization
+
+Would you like me to:
+1. Generate the Phase 1 Prisma schema additions (sessions, bookings, nodes, compute_configs, storage volumes)?
+2. Create a detailed migration plan from current → full schema?
+3. Add the missing indexes and constraints to the current schema?

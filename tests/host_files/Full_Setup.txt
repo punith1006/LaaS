@@ -1,0 +1,263 @@
+sudo rm -rf /tmp/bash.bashrc.orig
+
+# Regenerate from current image
+docker run --rm --entrypoint cat \
+  ghcr.io/selkies-project/nvidia-egl-desktop:latest \
+  /etc/bash.bashrc > /tmp/bash.bashrc.orig
+
+# Append injection — fake_sysconf FIRST
+cat >> /tmp/bash.bashrc.orig << 'EOF'
+
+# LaaS resource interceptors
+if [ "${HAMI_INJECTED}" != "1" ]; then
+  export LD_PRELOAD="/usr/lib/fake_sysconf.so /usr/lib/libvgpu.so"
+  export HAMI_INJECTED=1
+  export SYSCONF_INJECTED=1
+  mkdir -p /tmp/vgpulock 2>/dev/null
+fi
+EOF
+
+chmod 644 /tmp/bash.bashrc.orig
+
+# Verify it's a file not a directory
+ls -la /tmp/bash.bashrc.orig
+tail -10 /tmp/bash.bashrc.orig
+
+
+------
+
+sudo mkdir -p /tmp/vgpulock-1 /tmp/vgpulock-2 /tmp/vgpulock-3 /tmp/vgpulock-4
+sudo chmod 777 /tmp/vgpulock-1 /tmp/vgpulock-2 /tmp/vgpulock-3 /tmp/vgpulock-4
+
+
+-----
+
+for i in 1 2 3 4; do
+  CPUSET_START=$(( ($i-1)*4 ))
+  CPUSET_END=$(( ($i-1)*4+3 ))
+  CPUSET="${CPUSET_START}-${CPUSET_END}"
+  mkdir -p /tmp/container-$i-cpu
+  echo "$CPUSET" > /tmp/container-$i-cpu/online
+  echo "$CPUSET" > /tmp/container-$i-cpu/present
+  echo "$CPUSET" > /tmp/container-$i-cpu/possible
+  echo ""         > /tmp/container-$i-cpu/offline
+  echo ""         > /tmp/container-$i-cpu/isolated
+  chmod 444 /tmp/container-$i-cpu/*
+done
+
+# 4. Recreate MPS log dir
+mkdir -p /tmp/nvidia-log
+
+# 5. Recreate bash.bashrc
+docker run --rm --entrypoint cat \
+  ghcr.io/selkies-project/nvidia-egl-desktop:latest \
+  /etc/bash.bashrc > /tmp/bash.bashrc.orig
+cat >> /tmp/bash.bashrc.orig << 'EOF'
+
+# LaaS resource interceptors
+if [ "${HAMI_INJECTED}" != "1" ]; then
+  export LD_PRELOAD="/usr/lib/fake_sysconf.so /usr/lib/libvgpu.so"
+  export HAMI_INJECTED=1
+  export SYSCONF_INJECTED=1
+  mkdir -p /tmp/vgpulock 2>/dev/null
+fi
+EOF
+chmod 644 /tmp/bash.bashrc.orig
+
+# 6. Recreate nvidia-smi wrapper
+cat > /tmp/nvidia-smi-wrapper << 'EOF'
+#!/bin/bash
+get_vram_limit_mib() {
+  if [ -n "$CUDA_DEVICE_MEMORY_LIMIT_0" ]; then
+    VAL="${CUDA_DEVICE_MEMORY_LIMIT_0,,}"
+    if [[ "$VAL" == *"m" ]]; then echo "${VAL//m/}"
+    elif [[ "$VAL" == *"g" ]]; then echo $(( ${VAL//g/} * 1024 ))
+    fi
+    return
+  fi
+  python3 -c "
+import struct
+with open('/tmp/cudevshr.cache','rb') as f:
+    d=f.read(4096)
+print(struct.unpack_from('<Q',d,1600)[0]//(1024*1024))
+" 2>/dev/null || echo "0"
+}
+case "$*" in
+  *"-pm"*|*"--persistence-mode"*|*"-pl"*|*"--power-limit"*|\
+  *"--query-gpu"*|*"--format"*|*"-i "*|*"--id"*)
+    exec env -u LD_PRELOAD /usr/bin/nvidia-smi.real "$@" ;;
+esac
+LIMIT_MIB=$(get_vram_limit_mib)
+REAL_OUT=$(env -u LD_PRELOAD /usr/bin/nvidia-smi.real "$@" 2>&1)
+if [ -n "$LIMIT_MIB" ] && [ "$LIMIT_MIB" -gt "0" ] 2>/dev/null; then
+  echo "$REAL_OUT" | sed "s|/ [0-9]*MiB|/ ${LIMIT_MIB}MiB|g"
+else
+  echo "$REAL_OUT"
+fi
+EOF
+chmod +x /tmp/nvidia-smi-wrapper
+
+# 7. Recreate passwd wrapper
+cat > /tmp/passwd-wrapper << 'EOF'
+#!/bin/bash
+exec env -u LD_PRELOAD /usr/bin/passwd.real "$@"
+EOF
+chmod +x /tmp/passwd-wrapper
+
+# 8. Recreate supervisord config
+cat > /tmp/supervisord-hami.conf << 'SUPERVISORD_EOF'
+[unix_http_server]
+file=/tmp/supervisor.sock
+chmod=0700
+
+[supervisord]
+logfile=/tmp/supervisord.log
+logfile_maxbytes=5MB
+logfile_backups=0
+loglevel=info
+pidfile=/tmp/supervisord.pid
+childlogdir=/tmp
+nodaemon=true
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix:///tmp/supervisor.sock
+
+[include]
+files = /etc/supervisor/conf.d/*.conf
+
+[program:entrypoint]
+command=bash -c "LD_PRELOAD=/usr/lib/fake_sysconf.so dbus-run-session -- /etc/entrypoint.sh"
+stdout_logfile=/tmp/entrypoint.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=1
+
+[program:selkies-gstreamer]
+command=bash -c "if [ \"$(echo ${KASMVNC_ENABLE} | tr '[:upper:]' '[:lower:]')\" != \"true\" ]; then LD_PRELOAD=/usr/lib/libvgpu.so /etc/selkies-gstreamer-entrypoint.sh; else sleep infinity; fi"
+stdout_logfile=/tmp/selkies-gstreamer-entrypoint.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=20
+
+[program:kasmvnc]
+command=bash -c "if [ \"$(echo ${KASMVNC_ENABLE} | tr '[:upper:]' '[:lower:]')\" = \"true\" ]; then /etc/kasmvnc-entrypoint.sh; else sleep infinity; fi"
+stdout_logfile=/tmp/kasmvnc-entrypoint.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=20
+
+[program:nginx]
+command=bash -c "until nc -z localhost ${SELKIES_PORT:-9081}; do sleep 0.5; done; /usr/sbin/nginx -g \"daemon off;\""
+stdout_logfile=/tmp/nginx.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=30
+
+[program:dbus]
+command=bash -c "mkdir -pm700 \"${XDG_RUNTIME_DIR}\"; chown -f \"$(id -nu):$(id -ng)\" \"${XDG_RUNTIME_DIR}\"; chmod -f 700 \"${XDG_RUNTIME_DIR}\"; dbus-daemon --system --nofork --nosyslog --nopidfile --address=\"${DBUS_SYSTEM_BUS_ADDRESS}\""
+environment=DISPLAY="%(ENV_DISPLAY)s",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SYSTEM_BUS_ADDRESS="%(ENV_DBUS_SYSTEM_BUS_ADDRESS)s"
+stdout_logfile=/tmp/dbus.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+priority=1
+
+[group:pipewire-group]
+programs=pipewire,wireplumber,pipewire-pulse
+priority=10
+
+[program:pipewire]
+command=bash -c "until [ -S \"/tmp/.X11-unix/X${DISPLAY#*:}\" ]; do sleep 0.5; done; dbus-run-session -- /usr/bin/pipewire"
+environment=PIPEWIRE_LATENCY="128/48000",DISPLAY="%(ENV_DISPLAY)s",DISABLE_RTKIT="y",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SYSTEM_BUS_ADDRESS="%(ENV_DBUS_SYSTEM_BUS_ADDRESS)s",PIPEWIRE_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",PULSE_RUNTIME_PATH="%(ENV_XDG_RUNTIME_DIR)s/pulse"
+stdout_logfile=/tmp/pipewire.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+
+[program:wireplumber]
+command=bash -c "until [ \"$(echo ${XDG_RUNTIME_DIR}/pipewire-*.lock)\" != \"${XDG_RUNTIME_DIR}/pipewire-*.lock\" ]; do sleep 0.5; done; dbus-run-session -- /usr/bin/wireplumber"
+environment=PIPEWIRE_LATENCY="128/48000",DISPLAY="%(ENV_DISPLAY)s",DISABLE_RTKIT="y",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SYSTEM_BUS_ADDRESS="%(ENV_DBUS_SYSTEM_BUS_ADDRESS)s",PIPEWIRE_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",PULSE_RUNTIME_PATH="%(ENV_XDG_RUNTIME_DIR)s/pulse"
+stdout_logfile=/tmp/wireplumber.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+
+[program:pipewire-pulse]
+command=bash -c "until [ \"$(echo ${XDG_RUNTIME_DIR}/pipewire-*.lock)\" != \"${XDG_RUNTIME_DIR}/pipewire-*.lock\" ]; do sleep 0.5; done; dbus-run-session -- /usr/bin/pipewire-pulse"
+environment=PIPEWIRE_LATENCY="128/48000",DISPLAY="%(ENV_DISPLAY)s",DISABLE_RTKIT="y",XDG_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",DBUS_SYSTEM_BUS_ADDRESS="%(ENV_DBUS_SYSTEM_BUS_ADDRESS)s",PIPEWIRE_RUNTIME_DIR="%(ENV_XDG_RUNTIME_DIR)s",PULSE_RUNTIME_PATH="%(ENV_XDG_RUNTIME_DIR)s/pulse"
+stdout_logfile=/tmp/pipewire-pulse.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=0
+redirect_stderr=true
+stopasgroup=true
+stopsignal=INT
+autostart=true
+autorestart=true
+SUPERVISORD_EOF
+
+# 9. Final verification
+echo "=== File check ==="
+for f in /tmp/bash.bashrc.orig /tmp/supervisord-hami.conf /tmp/nvidia-smi-wrapper /tmp/passwd-wrapper; do
+  [ -f "$f" ] && echo "✅ $f" || echo "❌ MISSING: $f"
+done
+
+echo "=== vgpulock dirs ==="
+ls -la /tmp/ | grep vgpulock
+
+echo "=== CPU sys files ==="
+ls /tmp/container-3-cpu/
+
+
+-----
+# Restore NFS mount
+sudo mount -t nfs4 127.0.0.1:/datapool/users/testuser3 /mnt/nfs/users/testuser3 2>/dev/null || \
+  echo "NFS already mounted or pool not imported"
+
+# Check ZFS pool
+sudo zpool list
+# If pool not imported:
+sudo zpool import -d /vg_containers datapool
+
+# Remount NFS after pool import
+sudo exportfs -ra
+sudo systemctl restart nfs-kernel-server
+sudo mount -t nfs4 127.0.0.1:/datapool/users/testuser3 /mnt/nfs/users/testuser3
+
+# Check MPS
+sudo systemctl status cuda-mps | grep Active
+sudo systemctl status lxcfs | grep Active

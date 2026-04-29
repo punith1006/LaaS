@@ -1,0 +1,368 @@
+Objective
+Comprehensive analysis of the LaaS (Lab as a Service) backend infrastructure, including Prisma database schema, NestJS module architecture, API endpoints, business logic, and implementation status.
+FINDINGS
+1. Database Schema (Prisma)
+The backend uses PostgreSQL with 60+ models organized into 15 logical domains:DOMAIN 0: CORE AUTH & IDENTITY
+User: Core user entity with auth type (SSO/local/OAuth), Keycloak integration, storage provisioning status, 2FA support
+OtpVerification: 10-minute OTP codes for email verification with attempt tracking
+UserPolicyConsent: GDPR compliance tracking
+RefreshToken: Token version management with revocation support
+LoginHistory: Audit trail of login attempts with geoLocation tracking
+Role, Permission, RolePermission, UserOrgRole: RBAC system with expiring role assignments
+DOMAIN 1: UNIVERSITIES & IDP CONFIGURATION
+University: Institution management with domain suffix matching for auto-detection
+UniversityIdpConfig: SAML/OAuth IDP configuration for SSO (Keycloak integration)
+DOMAIN 2: DEPARTMENTS, GROUPS & USER PROFILES
+Department: Hierarchical department structure with head assignments
+UserGroup: Organizational groups (hierarchical) with max member limits
+UserProfile: Extended user info (bio, skills, ID proof verification, onboarding completion)
+UserDepartment, UserGroupMember: Membership tracking
+DOMAIN 4: STORAGE AND OS LIFECYCLE
+UserStorageVolume: Persistent user storage (5GB free SSO default, purchased extensions)
+ZFS/NFS integration with quota tracking
+Allocation types: sso_default, purchased, admin_granted, user_created
+Status: provisioning, active, wiping, wiped, error
+Price: 700 paise/GB/month (₹7 default)
+StorageExtension: History of storage upgrades with payment tracking
+OsSwitchHistory: OS choice changes (Linux distributions)
+UserFile: File metadata tracking with retention and deletion scheduling
+DOMAIN 5: INFRASTRUCTURE
+Node: Compute nodes with resource tracking (vCPU, memory, GPU VRAM)
+Network IPs: management, compute, storage
+Status: healthy, degraded, offline, maintenance, draining
+Heartbeat and resource sync tracking
+BaseImage: Container images with software manifest and default flag
+NodeBaseImage: Node-to-image availability with pull status
+DOMAIN 6: COMPUTE CONFIGS
+ComputeConfig: Session templates (GPU Desktop, Jupyter, CodeServer, CLI)
+Pricing per hour in paise (INR)
+GPU exclusive/shared mode with HAMI SM percentage
+Max concurrent per node limit
+ComputeConfigAccess: Role-based and org-based access with price overrides
+DOMAIN 7: SESSIONS AND BOOKINGS
+Booking: Scheduled compute reservations
+Status: scheduled, launched, completed, cancelled, no_show, expired
+Resource requirements: vCPU, memory, GPU VRAM
+Session: Active or terminated compute sessions
+Session types: stateful_desktop, ephemeral_jupyter, ephemeral_codeserver, ephemeral_cli
+Storage mode: stateful, ephemeral (default)
+Cumulative cost tracking and allocation snapshots for billing accuracy
+Termination reasons: user_requested, idle_timeout, resource_exhaustion, spend_limit_exceeded, credit_exhausted, node_failure, admin_terminated, etc.
+Connection details: nginx port, display number, session URL, NFS mount path
+SessionEvent: Event audit trail (activity tracking, reconnects)
+NodeResourceReservation: Immutable audit records of resource allocation per session
+DOMAIN 8: BILLING, WALLET, SUBSCRIPTIONS
+Wallet: User account balance management
+Spend limit tracking (daily/monthly/date_range)
+Warning thresholds (85% spent, 1-hour runway)
+Lifetime credits/spent tracking
+Frozen flag for enforcement
+WalletHold: Pre-authorized holds for active sessions (for session resource estimation)
+Status: active, captured, released, expired
+WalletTransaction: Immutable transaction log (audit trail)
+BillingCharge: Immutable billing records (compute and storage charges)
+Charge type: compute, storage
+Denormalized cumulative cost in Session for fast queries
+CreditPackage: Purchasable credit bundles with bonus structure
+SubscriptionPlan, Subscription: Recurring subscription support (GPU hours included)
+OrgContract: Enterprise contract management with seat limits and credit pools
+OrgResourceQuota: Organization-level resource constraints
+PaymentTransaction: Razorpay payment gateway integration
+Gateway: razorpay, stripe (extensible)
+Status tracking and refund support
+Invoice, InvoiceLineItem: Invoice generation for audit
+DOMAIN 9: ACADEMIC / LMS
+Course: Educational courses with instructor assignment
+CourseEnrollment: Student enrollment tracking
+Lab: Lab assignments with preloaded notebooks/datasets
+LabGroupAssignment: Bulk assignment to user groups with availability windows
+LabAssignment: Individual lab tasks with rubrics and late submission policies
+LabSubmission: Student submissions with attempt tracking
+LabGrade: Grading with rubric scores
+CourseworkContent: Educational content library (videos, docs, etc.)
+DOMAIN 10: MENTORSHIP
+MentorProfile: Mentor profiles with expertise areas and hourly rates
+MentorAvailabilitySlot: Recurring/specific date availability
+MentorBooking: Session bookings with payment integration
+MentorReview: Post-session ratings
+DOMAIN 11: COMMUNITY & GAMIFICATION
+Discussion: Course/Lab/Org-level discussions
+DiscussionReply: Threaded replies with accepted answer marking
+ProjectShowcase: User portfolio projects with view/like counts
+Achievement: Gamification achievements with criteria and points
+UserAchievement: Achievement tracking with earned timestamps
+DOMAIN 12: NOTIFICATIONS
+NotificationTemplate: Template-based email/SMS notifications
+Notification: Sent notifications with delivery tracking and retry counts
+DOMAIN 13: AUDIT & USER LIFECYCLE
+AuditLog: Immutable security/compliance audit trail (NEVER deleted)
+UserDeletionRequest: User account deletion with 30-day grace period
+DOMAIN 14: UTILITY & PLATFORM CONFIG
+SystemSetting: Key-value configuration store
+FeatureFlag: Feature toggles with rollout percentages and org whitelist
+Announcement: Platform announcements with org scope and expiry
+DOMAIN 15: SUPPORT & FEEDBACK
+SupportTicket: Support tickets with category/priority mapping and assignment
+Status: open, in_progress, waiting_on_user, resolved, closed
+Priority: low, medium, high, critical
+TicketMessage: Ticket conversation thread with internal flag
+UserFeedback: In-app feedback with admin response
+ENUMS DEFINED:
+AuthType: university_sso, public_local, public_oauth
+OrgType: university, partner_college, enterprise, public_
+SessionStatus: pending, starting, running, reconnecting, stopping, ended, failed, terminated_idle, terminated_overuse
+SessionType: stateful_desktop, ephemeral_jupyter, ephemeral_codeserver, ephemeral_cli
+StorageVolumeStatus: provisioning, active, wiping, wiped, error
+BookingStatus: scheduled, launched, completed, cancelled, no_show, expired
+WalletHoldStatus: active, captured, released, expired
+NodeStatus: healthy, degraded, offline, maintenance, draining
+SubscriptionStatus: active, past_due, cancelled, expired
+TicketStatus: open, in_progress, waiting_on_user, resolved, closed
+TicketPriority: low, medium, high, critical
+StorageMode: stateful, ephemeral
+SessionTerminationReason: 11 distinct reasons tracked
+2. Backend Architecture (NestJS)
+Tech Stack:
+Framework: NestJS 11 with Fastify (high-performance HTTP)
+Database ORM: Prisma 6 with PostgreSQL
+Auth: JWT + Passport + OTP email verification + Keycloak integration
+Email: NestJS Mailer with Handlebars templates
+Payments: Razorpay SDK
+Scheduling: NestJS Schedule (cron jobs)
+File Upload: Fastify Multipart (500MB limit)
+Validation: class-validator, class-transformer
+PDF Generation: pdfkit
+OAuth: jwks-rsa for JWT verification
+Module Structure:
+plaintext
+src/
+├── app.module.ts (root module importing all 10 modules)
+├── main.ts (bootstrap with Fastify, validation, CORS, exception handling)
+├── common/ → http-exception.filter.ts
+├── prisma/ → PrismaModule for database access
+├── auth/ → AuthModule (7 files)
+├── storage/ → StorageModule (3 files)
+├── compute/ → ComputeModule (4 files) - 92KB service (core logic)
+├── billing/ → BillingModule (3 files)
+├── payment/ → PaymentModule (4 files)
+├── dashboard/ → DashboardModule (3 files)
+├── user/ → UserModule (3 files)
+├── audit/ → AuditModule (2 files)
+├── support/ → SupportModule (3 files)
+└── mail/ → MailModule (2 files)
+Key Files:
+backend/package.json: 27 dependencies, NestJS 11, Prisma 6, jest testing
+backend/tsconfig.json: ES2023 target, strict null checks, incremental compilation
+backend/nest-cli.json: Standard NestJS CLI config
+backend/.env.example: DATABASE_URL, JWT secrets, SMTP, storage provisioning script, session orchestration
+3. API Endpoints
+Authentication Module (api/auth):
+POST /check-email — Verify email availability, auto-detect institution
+POST /send-otp — Generate 6-digit OTP (10-min expiry)
+POST /resend-otp — Rate-limited to 3 per 15 minutes
+POST /verify-otp — Create user + issue tokens (access + refresh)
+POST /login — Email/password authentication
+POST /refresh — Refresh access token
+POST /oauth/callback — Keycloak SSO callback handler
+POST /forgot-password — Password reset flow
+GET /me (JWT required) — Current user profile
+Compute Module (api/compute):
+GET /configs — Available session templates with sortOrder
+GET /resources/usage — Total/used/available cluster resources
+POST /sessions (JWT) — Launch session (validates wallet, storage, resources)
+GET /sessions (JWT) — List user sessions with uptime + cost
+GET /sessions/:id (JWT) — Session detail with wallet holds + charges
+POST /sessions/:id/terminate (JWT) — End session (idempotent)
+POST /sessions/:id/restart (JWT) — Restart container
+Storage Module (api/storage):
+Provision user storage (5GB default for SSO)
+Extension purchasing workflow
+OS switching (with volume migration)
+Quota warnings
+Billing Module (api/billing):
+Storage billing cron job (hourly)
+Spend limit enforcement
+Runway warnings (1 hour before exhaustion)
+Payment Module (api/payment):
+POST /create-order (JWT) — Create Razorpay order
+POST /verify (JWT) — Verify payment, credit wallet
+GET /transactions (JWT) — Paginated payment history
+GET /transactions/:id (JWT) — Transaction detail
+GET /invoice/:id/download (JWT) — PDF invoice download
+Support Module (api/support):
+POST /tickets (JWT) — Create support ticket with email notification
+POST /tickets/list (JWT) — Get user's tickets
+User Module (api/user):
+POST /onboarding (JWT) — Save profile (profession, expertise, use case)
+GET /onboarding-status (JWT) — Onboarding completion status
+4. Authentication & Authorization
+Implementation:
+JWT-based: 15-minute access tokens, 7-day refresh tokens
+Keycloak integration: SAML/OAuth2 IDP for SSO users
+OTP verification: 6-digit code via email, rate-limited resends
+Bcrypt hashing: 10 salt rounds
+JwtAuthGuard: Protects endpoints requiring authentication
+Institution auto-detection: Email domain matching to University records
+Token Versioning:
+User.tokenVersion field for logout-everywhere capability
+RefreshToken.tokenVersion for per-device revocation
+5. Key Business Logic
+Session Management:
+Resource-based allocation: vCPU, memory, GPU VRAM tracked per session
+Wallet holds: Pre-authorized amount before session launch
+Status transitions: pending → starting → running → (reconnecting) → stopping → ended
+Idle timeout, spend limit enforcement, node failure handling
+Reconnection tracking with exponential backoff (Session.reconnectCount)
+Session orchestration via HTTP API (100.100.66.101:9998 default)
+Billing System:
+Compute: Duration × rate_per_hour (tracked in BillingCharge)
+Storage: Quota_GB × price_per_GB_per_month (hourly processing at 00:00)
+Spend limits: Daily/monthly/date_range with 85% warning + 1-hour runway warning
+Wallet holds: Estimated cost pre-authorized before session launch
+Immutable records: BillingCharge and WalletTransaction tables never deleted (audit trail)
+Storage Lifecycle:
+5GB free SSO allocation (sso_default type, never charged)
+Purchased extensions: Payment-linked StorageExtension records
+OS switching: Creates OsSwitchHistory, may migrate old volume to new
+Status workflow: provisioning → active → (wiping) → wiped
+ZFS datasets + NFS exports managed on external host
+GPU Fractional Sharing:
+HAMI (Hardware-Managed isolation): SM percentage configurable per config
+GPU VRAM allocation: Exclusive or shared modes
+Node has total GPU VRAM; sessions reserve allocated amount
+Actual vs. config VRAM tracked for accuracy
+Credit Validation:
+Pre-session: Wallet balance >= estimated session cost
+During session: Periodic spend limit checks
+Post-session: Final billing charge created, wallet balance debited
+Frozen wallet: Prevents new session launches
+6. Scripts & Utilities
+Billing/Testing Scripts:
+setup-complete-billing-data.ts — Creates test user with 7 days of billing data
+add-billing-data.ts — Backfill past billing records
+populate-today-billing.ts — Generate hourly today's billing
+check-all-storage.ts, check-today-data.ts — Diagnostic queries
+set-spend-limit.ts, setup-test-user-billing.ts — Test setup
+clear-user-data.ts, clear-all-users.ts — Reset test data
+Storage/Infrastructure:
+provision-user-storage.sh — Shell script for NFS/ZFS provisioning
+host-precheck.sh, host-deploy-sudo-isolation.sh — Host validation
+Migrations:
+Prisma migrations tracked in backend/prisma/migrations/
+Seed script: backend/prisma/seed.ts (runs on prisma db seed)
+Cleanup scripts: cleanup-dev-data.ts, cleanup-storage.ts
+7. Email Templates
+Located in backend/templates/ (Handlebars format):
+otp.hbs — OTP verification email with 6-digit code
+welcome.hbs — Onboarding welcome email
+spend-limit-warning.hbs — 85% spend threshold alert
+spend-limit-enforced.hbs — Hard limit reached, sessions terminated
+runway-warning.hbs — 1-hour before credit exhaustion
+runway-termination.hbs — Credits exhausted, sessions terminated
+support-ticket-admin.hbs — Admin notification with ticket details
+support-ticket-confirmation.hbs — User confirmation with ticket ID
+All templates use inline CSS for email client compatibility.
+8. Environment Configuration
+Required .env variables:
+plaintext
+DATABASE_URL=postgresql://user:password@localhost:5432/laas
+PORT=3001
+CORS_ORIGIN=http://localhost:3000
+JWT_SECRET=<random-secure-string>
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USERNAME=<gmail-user>
+SMTP_PASSWORD=<app-password>
+SMTP_FROM=noreply@example.com
+USER_STORAGE_PROVISION_SCRIPT=/path/to/provision-user-storage.sh
+  (or)
+USER_STORAGE_PROVISION_URL=http://100.100.66.101:9999/provision
+USER_STORAGE_PROVISION_SECRET=<shared-secret>
+Optional environment variables:
+SESSION_ORCHESTRATION_URL (default: http://100.100.66.101:9998)
+SESSION_ORCHESTRATION_SECRET
+FRONTEND_URL (for email links, default: http://localhost:3000)
+SUPPORT_ADMIN_EMAIL (default: punith.vs74064@gmail.com)
+9. Current Implementation Status
+COMPLETE/PRODUCTION-READY:
+Authentication (OTP, JWT, Keycloak SSO)
+Database schema (Prisma) with 60+ models
+Session management (CRUD operations)
+Billing system (hourly storage, compute charging)
+Payment integration (Razorpay)
+Email notifications (OTP, spend limit, runway, support tickets)
+Support ticketing system (create + list)
+User onboarding profile
+Audit logging (immutable records)
+RBAC (Role/Permission system)
+Department + User Group management
+PARTIALLY IMPLEMENTED:
+Dashboard module (exists, 28KB service - likely metrics/analytics)
+Compute configs access control (supports org + role overrides)
+Lab/Course LMS (models exist, endpoints not fully traced)
+Mentorship booking (models exist)
+Discussion/community features (models exist)
+Gamification achievements (models exist)
+Feedback collection (models exist)
+CRITICAL BUSINESS LOGIC:
+Spend limit enforcement: Active, with session termination
+Runway warnings: 1-hour threshold with session termination
+Wallet holds: Pre-authorization before session launch
+Session termination reasons: 11 tracked (idle, overuse, credit, node failure, admin, etc.)
+Storage provisioning: Calls external host service via URL or script
+Key Architectural Decisions
+Immutable Audit Tables: BillingCharge, WalletTransaction, AuditLog, NodeResourceReservation never deleted (compliance)
+Denormalized Costs: Session.cumulativeCostCents cached for fast queries
+Resource Snapshots: Allocation snapshot stored at launch to prevent config changes mid-session affecting billing
+Serializable Transactions: Session launch uses isolation level to prevent double-allocation
+Fastify over Express: Better performance for high-throughput file uploads (500MB limit)
+External Session Orchestration: HTTP API calls to separate service (not in-process)
+Wallet Holds Pattern: Pre-authorized amount prevents overdraft
+File Paths (Absolute)
+Database:
+/c:\Users\Punith\LaaS\backend\prisma\schema.prisma (2084 lines, all 60+ models)
+/c:\Users\Punith\LaaS\backend\prisma\migrations/ (13 migration files)
+Core Application:
+/c:\Users\Punith\LaaS\backend\src\app.module.ts (root module)
+/c:\Users\Punith\LaaS\backend\src\main.ts (bootstrap)
+Modules:
+/c:\Users\Punith\LaaS\backend\src\auth/ (auth.service: 722 lines)
+/c:\Users\Punith\LaaS\backend\src\compute/ (compute.service: 2702 lines - largest)
+/c:\Users\Punith\LaaS\backend\src\billing/ (billing.service: 557 lines)
+/c:\Users\Punith\LaaS\backend\src\storage/ (storage.service: 23.7KB)
+/c:\Users\Punith\LaaS\backend\src\payment/ (payment.service: 15.8KB)
+/c:\Users\Punith\LaaS\backend\src\support/ (support.service: 159 lines)
+Configuration & Scripts:
+/c:\Users\Punith\LaaS\backend\package.json (dependencies, scripts)
+/c:\Users\Punith\LaaS\backend\tsconfig.json (TypeScript config)
+/c:\Users\Punith\LaaS\backend\nest-cli.json (NestJS config)
+/c:\Users\Punith\LaaS\backend\.env.example (environment template)
+/c:\Users\Punith\LaaS\backend\scripts/ (24 utility scripts)
+Email Templates:
+/c:\Users\Punith\LaaS\backend\templates/ (8 Handlebars templates)
+Risk Assessment
+High-Priority Observations:
+Support admin email hardcoded fallback (punith.vs74064@gmail.com) — should be env-required
+Compute service is 2702 lines — potential for refactoring into smaller services
+Storage provisioning depends on external service — single point of failure
+Session orchestration timeout: 30 seconds — may be too aggressive for slow networks
+Wallet frozen flag prevents all sessions — no soft limit option (fine-grained control)
+Strengths:
+Immutable audit tables ensure compliance
+Transaction isolation prevents resource double-allocation
+Comprehensive error handling with custom exception filter
+Support for multiple payment gateways (extensible gateway field)
+Keycloak integration supports enterprise SSO
+Rate limiting on OTP resend (3 per 15 min)
+Recommendations
+Documentation: Add API documentation (Swagger/OpenAPI for all 10+ modules)
+Error Handling: Standardize error responses across all modules
+Testing: Increase unit test coverage (currently only app.e2e-spec.ts exists)
+Monitoring: Add logging for session orchestration calls (critical integration point)
+Database Indexes: Verify indexes on high-query tables (Session, BillingCharge, Wallet)
+Feature Flags: Use FeatureFlag model for gradual rollouts of new billing features
+Refactoring: Extract 800+ line methods in compute.service into smaller utilities
+This completes the comprehensive backend analysis. The LaaS backend is a feature-rich, production-grade NestJS application with sophisticated billing, session management, and multi-tenant architecture.

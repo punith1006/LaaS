@@ -1,0 +1,2051 @@
+#!/usr/bin/env python3
+"""
+LaaS storage provision HTTP service. Run on the host (ZFS/NFS node).
+Expects PROVISION_SECRET in env; validates X-Provision-Secret on every POST /provision.
+Calls provision-user-storage.sh (via sudo) for ZFS create; returns structured errors and logs.
+"""
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from typing import Optional
+
+from flask import Flask, request, jsonify, send_file
+from werkzeug.utils import secure_filename
+
+app = Flask(__name__)
+log = logging.getLogger("werkzeug")
+log.setLevel(logging.WARNING)
+
+PROVISION_SECRET = os.environ.get("PROVISION_SECRET")
+SCRIPT_PATH = os.environ.get("PROVISION_SCRIPT_PATH", "/usr/local/bin/provision-user-storage.sh")
+STORAGE_UID_PATTERN = re.compile(r"^u_[0-9a-f]{24}$")
+QUOTA_GB_MIN, QUOTA_GB_MAX = 1, 50
+REQUIRED_QUOTA_GB = 5
+
+# Optional NFS automount (single-host POC).
+# When ENABLE_NFS_AUTOMOUNT=true, the service will:
+# - Ensure an NFS export for /datapool/users/<storage_uid> on this host
+# - Ensure a mount at /mnt/nfs/users/<storage_uid> (or NFS_MOUNT_ROOT/<storage_uid>)
+# - Ensure a matching /etc/fstab entry
+NFS_AUTOMOUNT_ENABLED = os.environ.get("ENABLE_NFS_AUTOMOUNT", "false").lower() == "true"
+NFS_EXPORT_CLIENT = os.environ.get("NFS_EXPORT_CLIENT", "127.0.0.1")
+NFS_MOUNT_ROOT = os.environ.get("NFS_MOUNT_ROOT", "/mnt/nfs/users")
+EXPORTS_PATH = "/etc/exports"
+FSTAB_PATH = "/etc/fstab"
+
+# NVMe-oF target configuration
+STORAGE_IP = os.environ.get("STORAGE_IP", "")  # 10GbE interface IP (e.g. 10.10.100.99)
+NVMET_CONFIGFS = "/sys/kernel/config/nvmet"
+NVMET_PORT_PATH = f"{NVMET_CONFIGFS}/ports/1"
+NVMET_PORT_NUM = 4420
+NVMET_TARGETS_FILE = "/etc/laas/nvmet-targets.json"
+NVMET_TARGETS_FILE_FALLBACK = os.path.expanduser("~/storage-provision/nvmet-targets.json")
+NVME_LOG_PREFIX = "[NVME-TARGET]"
+MIGRATE_LOG_PREFIX = "[MIGRATE]"
+IP_PATTERN = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
+
+
+def log_event(request_id: str, client_ip: str, storage_uid: str, outcome: str, error: Optional[str] = None):
+    payload = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "request_id": request_id,
+        "client_ip": client_ip,
+        "storage_uid": storage_uid,
+        "outcome": outcome,
+    }
+    if error:
+        payload["error"] = error[:500]
+    print(json.dumps(payload), flush=True)
+
+
+def nvme_log(msg: str):
+    """Log an NVMe-oF target operation."""
+    print(f"{NVME_LOG_PREFIX} {datetime.now(timezone.utc).isoformat()} {msg}", flush=True)
+
+
+def migrate_log(msg: str):
+    """Log a migration operation."""
+    print(f"{MIGRATE_LOG_PREFIX} {datetime.now(timezone.utc).isoformat()} {msg}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# NVMe-oF configfs helpers
+# ---------------------------------------------------------------------------
+
+def _write_sysfs(path: str, value: str) -> Optional[str]:
+    """Write a value to a sysfs/configfs file via sudo tee. Returns None on success, else error."""
+    ok, out = _run_cmd(["sudo", "bash", "-c", f"echo -n '{value}' > '{path}'"])
+    if not ok:
+        return f"Failed to write '{value}' to {path}: {out}"
+    return None
+
+
+def _read_sysfs(path: str) -> Optional[str]:
+    """Read a sysfs/configfs file. Returns content or None on failure."""
+    ok, out = _run_cmd(["sudo", "cat", path])
+    if ok:
+        return out.strip()
+    return None
+
+
+def ensure_nvmeof_port(port_path: str, storage_ip: str, port_num: int) -> Optional[str]:
+    """
+    Ensure the shared NVMe-oF port directory exists with correct transport config.
+    Only writes transport attributes if the port directory is newly created.
+    Returns None on success, else error string.
+    """
+    if os.path.isdir(port_path):
+        nvme_log(f"Port {port_path} already exists, skipping creation")
+        return None
+
+    nvme_log(f"Creating NVMe-oF port at {port_path} (tcp:{storage_ip}:{port_num})")
+    ok, out = _run_cmd(["sudo", "mkdir", "-p", port_path])
+    if not ok:
+        return f"Failed to create port dir {port_path}: {out}"
+
+    # Set transport attributes (must be done before any subsystem is linked)
+    for attr, val in [
+        ("addr_trtype", "tcp"),
+        ("addr_trsvcid", str(port_num)),
+        ("addr_traddr", storage_ip),
+        ("addr_adrfam", "ipv4"),
+    ]:
+        err = _write_sysfs(f"{port_path}/{attr}", val)
+        if err:
+            return err
+
+    nvme_log(f"Port created: tcp {storage_ip}:{port_num}")
+    return None
+
+
+def setup_nvmeof_target(storage_uid: str, zvol_path: str) -> Optional[str]:
+    """
+    Set up NVMe-oF target for a zvol via configfs.
+    Creates subsystem, namespace, and links to the shared port.
+    Returns None on success, else error string.
+    """
+    if not STORAGE_IP:
+        return "STORAGE_IP environment variable not set â€” cannot configure NVMe-oF target"
+
+    subsystem_name = f"laas-{storage_uid}"
+    subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
+    ns_path = f"{subsys_path}/namespaces/1"
+    symlink_target = f"{NVMET_PORT_PATH}/subsystems/{subsystem_name}"
+
+    nvme_log(f"Setting up NVMe-oF target: subsystem={subsystem_name}, zvol={zvol_path}")
+
+    # 1. Create subsystem directory
+    ok, out = _run_cmd(["sudo", "mkdir", "-p", subsys_path])
+    if not ok:
+        return f"Failed to create subsystem dir {subsys_path}: {out}"
+    nvme_log(f"Created subsystem directory: {subsys_path}")
+
+    # 2. Allow any host to connect
+    err = _write_sysfs(f"{subsys_path}/attr_allow_any_host", "1")
+    if err:
+        return err
+    nvme_log("Set attr_allow_any_host=1")
+
+    # 3. Create namespace 1
+    ok, out = _run_cmd(["sudo", "mkdir", "-p", ns_path])
+    if not ok:
+        return f"Failed to create namespace dir {ns_path}: {out}"
+    nvme_log(f"Created namespace directory: {ns_path}")
+
+    # 4. Set device path to zvol block device
+    err = _write_sysfs(f"{ns_path}/device_path", zvol_path)
+    if err:
+        return err
+    nvme_log(f"Set device_path={zvol_path}")
+
+    # 5. Enable namespace
+    err = _write_sysfs(f"{ns_path}/enable", "1")
+    if err:
+        return err
+    nvme_log("Enabled namespace 1")
+
+    # 6. Ensure shared port exists
+    err = ensure_nvmeof_port(NVMET_PORT_PATH, STORAGE_IP, NVMET_PORT_NUM)
+    if err:
+        return err
+
+    # 7. Link subsystem to port
+    if not os.path.exists(symlink_target):
+        ok, out = _run_cmd(["sudo", "ln", "-s", subsys_path, symlink_target])
+        if not ok:
+            return f"Failed to symlink subsystem to port: {out}"
+        nvme_log(f"Linked subsystem to port: {symlink_target}")
+    else:
+        nvme_log(f"Subsystem already linked to port")
+
+    nvme_log(f"NVMe-oF target setup complete for {subsystem_name}")
+    return None
+
+
+def teardown_nvmeof_target(storage_uid: str) -> Optional[str]:
+    """
+    Tear down NVMe-oF target for a storage_uid.
+    Removes symlink, disables namespace, removes namespace dir, removes subsystem dir.
+    Returns None on success, else error string.
+    """
+    subsystem_name = f"laas-{storage_uid}"
+    subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
+    ns_path = f"{subsys_path}/namespaces/1"
+    symlink_target = f"{NVMET_PORT_PATH}/subsystems/{subsystem_name}"
+
+    nvme_log(f"Tearing down NVMe-oF target: {subsystem_name}")
+
+    # 1. Unlink subsystem from port (remove symlink)
+    if os.path.exists(symlink_target):
+        ok, out = _run_cmd(["sudo", "rm", "-f", symlink_target])
+        if not ok:
+            return f"Failed to remove port symlink {symlink_target}: {out}"
+        nvme_log(f"Removed port symlink: {symlink_target}")
+
+    # 2. Disable namespace (write "0" to enable)
+    if os.path.exists(f"{ns_path}/enable"):
+        err = _write_sysfs(f"{ns_path}/enable", "0")
+        if err:
+            nvme_log(f"Warning: failed to disable namespace: {err}")
+        else:
+            nvme_log("Disabled namespace 1")
+
+    # 3. Remove namespace directory
+    if os.path.isdir(ns_path):
+        ok, out = _run_cmd(["sudo", "rmdir", ns_path])
+        if not ok:
+            return f"Failed to remove namespace dir {ns_path}: {out}"
+        nvme_log(f"Removed namespace dir: {ns_path}")
+
+    # 4. Remove subsystem directory
+    if os.path.isdir(subsys_path):
+        ok, out = _run_cmd(["sudo", "rmdir", subsys_path])
+        if not ok:
+            return f"Failed to remove subsystem dir {subsys_path}: {out}"
+        nvme_log(f"Removed subsystem dir: {subsys_path}")
+
+    nvme_log(f"NVMe-oF target teardown complete for {subsystem_name}")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# NVMe-oF target persistence (survives reboots)
+# ---------------------------------------------------------------------------
+
+def _load_nvmet_targets() -> dict:
+    """Load saved NVMe-oF targets from JSON file (primary or fallback)."""
+    for path in (NVMET_TARGETS_FILE, NVMET_TARGETS_FILE_FALLBACK):
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            if "targets" not in data:
+                data["targets"] = {}
+            return data
+        except (json.JSONDecodeError, OSError) as e:
+            nvme_log(f"Warning: failed to load {path}: {e}")
+            continue
+    return {"targets": {}}
+
+
+def _save_nvmet_targets(data: dict):
+    """Save NVMe-oF targets to JSON file (primary with fallback to user-writable location)."""
+    for path in (NVMET_TARGETS_FILE, NVMET_TARGETS_FILE_FALLBACK):
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                json.dump(data, f, indent=2)
+            return
+        except OSError as e:
+            nvme_log(f"Warning: failed to save {path}: {e}")
+            continue
+    nvme_log("Warning: failed to save NVMe-oF targets to any location")
+
+
+def _add_nvmet_target_record(storage_uid: str, zvol_path: str):
+    """Add a target record to the persistence file."""
+    data = _load_nvmet_targets()
+    subsystem_name = f"laas-{storage_uid}"
+    data["targets"][subsystem_name] = {
+        "storage_uid": storage_uid,
+        "zvol_path": zvol_path,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_nvmet_targets(data)
+    nvme_log(f"Saved target record: {subsystem_name}")
+
+
+def _remove_nvmet_target_record(storage_uid: str):
+    """Remove a target record from the persistence file."""
+    data = _load_nvmet_targets()
+    subsystem_name = f"laas-{storage_uid}"
+    if subsystem_name in data["targets"]:
+        del data["targets"][subsystem_name]
+        _save_nvmet_targets(data)
+        nvme_log(f"Removed target record: {subsystem_name}")
+
+
+def rebuild_nvmet_targets_on_startup():
+    """
+    On Flask startup, rebuild NVMe-oF configfs targets from the persistence JSON.
+    This handles the case where configfs was lost after a reboot.
+    """
+    if not STORAGE_IP:
+        nvme_log("STORAGE_IP not set â€” skipping NVMe-oF target rebuild")
+        return
+
+    data = _load_nvmet_targets()
+    targets = data.get("targets", {})
+    if not targets:
+        nvme_log("No saved NVMe-oF targets to rebuild")
+        return
+
+    nvme_log(f"Rebuilding {len(targets)} NVMe-oF target(s) from persistence file")
+    for subsystem_name, info in targets.items():
+        storage_uid = info.get("storage_uid", "")
+        zvol_path = info.get("zvol_path", "")
+        if not storage_uid or not zvol_path:
+            nvme_log(f"Skipping invalid target record: {subsystem_name}")
+            continue
+
+        # Check if subsystem already exists in configfs
+        subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
+        if os.path.isdir(subsys_path):
+            nvme_log(f"Target {subsystem_name} already exists in configfs, skipping")
+            continue
+
+        # Check if zvol block device exists
+        if not os.path.exists(zvol_path):
+            nvme_log(f"Warning: zvol {zvol_path} not found for {subsystem_name}, skipping")
+            continue
+
+        err = setup_nvmeof_target(storage_uid, zvol_path)
+        if err:
+            nvme_log(f"Failed to rebuild target {subsystem_name}: {err}")
+        else:
+            nvme_log(f"Rebuilt target {subsystem_name} successfully")
+
+    nvme_log("NVMe-oF target rebuild complete")
+
+
+def _run_cmd(cmd: list[str], timeout: int = 10) -> tuple[bool, str]:
+    """Run a command; return (success, stderr_or_stdout)."""
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        out = (result.stderr or result.stdout or "").strip()
+        return result.returncode == 0, out
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+        return False, str(e)
+
+
+def pre_check_zfs_ready() -> Optional[str]:
+    """Verify pool and parent dataset exist. Returns None if ready, else error message."""
+    ok, _ = _run_cmd(["zpool", "list", "-H", "datapool"])
+    if not ok:
+        return "ZFS pool datapool not available"
+    ok, _ = _run_cmd(["zfs", "list", "-H", "datapool/users"])
+    if not ok:
+        return "ZFS dataset datapool/users not available"
+    return None
+
+
+def _ensure_exports_line(storage_uid: str) -> Optional[str]:
+    """Ensure /etc/exports has an export line for this subdataset (idempotent)."""
+    export_line = f"/datapool/users/{storage_uid}  {NFS_EXPORT_CLIENT}(rw,sync,no_subtree_check,no_root_squash)"
+    grep_pattern = f"^/datapool/users/{storage_uid} "
+    ok, _ = _run_cmd(
+        [
+            "sudo",
+            "bash",
+            "-lc",
+            f"grep -q '{grep_pattern}' {EXPORTS_PATH} 2>/dev/null || echo '{export_line}' >> {EXPORTS_PATH}",
+        ]
+    )
+    if not ok:
+        return f"Failed to update {EXPORTS_PATH} for {storage_uid}"
+
+    ok, _ = _run_cmd(["sudo", "exportfs", "-ra"])
+    if not ok:
+        return "Failed to reload NFS exports (exportfs -ra)"
+    return None
+
+
+def _ensure_mount(storage_uid: str) -> Optional[str]:
+    """Ensure mountpoint exists and NFS subdataset is mounted (idempotent)."""
+    mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
+    ok, err = _run_cmd(["sudo", "mkdir", "-p", mountpoint])
+    if not ok:
+        return f"Failed to create mountpoint {mountpoint}: {err}"
+
+    ok, mounts_out = _run_cmd(["mount"])
+    if not ok:
+        return f"Failed to read current mounts: {mounts_out}"
+    if f" {mountpoint} " not in f" {mounts_out} ":
+        # Not mounted yet; mount it
+        source = f"{NFS_EXPORT_CLIENT}:/datapool/users/{storage_uid}"
+        ok, out = _run_cmd(["sudo", "mount", "-t", "nfs4", source, mountpoint], timeout=20)
+        if not ok:
+            return f"Failed to mount {source} on {mountpoint}: {out}"
+    return None
+
+
+def _ensure_fstab_line(storage_uid: str) -> Optional[str]:
+    """Ensure /etc/fstab has an entry for this NFS mount (idempotent)."""
+    mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
+    source = f"{NFS_EXPORT_CLIENT}:/datapool/users/{storage_uid}"
+    fstab_line = f"{source} {mountpoint} nfs4 defaults 0 0"
+    grep_pattern = f"{source} {mountpoint} "
+    ok, _ = _run_cmd(
+        [
+            "sudo",
+            "bash",
+            "-lc",
+            f"grep -q '{grep_pattern}' {FSTAB_PATH} 2>/dev/null || echo '{fstab_line}' >> {FSTAB_PATH}",
+        ]
+    )
+    if not ok:
+        return f"Failed to update {FSTAB_PATH} for {storage_uid}"
+    return None
+
+
+def reconcile_nfs_for(storage_uid: str) -> Optional[str]:
+    """
+    Ensure NFS export, mount, and fstab entry exist for this storage_uid.
+    Returns None on success, or an error string.
+    """
+    err = _ensure_exports_line(storage_uid)
+    if err:
+        return err
+    err = _ensure_mount(storage_uid)
+    if err:
+        return err
+    err = _ensure_fstab_line(storage_uid)
+    if err:
+        return err
+    return None
+
+
+def post_verify_provisioned(storage_uid: str, quota_gb: int) -> Optional[str]:
+    """Verify dataset exists and has the expected quota. Returns None if ok, else error message."""
+    dataset = f"datapool/users/{storage_uid}"
+    ok, out = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+    if not ok:
+        return f"Verification failed: dataset not found or inaccessible"
+    out = out.strip()
+    # Accept XG format or exact bytes (quota_gb * 1024**3)
+    expected_gb = f"{quota_gb}G"
+    expected_bytes = str(quota_gb * (1024 ** 3))
+    if out != expected_gb and out != expected_bytes:
+        return f"Verification failed: quota mismatch (got {out}, expected {expected_gb})"
+    return None
+
+
+def run_provision_script(storage_uid: str, quota_gb: int, storage_backend: str = "zfs_dataset") -> tuple[int, str]:
+    """Run provision script with sudo; return (exit_code, stderr_or_stdout)."""
+    cmd = ["sudo", SCRIPT_PATH, storage_uid, str(quota_gb)]
+    if storage_backend != "zfs_dataset":
+        cmd += ["--storage-backend", storage_backend]
+    timeout = 60 if storage_backend == "zfs_zvol" else 30  # zvol needs more time (mkfs)
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode, (result.stderr or result.stdout or "").strip()
+    except FileNotFoundError:
+        return -1, f"Script not found: {SCRIPT_PATH}"
+    except subprocess.TimeoutExpired:
+        return -2, f"Script timed out ({timeout}s)"
+    except Exception as e:
+        return -3, str(e)
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Return 200 if service is up and ZFS pool is available."""
+    try:
+        subprocess.run(
+            ["zpool", "list", "-H", "datapool"],
+            capture_output=True,
+            timeout=5,
+            check=True,
+        )
+        return "", 200
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return jsonify(error="ZFS pool datapool not available"), 503
+
+
+@app.route("/provision", methods=["POST"])
+def provision():
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+    quota_gb = data.get("quotaGb", REQUIRED_QUOTA_GB)
+    storage_backend = data.get("storageBackend", "zfs_dataset")
+
+    # Validate storageBackend
+    if storage_backend not in ("zfs_dataset", "zfs_zvol"):
+        log_event(request_id, client_ip, storage_uid, "failed", "Invalid storageBackend")
+        return jsonify(error="storageBackend must be 'zfs_dataset' or 'zfs_zvol'"), 400
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+    if not isinstance(quota_gb, (int, float)) or not (QUOTA_GB_MIN <= quota_gb <= QUOTA_GB_MAX):
+        log_event(request_id, client_ip, storage_uid, "failed", "Invalid quotaGb")
+        return jsonify(error="Invalid quotaGb"), 400
+
+    # Zvol backend requires STORAGE_IP for NVMe-oF target
+    if storage_backend == "zfs_zvol" and not STORAGE_IP:
+        log_event(request_id, client_ip, storage_uid, "failed", "STORAGE_IP not set for zvol backend")
+        return jsonify(error="STORAGE_IP env not configured â€” required for NVMe-oF target setup"), 500
+
+    # Convert to integer for ZFS commands
+    quota_gb_int = int(quota_gb)
+
+    # Pre-check: pool and parent dataset exist (no provision if ZFS not ready)
+    pre_err = pre_check_zfs_ready()
+    if pre_err:
+        log_event(request_id, client_ip, storage_uid, "failed", pre_err)
+        return jsonify(error=pre_err), 500
+
+    # Run provision script with storage_uid, quota_gb, and storage_backend
+    code, output = run_provision_script(storage_uid, quota_gb_int, storage_backend)
+    if code == 0:
+        if storage_backend == "zfs_dataset":
+            # Post-check: only report success to backend after verifying dataset and quota
+            verify_err = post_verify_provisioned(storage_uid, quota_gb_int)
+            if verify_err:
+                log_event(request_id, client_ip, storage_uid, "failed", verify_err)
+                return jsonify(error=verify_err), 500
+
+            # Optional: reconcile NFS export, mount, and fstab (single-host POC).
+            if NFS_AUTOMOUNT_ENABLED:
+                nfs_err = reconcile_nfs_for(storage_uid)
+                if nfs_err:
+                    log_event(request_id, client_ip, storage_uid, "failed", nfs_err)
+                    return jsonify(error=nfs_err), 500
+
+            log_event(request_id, client_ip, storage_uid, "success")
+            return jsonify(ok=True, path=f"/datapool/users/{storage_uid}"), 200
+
+        else:
+            # zfs_zvol: set up NVMe-oF target after successful zvol creation
+            zvol_path = f"/dev/zvol/datapool/users/{storage_uid}"
+            nvme_err = setup_nvmeof_target(storage_uid, zvol_path)
+            if nvme_err:
+                log_event(request_id, client_ip, storage_uid, "failed", f"NVMe-oF setup failed: {nvme_err}")
+                return jsonify(error=f"Zvol created but NVMe-oF target setup failed: {nvme_err}"), 500
+
+            # Save to persistence file
+            _add_nvmet_target_record(storage_uid, zvol_path)
+
+            log_event(request_id, client_ip, storage_uid, "success")
+            return jsonify(
+                ok=True,
+                path=zvol_path,
+                storageBackend="zfs_zvol",
+                nvmeSubsystem=f"laas-{storage_uid}",
+                nvmeTarget=f"{STORAGE_IP}:{NVMET_PORT_NUM}",
+            ), 200
+    if code == 1:
+        log_event(request_id, client_ip, storage_uid, "failed", output or "Invalid args")
+        return jsonify(error=output or "Invalid storageUid"), 400
+    if code == 2:
+        log_event(request_id, client_ip, storage_uid, "failed", output or "Insufficient space")
+        return jsonify(error=output or "Insufficient disk space"), 507
+    if code == -1:
+        log_event(request_id, client_ip, storage_uid, "failed", output)
+        return jsonify(error=output), 500
+    if code == -2:
+        log_event(request_id, client_ip, storage_uid, "failed", output)
+        return jsonify(error=output), 504
+    # code 3 or other
+    log_event(request_id, client_ip, storage_uid, "failed", output or f"Script exited with code {code}")
+    return jsonify(error=output or f"Storage system error (exit {code})"), 500
+
+
+def _remove_exports_line(storage_uid: str) -> Optional[str]:
+    """Remove /etc/exports line for this storage_uid (idempotent)."""
+    ok, _ = _run_cmd([
+        "sudo", "bash", "-lc",
+        f"sed -i '\\|^/datapool/users/{storage_uid} |d' {EXPORTS_PATH}"
+    ])
+    if not ok:
+        return f"Failed to clean {EXPORTS_PATH}"
+    ok, _ = _run_cmd(["sudo", "exportfs", "-ra"])
+    if not ok:
+        return "Failed to reload NFS exports"
+    return None
+
+
+def _remove_fstab_line(storage_uid: str) -> Optional[str]:
+    """Remove /etc/fstab line for this storage_uid (idempotent)."""
+    ok, _ = _run_cmd([
+        "sudo", "bash", "-lc",
+        f"sed -i '\\|{NFS_EXPORT_CLIENT}:/datapool/users/{storage_uid} |d' {FSTAB_PATH}"
+    ])
+    if not ok:
+        return f"Failed to clean {FSTAB_PATH}"
+    return None
+
+
+def cleanup_nfs_for(storage_uid: str) -> Optional[str]:
+    """
+    Remove NFS export, unmount, and fstab entry for this storage_uid.
+    Returns None on success, or an error string.
+    """
+    mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
+
+    # Unmount (ignore errors â€” may not be mounted)
+    _run_cmd(["sudo", "umount", mountpoint], timeout=15)
+
+    # Remove exports line
+    err = _remove_exports_line(storage_uid)
+    if err:
+        return err
+
+    # Remove fstab line
+    err = _remove_fstab_line(storage_uid)
+    if err:
+        return err
+
+    return None
+
+
+@app.route("/deprovision", methods=["POST"])
+def deprovision():
+    """
+    Deprovision (destroy) a user's ZFS storage dataset or zvol.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_...", "storageBackend": "zfs_dataset" | "zfs_zvol" }
+    
+    Steps:
+      1. Validate storageUid format
+      2. Check if dataset/zvol exists (idempotent: return success if not found)
+      3. If zfs_zvol: tear down NVMe-oF target first
+      4. If NFS_AUTOMOUNT_ENABLED and zfs_dataset: unmount, remove exports/fstab entries
+      5. Destroy ZFS dataset/zvol
+      6. Verify destruction
+      7. Clean up mount point directory / persistence record
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+    storage_backend = data.get("storageBackend", "zfs_dataset")
+
+    # Validate storageBackend
+    if storage_backend not in ("zfs_dataset", "zfs_zvol"):
+        return jsonify(error="storageBackend must be 'zfs_dataset' or 'zfs_zvol'"), 400
+
+    # Validate storageUid BEFORE any destructive action
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "deprovision_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Check if dataset/zvol exists (idempotent: if not found, return success)
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if not ok:
+        # Dataset doesn't exist â€” already deprovisioned
+        # Still clean up NVMe-oF persistence record if it exists
+        if storage_backend == "zfs_zvol":
+            _remove_nvmet_target_record(storage_uid)
+        log_event(request_id, client_ip, storage_uid, "deprovision_success", "Dataset already absent")
+        return jsonify(ok=True), 200
+
+    # If zfs_zvol: tear down NVMe-oF target first, then unmount the persistent zvol mount
+    if storage_backend == "zfs_zvol":
+        nvme_log(f"Deprovisioning zvol-backed storage for {storage_uid}")
+        nvme_err = teardown_nvmeof_target(storage_uid)
+        if nvme_err:
+            log_event(request_id, client_ip, storage_uid, "deprovision_failed", f"NVMe-oF teardown failed: {nvme_err}")
+            return jsonify(error=f"NVMe-oF target teardown failed: {nvme_err}"), 500
+
+        # Unmount the zvol from /datapool/users/{uid} before destroying
+        zvol_mount = f"/datapool/users/{storage_uid}"
+        ok_mount, _ = _run_cmd(["mountpoint", "-q", zvol_mount])
+        if ok_mount:
+            ok_umount, umount_err = _run_cmd(["sudo", "umount", zvol_mount], timeout=15)
+            if not ok_umount:
+                log_event(request_id, client_ip, storage_uid, "deprovision_failed", f"Failed to unmount zvol: {umount_err}")
+                return jsonify(error=f"Failed to unmount zvol at {zvol_mount}: {umount_err}"), 500
+            nvme_log(f"Unmounted zvol from {zvol_mount}")
+
+        # Remove fstab entry for this zvol mount
+        _run_cmd([
+            "sudo", "bash", "-lc",
+            f"sed -i '\|/datapool/users/{storage_uid} |d' {FSTAB_PATH}"
+        ])
+
+    # If NFS automount enabled and dataset backend, clean up NFS first
+    if storage_backend == "zfs_dataset" and NFS_AUTOMOUNT_ENABLED:
+        nfs_err = cleanup_nfs_for(storage_uid)
+        if nfs_err:
+            log_event(request_id, client_ip, storage_uid, "deprovision_failed", nfs_err)
+            return jsonify(error=nfs_err), 500
+
+    # Destroy ZFS dataset/zvol (30s timeout for large datasets)
+    # Use -f flag to force unmount and destroy even with snapshots
+    ok, out = _run_cmd(["sudo", "zfs", "destroy", "-f", dataset], timeout=30)
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "deprovision_failed", f"zfs destroy failed: {out}")
+        return jsonify(error=f"Failed to destroy dataset: {out}"), 500
+
+    # Verify destruction
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if ok:
+        # Dataset still exists after destroy â€” unexpected
+        log_event(request_id, client_ip, storage_uid, "deprovision_failed", "Dataset still exists after destroy")
+        return jsonify(error="Dataset destruction verification failed"), 500
+
+    # Clean up persistence / mount point
+    if storage_backend == "zfs_zvol":
+        _remove_nvmet_target_record(storage_uid)
+        # Remove the empty mount point directory
+        zvol_mount = f"/datapool/users/{storage_uid}"
+        _run_cmd(["sudo", "rmdir", zvol_mount])
+        nvme_log(f"Deprovision complete for zvol {storage_uid}")
+    elif NFS_AUTOMOUNT_ENABLED:
+        mountpoint = os.path.join(NFS_MOUNT_ROOT, storage_uid)
+        _run_cmd(["sudo", "rmdir", mountpoint])
+
+    log_event(request_id, client_ip, storage_uid, "deprovision_success")
+    return jsonify(ok=True), 200
+
+
+@app.route("/nvme/verify-target", methods=["POST"])
+def verify_nvme_target():
+    """
+    Check if a specific NVMe-oF subsystem is active and discoverable.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_..." }
+
+    Response:
+      {
+        "active": true/false,
+        "subsystem": "laas-u_...",
+        "device_path": "/dev/zvol/...",
+        "namespace_enabled": true/false,
+        "linked_to_port": true/false
+      }
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    subsystem_name = f"laas-{storage_uid}"
+    subsys_path = f"{NVMET_CONFIGFS}/subsystems/{subsystem_name}"
+    ns_path = f"{subsys_path}/namespaces/1"
+    symlink_target = f"{NVMET_PORT_PATH}/subsystems/{subsystem_name}"
+
+    # Check if subsystem directory exists
+    subsys_exists = os.path.isdir(subsys_path)
+
+    # Check device_path
+    device_path = None
+    if subsys_exists and os.path.exists(f"{ns_path}/device_path"):
+        device_path = _read_sysfs(f"{ns_path}/device_path")
+
+    # Check if namespace is enabled
+    ns_enabled = False
+    if subsys_exists and os.path.exists(f"{ns_path}/enable"):
+        enable_val = _read_sysfs(f"{ns_path}/enable")
+        ns_enabled = enable_val == "1" if enable_val else False
+
+    # Check if linked to port
+    linked_to_port = os.path.exists(symlink_target)
+
+    active = subsys_exists and ns_enabled and linked_to_port
+
+    return jsonify({
+        "active": active,
+        "subsystem": subsystem_name,
+        "device_path": device_path,
+        "namespace_enabled": ns_enabled,
+        "linked_to_port": linked_to_port,
+    }), 200
+
+@app.route("/host-space", methods=["GET"])
+def get_host_space():
+    """
+    Return available and total space in the datapool.
+    Public endpoint (no secret required) - called by backend API.
+
+    Response:
+      {
+        "availableBytes": 48534556672,
+        "totalBytes": 107374182400,
+        "availableGb": 45.2,
+        "totalGb": 100.0
+      }
+    """
+    # Get pool space info
+    ok, out = _run_cmd(["zpool", "list", "-p", "-o", "size,free", "datapool"])
+    if not ok:
+        return jsonify(error=f"Failed to get pool space: {out}"), 500
+
+    lines = out.strip().split("\n")
+    if len(lines) < 2:
+        return jsonify(error="Unexpected zpool output format"), 500
+
+    # Parse header and data
+    headers = lines[0].split()
+    values = lines[1].split()
+    size_idx = headers.index("SIZE") if "SIZE" in headers else 0
+    free_idx = headers.index("FREE") if "FREE" in headers else 1
+
+    total_bytes = _parse_zfs_size(values[size_idx])
+    free_bytes = _parse_zfs_size(values[free_idx])
+
+    return jsonify({
+        "availableBytes": free_bytes,
+        "totalBytes": total_bytes,
+        "availableGb": round(free_bytes / (1024 ** 3), 2),
+        "totalGb": round(total_bytes / (1024 ** 3), 2),
+    }), 200
+
+
+@app.route("/upgrade-storage", methods=["POST"])
+def upgrade_storage():
+    """
+    Upgrade storage quota for an existing dataset or zvol.
+    Detects dataset type automatically:
+      - ZFS dataset: uses zfs set quota= (instantaneous)
+      - ZFS zvol: uses zfs set volsize= + resize2fs (online resize)
+
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_...", "newQuotaGb": 10 }
+
+    Returns: { "ok": true, "storageUid": "...", "newQuotaGb": 10, "storageType": "zvol"|"dataset" }
+    On error: { "error": "..." }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+
+    storage_uid = data.get("storageUid") or ""
+    new_quota_gb = data.get("newQuotaGb")
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Validate newQuotaGb
+    if not isinstance(new_quota_gb, (int, float)) or not (1 <= new_quota_gb <= 50):
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Invalid newQuotaGb")
+        return jsonify(error="newQuotaGb must be between 1 and 50"), 400
+
+    new_quota_gb = int(new_quota_gb)
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Step 1: Check original dataset exists
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Dataset not found")
+        return jsonify(error="Dataset not found"), 404
+
+    # Step 2: Detect dataset type (filesystem vs volume/zvol)
+    ok_type, ds_type = _run_cmd(["zfs", "get", "-H", "-o", "value", "type", dataset])
+    if not ok_type:
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to detect dataset type")
+        return jsonify(error="Failed to detect dataset type"), 500
+    is_zvol = ds_type.strip() == "volume"
+
+    # Step 3: Get current size (quota for datasets, volsize for zvols)
+    if is_zvol:
+        ok, current_size_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "volsize", dataset])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to get current volsize")
+            return jsonify(error="Failed to get current volsize"), 500
+    else:
+        ok, current_size_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to get current quota")
+            return jsonify(error="Failed to get current quota"), 500
+
+    current_size_str = current_size_str.strip()
+    if current_size_str.lower() == "none":
+        current_size_gb = 0
+    else:
+        current_size_gb = _parse_zfs_size(current_size_str) / (1024 ** 3)
+
+    if new_quota_gb <= int(current_size_gb):
+        log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"newQuotaGb must be greater than current ({current_size_gb}GB)")
+        return jsonify(error=f"newQuotaGb ({new_quota_gb}) must be greater than current quota ({int(current_size_gb)}GB)"), 400
+
+    # Step 4: Upgrade using the appropriate method
+    if is_zvol:
+        # ZFS zvol: use volsize + resize2fs
+        # 4a. Increase the zvol size
+        ok, out = _run_cmd(["sudo", "zfs", "set", f"volsize={new_quota_gb}G", dataset], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Volsize update failed: {out}")
+            return jsonify(error=f"Failed to update volsize: {out}"), 500
+
+        # 4b. Brief delay for block device to reflect new size
+        time.sleep(1)
+
+        # 4c. Resize the ext4 filesystem online (works on a mounted filesystem)
+        zvol_dev = f"/dev/zvol/{dataset}"
+        ok, out = _run_cmd(["sudo", "resize2fs", zvol_dev], timeout=30)
+        if not ok:
+            # Attempt rollback to previous volsize
+            _run_cmd(["sudo", "zfs", "set", f"volsize={int(current_size_gb)}G", dataset])
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"resize2fs failed: {out}")
+            return jsonify(error=f"Failed to resize ext4 filesystem: {out}"), 500
+
+        # 4d. Verify the new volsize
+        ok, verify_size_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "volsize", dataset])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to verify new volsize")
+            return jsonify(error="Failed to verify new volsize"), 500
+
+        verify_size_str = verify_size_str.strip()
+        verify_size_gb = _parse_zfs_size(verify_size_str) / (1024 ** 3)
+
+        if abs(verify_size_gb - new_quota_gb) > 0.1:
+            # Rollback to old volsize
+            _run_cmd(["sudo", "zfs", "set", f"volsize={int(current_size_gb)}G", dataset])
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Volsize verification failed: expected {new_quota_gb}GB, got {verify_size_gb}GB")
+            return jsonify(error="Volsize verification failed, rolled back to original"), 500
+    else:
+        # ZFS dataset: use quota (existing behaviour)
+        ok, out = _run_cmd(["sudo", "zfs", "set", f"quota={new_quota_gb}G", dataset], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Quota update failed: {out}")
+            return jsonify(error=f"Failed to update quota: {out}"), 500
+
+        # Verify the new quota
+        ok, verify_quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", "Failed to verify new quota")
+            return jsonify(error="Failed to verify new quota"), 500
+
+        verify_quota_str = verify_quota_str.strip()
+        verify_size_gb = _parse_zfs_size(verify_quota_str) / (1024 ** 3)
+
+        if abs(verify_size_gb - new_quota_gb) > 0.1:
+            # Rollback to old quota
+            _run_cmd(["sudo", "zfs", "set", f"quota={int(current_size_gb)}G", dataset])
+            log_event(request_id, client_ip, storage_uid, "upgrade_failed", f"Quota verification failed: expected {new_quota_gb}GB, got {verify_size_gb}GB")
+            return jsonify(error="Quota verification failed, rolled back to original"), 500
+
+    log_event(request_id, client_ip, storage_uid, "upgrade_success", f"Upgraded from {int(current_size_gb)}GB to {new_quota_gb}GB ({'zvol' if is_zvol else 'dataset'})")
+    return jsonify({
+        "ok": True,
+        "storageUid": storage_uid,
+        "previousQuotaGb": int(current_size_gb),
+        "newQuotaGb": new_quota_gb,
+        "storageType": "zvol" if is_zvol else "dataset",
+    }), 200
+
+
+def _parse_zfs_size(value: str) -> int:
+    """
+    Parse a ZFS size string like '24K', '5.23G', '1234567890' into bytes as integer.
+    """
+    value = value.strip()
+    if not value:
+        return 0
+    # Try plain integer (bytes)
+    try:
+        return int(value)
+    except ValueError:
+        pass
+
+    match = re.match(r"^([\d.]+)([BKMGTPE])$", value.upper())
+    if not match:
+        return 0
+
+    number = float(match.group(1))
+    unit = match.group(2)
+    multipliers = {
+        "B": 1,
+        "K": 1024,
+        "M": 1024 ** 2,
+        "G": 1024 ** 3,
+        "T": 1024 ** 4,
+        "P": 1024 ** 5,
+        "E": 1024 ** 6,
+    }
+    return int(number * multipliers.get(unit, 1))
+
+
+# ---------------------------------------------------------------------------
+# Migration endpoints (snapshot → send → finalize → cleanup)
+# ---------------------------------------------------------------------------
+
+@app.route("/migrate-snapshot", methods=["POST"])
+def migrate_snapshot():
+    """
+    Create a ZFS snapshot for consistent point-in-time migration transfer.
+    Called on SOURCE node.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_xxx" }
+
+    If a @migrate snapshot already exists (from a prior failed migration),
+    it is destroyed first before creating a fresh one.
+
+    Response:
+      {
+        "ok": true,
+        "snapshotName": "datapool/users/u_xxx@migrate",
+        "usedBytes": 12345678,
+        "snapshotReferencedBytes": 67890,
+        "storageType": "zvol" | "dataset"
+      }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Check dataset/zvol exists
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Dataset not found")
+        return jsonify(error="Dataset not found"), 404
+
+    # Detect type
+    ok_type, ds_type = _run_cmd(["zfs", "get", "-H", "-o", "value", "type", dataset])
+    if not ok_type:
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to detect dataset type")
+        return jsonify(error="Failed to detect dataset type"), 500
+    is_zvol = ds_type.strip() == "volume"
+    storage_type = "zvol" if is_zvol else "dataset"
+
+    migrate_log(f"Creating migration snapshot for {dataset} (type={storage_type})")
+
+    # Get current used bytes
+    if is_zvol:
+        # For zvol: use df -B1 on the mount point (real ext4 usage)
+        mount_path = f"/datapool/users/{storage_uid}"
+        ok_df, df_out = _run_cmd(["df", "-B1", mount_path])
+        if not ok_df or not df_out.strip():
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to get zvol usage via df")
+            return jsonify(error="Failed to get zvol usage via df"), 500
+        df_lines = df_out.strip().split("\n")
+        if len(df_lines) < 2:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Unexpected df output")
+            return jsonify(error="Unexpected df output"), 500
+        df_parts = df_lines[1].split()
+        if len(df_parts) < 4:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Unexpected df output format")
+            return jsonify(error="Unexpected df output format"), 500
+        try:
+            used_bytes = int(df_parts[2])
+        except ValueError:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to parse df used bytes")
+            return jsonify(error="Failed to parse df used bytes"), 500
+    else:
+        # For dataset: zfs get used
+        ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", dataset])
+        if not ok_used:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to get dataset used bytes")
+            return jsonify(error="Failed to get dataset used bytes"), 500
+        used_bytes = _parse_zfs_size(used_str.strip())
+
+    # Create snapshot (destroy first if exists from prior failed migration)
+    snapshot_name = f"{dataset}@migrate"
+    ok_snap, _ = _run_cmd(["zfs", "list", "-t", "snapshot", snapshot_name])
+    if ok_snap:
+        migrate_log(f"Snapshot {snapshot_name} already exists from prior migration, destroying first")
+        ok_destroy, destroy_err = _run_cmd(["sudo", "zfs", "destroy", snapshot_name])
+        if not ok_destroy:
+            log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", f"Failed to destroy existing snapshot: {destroy_err}")
+            return jsonify(error=f"Failed to destroy existing snapshot: {destroy_err}"), 500
+
+    ok, out = _run_cmd(["sudo", "zfs", "snapshot", snapshot_name])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", f"Failed to create snapshot: {out}")
+        return jsonify(error=f"Failed to create snapshot: {out}"), 500
+
+    migrate_log(f"Created snapshot {snapshot_name}")
+
+    # Get snapshot referenced bytes
+    ok_ref, ref_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "referenced", snapshot_name])
+    if not ok_ref:
+        log_event(request_id, client_ip, storage_uid, "migrate_snapshot_failed", "Failed to get snapshot referenced bytes")
+        return jsonify(error="Failed to get snapshot referenced bytes"), 500
+    snapshot_referenced_bytes = _parse_zfs_size(ref_str.strip())
+
+    log_event(request_id, client_ip, storage_uid, "migrate_snapshot_success")
+    return jsonify({
+        "ok": True,
+        "snapshotName": snapshot_name,
+        "usedBytes": used_bytes,
+        "snapshotReferencedBytes": snapshot_referenced_bytes,
+        "storageType": storage_type,
+    }), 200
+
+
+@app.route("/migrate-send", methods=["POST"])
+def migrate_send():
+    """
+    Stream a ZFS snapshot to the target node via zfs send | ssh zfs receive.
+    Called on SOURCE node.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_xxx", "targetIp": "10.10.100.88", "targetUser": "zenith" }
+
+    Response:
+      { "ok": true, "durationSec": 45.2, "snapshotName": "datapool/users/u_xxx@migrate" }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+    target_ip = data.get("targetIp") or ""
+    target_user = data.get("targetUser", "zenith")
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Validate targetIp
+    if not IP_PATTERN.match(target_ip):
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", "Invalid targetIp format")
+        return jsonify(error="Invalid targetIp format"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+    snapshot_name = f"{dataset}@migrate"
+
+    # Verify snapshot exists
+    ok, _ = _run_cmd(["zfs", "list", "-t", "snapshot", snapshot_name])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", "Snapshot not found")
+        return jsonify(error="Snapshot not found — run /migrate-snapshot first"), 404
+
+    # Get snapshot size for timeout calculation
+    ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", snapshot_name])
+    if not ok_used:
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", "Failed to get snapshot size")
+        return jsonify(error="Failed to get snapshot size"), 500
+    snapshot_used_bytes = _parse_zfs_size(used_str.strip())
+    used_gb = snapshot_used_bytes / (1024 ** 3)
+
+    # Calculate timeout: max(300, used_gb * 30) seconds
+    timeout = max(300, int(used_gb * 30))
+    migrate_log(f"Sending {snapshot_name} to {target_user}@{target_ip} (size={used_gb:.2f}GB, timeout={timeout}s)")
+
+    # Execute the send/receive pipeline
+    cmd = (
+        f"sudo ionice -c2 -n7 zfs send -c {snapshot_name} | "
+        f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "
+        f"-c aes128-gcm@openssh.com "
+        f"{target_user}@{target_ip} "
+        f"sudo zfs receive -F {dataset}"
+    )
+
+    start_time = time.time()
+    try:
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+        )
+        duration = round(time.time() - start_time, 2)
+    except subprocess.TimeoutExpired:
+        duration = round(time.time() - start_time, 2)
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", f"Send/receive timed out ({timeout}s)")
+        return jsonify(error=f"Send/receive timed out ({timeout}s)"), 504
+    except Exception as e:
+        duration = round(time.time() - start_time, 2)
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", str(e))
+        return jsonify(error=f"Send/receive failed: {str(e)}"), 500
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        log_event(request_id, client_ip, storage_uid, "migrate_send_failed", f"Send/receive pipeline failed: {stderr}")
+        return jsonify(error=f"Send/receive pipeline failed: {stderr}"), 500
+
+    migrate_log(f"Send/receive complete for {snapshot_name} ({duration}s)")
+    log_event(request_id, client_ip, storage_uid, "migrate_send_success")
+    return jsonify({
+        "ok": True,
+        "durationSec": duration,
+        "snapshotName": snapshot_name,
+    }), 200
+
+
+@app.route("/migrate-finalize", methods=["POST"])
+def migrate_finalize():
+    """
+    Set up the received dataset/zvol on the TARGET node for use.
+    Called on TARGET node.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_xxx", "newQuotaGb": 10, "storageBackend": "zfs_zvol" }
+
+    Steps for zvol:
+      - Resize zvol, resize ext4, mount, fix permissions, remove lost+found,
+        add fstab entry, set up NVMe-oF target, verify mount
+    Steps for dataset:
+      - Set quota, verify mount, fix permissions
+
+    Response:
+      {
+        "ok": true,
+        "mountOk": true,
+        "usedBytes": 12345,
+        "permissionsOk": true,
+        "nvmeTarget": "10.10.100.88:4420"   // only for zvol
+      }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+    new_quota_gb = data.get("newQuotaGb", 10)
+    storage_backend = data.get("storageBackend", "zfs_zvol")
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Validate storageBackend
+    if storage_backend not in ("zfs_dataset", "zfs_zvol"):
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", "Invalid storageBackend")
+        return jsonify(error="storageBackend must be 'zfs_dataset' or 'zfs_zvol'"), 400
+
+    new_quota_gb = int(new_quota_gb)
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Verify dataset/zvol was received
+    ok, _ = _run_cmd(["zfs", "list", "-H", dataset])
+    if not ok:
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", "Dataset not found on target")
+        return jsonify(error="Dataset not found on target — was it received?"), 404
+
+    # Detect type
+    ok_type, ds_type = _run_cmd(["zfs", "get", "-H", "-o", "value", "type", dataset])
+    if not ok_type:
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", "Failed to detect dataset type")
+        return jsonify(error="Failed to detect dataset type"), 500
+    is_zvol = ds_type.strip() == "volume"
+    storage_type = "zvol" if is_zvol else "dataset"
+
+    migrate_log(f"Finalizing migration for {dataset} (type={storage_type})")
+
+    # Remove the @migrate snapshot on target (receive creates it)
+    snapshot_name = f"{dataset}@migrate"
+    ok_snap, _ = _run_cmd(["zfs", "list", "-t", "snapshot", snapshot_name])
+    if ok_snap:
+        ok_destroy, destroy_err = _run_cmd(["sudo", "zfs", "destroy", snapshot_name])
+        if not ok_destroy:
+            migrate_log(f"Warning: failed to destroy snapshot {snapshot_name}: {destroy_err}")
+        else:
+            migrate_log(f"Destroyed migration snapshot {snapshot_name}")
+
+    if is_zvol:
+        # Resize zvol
+        ok, out = _run_cmd(["sudo", "zfs", "set", f"volsize={new_quota_gb}G", dataset], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"Failed to set volsize: {out}")
+            return jsonify(error=f"Failed to set volsize: {out}"), 500
+
+        # Wait for block device
+        time.sleep(1)
+
+        # Resize ext4
+        zvol_dev = f"/dev/zvol/{dataset}"
+        ok, out = _run_cmd(["sudo", "resize2fs", zvol_dev], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"resize2fs failed: {out}")
+            return jsonify(error=f"resize2fs failed: {out}"), 500
+
+        # Mount
+        mount_path = f"/datapool/users/{storage_uid}"
+        ok, out = _run_cmd(["sudo", "mkdir", "-p", mount_path])
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"Failed to create mount point: {out}")
+            return jsonify(error=f"Failed to create mount point: {out}"), 500
+
+        ok_mount, mount_out = _run_cmd(["sudo", "mount", zvol_dev, mount_path], timeout=15)
+        if not ok_mount:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"Failed to mount zvol: {mount_out}")
+            return jsonify(error=f"Failed to mount zvol: {mount_out}"), 500
+
+        # Fix permissions
+        _run_cmd(["sudo", "chown", "-R", "1000:1000", mount_path])
+        _run_cmd(["sudo", "chmod", "-R", "u+rwX", mount_path])
+
+        # Remove lost+found
+        _run_cmd(["sudo", "rm", "-rf", f"{mount_path}/lost+found"])
+
+        # Add fstab entry (check if not already present)
+        fstab_line = f"{zvol_dev} {mount_path} ext4 defaults 0 0"
+        grep_pattern = f"{zvol_dev} {mount_path} "
+        ok, _ = _run_cmd([
+            "sudo", "bash", "-lc",
+            f"grep -q '{grep_pattern}' {FSTAB_PATH} 2>/dev/null || echo '{fstab_line}' >> {FSTAB_PATH}"
+        ])
+        if not ok:
+            migrate_log(f"Warning: failed to add fstab entry for {mount_path}")
+
+        # Set up NVMe-oF target
+        nvme_target = None
+        if STORAGE_IP:
+            nvme_err = setup_nvmeof_target(storage_uid, zvol_dev)
+            if nvme_err:
+                log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"NVMe-oF setup failed: {nvme_err}")
+                return jsonify(error=f"NVMe-oF target setup failed: {nvme_err}"), 500
+            _add_nvmet_target_record(storage_uid, zvol_dev)
+            nvme_target = f"{STORAGE_IP}:{NVMET_PORT_NUM}"
+        else:
+            migrate_log("Warning: STORAGE_IP not set, skipping NVMe-oF target setup")
+
+        # Verify mount
+        ok_mount_verify, _ = _run_cmd(["mountpoint", "-q", mount_path])
+        mount_ok = ok_mount_verify
+
+        # Get used bytes for response
+        used_bytes = 0
+        ok_df, df_out = _run_cmd(["df", "-B1", mount_path])
+        if ok_df and df_out.strip():
+            df_lines = df_out.strip().split("\n")
+            if len(df_lines) >= 2:
+                df_parts = df_lines[1].split()
+                if len(df_parts) >= 4:
+                    try:
+                        used_bytes = int(df_parts[2])
+                    except ValueError:
+                        pass
+
+        response = {
+            "ok": True,
+            "mountOk": mount_ok,
+            "usedBytes": used_bytes,
+            "permissionsOk": True,
+            "storageType": storage_type,
+        }
+        if nvme_target:
+            response["nvmeTarget"] = nvme_target
+
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_success")
+        return jsonify(response), 200
+
+    else:
+        # Dataset path
+        # Set quota
+        ok, out = _run_cmd(["sudo", "zfs", "set", f"quota={new_quota_gb}G", dataset], timeout=30)
+        if not ok:
+            log_event(request_id, client_ip, storage_uid, "migrate_finalize_failed", f"Failed to set quota: {out}")
+            return jsonify(error=f"Failed to set quota: {out}"), 500
+
+        # Verify mount
+        ok_mp, mp_val = _run_cmd(["zfs", "get", "-H", "-o", "value", "mountpoint", dataset])
+        mountpoint = mp_val.strip() if ok_mp else f"/{dataset}"
+
+        # Fix permissions
+        _run_cmd(["sudo", "chown", "1000:1000", mountpoint])
+
+        # Get used bytes
+        ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", dataset])
+        used_bytes = _parse_zfs_size(used_str.strip()) if ok_used else 0
+
+        log_event(request_id, client_ip, storage_uid, "migrate_finalize_success")
+        return jsonify({
+            "ok": True,
+            "mountOk": True,
+            "usedBytes": used_bytes,
+            "permissionsOk": True,
+            "storageType": storage_type,
+        }), 200
+
+
+@app.route("/migrate-cleanup", methods=["POST"])
+def migrate_cleanup():
+    """
+    Idempotent cleanup for migration rollback scenarios.
+    Called on SOURCE or TARGET node.
+    Requires X-Provision-Secret header.
+    Body: { "storageUid": "u_xxx", "action": "destroy_snapshot" | "destroy_all" }
+
+    - destroy_snapshot: Just removes @migrate snapshot if it exists
+    - destroy_all: Full deprovision — NVMe-oF teardown, unmount, remove fstab, zfs destroy -f
+
+    Always succeeds (idempotent) — logs warnings for individual step failures but doesn't error.
+    Response: { "ok": true }
+    """
+    request_id = request.headers.get("X-Request-Id", "")
+    client_ip = request.remote_addr or ""
+    storage_uid = ""
+
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+    storage_uid = data.get("storageUid") or ""
+    action = data.get("action", "destroy_snapshot")
+
+    # Validate storageUid
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        log_event(request_id, client_ip, storage_uid, "migrate_cleanup_failed", "Invalid storageUid format")
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Validate action
+    if action not in ("destroy_snapshot", "destroy_all"):
+        return jsonify(error="action must be 'destroy_snapshot' or 'destroy_all'"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+    snapshot_name = f"{dataset}@migrate"
+
+    migrate_log(f"Cleanup action={action} for {dataset}")
+
+    if action == "destroy_snapshot":
+        # Just remove the @migrate snapshot if it exists
+        ok_snap, _ = _run_cmd(["zfs", "list", "-t", "snapshot", snapshot_name])
+        if ok_snap:
+            ok_destroy, destroy_err = _run_cmd(["sudo", "zfs", "destroy", snapshot_name])
+            if not ok_destroy:
+                migrate_log(f"Warning: failed to destroy snapshot {snapshot_name}: {destroy_err}")
+            else:
+                migrate_log(f"Destroyed snapshot {snapshot_name}")
+        else:
+            migrate_log(f"Snapshot {snapshot_name} does not exist, nothing to clean up")
+
+    elif action == "destroy_all":
+        # Full deprovision — NVMe-oF teardown, unmount, remove fstab, zfs destroy -f
+
+        # 1. NVMe-oF teardown (ignore errors)
+        nvme_err = teardown_nvmeof_target(storage_uid)
+        if nvme_err:
+            migrate_log(f"Warning: NVMe-oF teardown failed: {nvme_err}")
+        _remove_nvmet_target_record(storage_uid)
+
+        # 2. Unmount (ignore errors)
+        mount_path = f"/datapool/users/{storage_uid}"
+        ok_mount, _ = _run_cmd(["mountpoint", "-q", mount_path])
+        if ok_mount:
+            ok_umount, umount_err = _run_cmd(["sudo", "umount", mount_path], timeout=15)
+            if not ok_umount:
+                migrate_log(f"Warning: failed to unmount {mount_path}: {umount_err}")
+            else:
+                migrate_log(f"Unmounted {mount_path}")
+
+        # 3. Remove fstab entry (ignore errors)
+        ok, _ = _run_cmd([
+            "sudo", "bash", "-lc",
+            f"sed -i '\\|/datapool/users/{storage_uid} |d' {FSTAB_PATH}"
+        ])
+        if not ok:
+            migrate_log(f"Warning: failed to clean fstab for {storage_uid}")
+
+        # 4. ZFS destroy -f (handles snapshots too)
+        ok, out = _run_cmd(["sudo", "zfs", "destroy", "-f", dataset], timeout=30)
+        if not ok:
+            migrate_log(f"Warning: zfs destroy failed: {out}")
+        else:
+            migrate_log(f"Destroyed dataset {dataset}")
+
+        # 5. Remove mount point directory
+        _run_cmd(["sudo", "rmdir", mount_path])
+
+    log_event(request_id, client_ip, storage_uid, "migrate_cleanup_success")
+    return jsonify(ok=True), 200
+
+
+@app.route("/storage/usage/<storage_uid>", methods=["GET"])
+def get_storage_usage(storage_uid: str):
+    """
+    Return live ZFS used/quota bytes for the given storageUid.
+    Requires X-Provision-Secret header.
+
+    Response:
+      {
+        "storageUid": "u_...",
+        "usedBytes": 24576000,
+        "quotaBytes": 5368709120,
+        "usedGb": 0.02,
+        "quotaGb": 5.0,
+        "usagePercent": 0.46,
+        "zfsDataset": "datapool/users/u_..."
+      }
+    On error (dataset not found / not provisioned): 404
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    dataset = f"datapool/users/{storage_uid}"
+
+    # Determine dataset type (filesystem vs volume/zvol)
+    ok_type, ds_type = _run_cmd(["zfs", "get", "-H", "-o", "value", "type", dataset])
+    is_zvol = ok_type and ds_type.strip() == "volume"
+
+    if is_zvol:
+        mount_path = f"/datapool/users/{storage_uid}"
+        zvol_dev = f"/dev/zvol/{dataset}"
+
+        # Ensure zvol is mounted before querying df (on-demand mount if needed)
+        ok_mount, _ = _run_cmd(["mountpoint", "-q", mount_path])
+        if not ok_mount:
+            if os.path.exists(zvol_dev):
+                os.makedirs(mount_path, exist_ok=True)
+                ok_mnt, mnt_err = _run_cmd(["sudo", "mount", zvol_dev, mount_path], timeout=15)
+                if not ok_mnt:
+                    return jsonify(error=f"Zvol not mounted and on-demand mount failed: {mnt_err}"), 503
+            else:
+                return jsonify(error=f"Zvol not found: {dataset}"), 404
+
+        # Get actual filesystem usage from df (block size = 1 byte)
+        ok_df, df_out = _run_cmd(["df", "-B1", mount_path])
+        if not ok_df or not df_out.strip():
+            return jsonify(error=f"Failed to get filesystem usage for zvol: {dataset}"), 500
+
+        df_lines = df_out.strip().split("\n")
+        if len(df_lines) < 2:
+            return jsonify(error=f"Unexpected df output for zvol: {dataset}"), 500
+
+        # Parse: Filesystem  1B-blocks  Used  Available  Use%  Mounted on
+        df_parts = df_lines[1].split()
+        if len(df_parts) < 4:
+            return jsonify(error=f"Unexpected df output for zvol: {dataset}"), 500
+
+        try:
+            quota_bytes = int(df_parts[1])  # total capacity
+            used_bytes = int(df_parts[2])   # actual used
+        except ValueError:
+            return jsonify(error=f"Failed to parse df output for zvol: {dataset}"), 500
+    else:
+        # Standard filesystem dataset path
+        # Get used bytes
+        ok_used, used_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "used", dataset])
+        if not ok_used or not used_str.strip():
+            return jsonify(error=f"Dataset not found or inaccessible: {dataset}"), 404
+        used_str = used_str.strip()
+
+        # Parse used bytes (zfs returns e.g. "24K", "5.23G", or bytes as integer)
+        used_bytes = _parse_zfs_size(used_str)
+
+        # Get quota bytes
+        ok_quota, quota_str = _run_cmd(["zfs", "get", "-H", "-o", "value", "quota", dataset])
+        if not ok_quota or not quota_str.strip():
+            return jsonify(error=f"Could not get quota for {dataset}"), 404
+        quota_str = quota_str.strip()
+
+        # Parse quota â€” "none" means no quota set, treat as 0
+        if quota_str.lower() == "none":
+            quota_bytes = 0
+        else:
+            quota_bytes = _parse_zfs_size(quota_str)
+
+    # Calculate derived values
+    used_gb = round(used_bytes / (1024 ** 3), 4)
+    quota_gb = round(quota_bytes / (1024 ** 3), 4) if quota_bytes > 0 else 0.0
+    usage_percent = round((used_bytes / quota_bytes) * 100, 2) if quota_bytes > 0 else 0.0
+
+    return jsonify({
+        "storageUid": storage_uid,
+        "usedBytes": used_bytes,
+        "quotaBytes": quota_bytes,
+        "usedGb": used_gb,
+        "quotaGb": quota_gb,
+        "usagePercent": usage_percent,
+        "zfsDataset": dataset,
+        "isZvol": is_zvol,
+    }), 200
+
+
+@app.route("/files/<storage_uid>", methods=["GET"])
+def list_files(storage_uid: str):
+    """
+    List files in the user's storage directory.
+    Requires X-Provision-Secret header.
+    Optional query param: ?path= for subdirectory navigation.
+
+    Response:
+      [
+        { "name": "file.txt", "type": "file", "size": 1234, "updatedAt": "2026-03-20T10:30:00Z" },
+        { "name": "folder", "type": "folder", "size": null, "updatedAt": "2026-03-20T10:30:00Z" },
+        ...
+      ]
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Build the base path
+    base_path = f"/datapool/users/{storage_uid}"
+
+    # If the base path doesn't exist, try on-demand mounting for zvols
+    if not os.path.exists(base_path):
+        zvol_dev = f"/dev/zvol/datapool/users/{storage_uid}"
+        if os.path.exists(zvol_dev):
+            # Zvol block device exists but isn't mounted â€” mount it now
+            try:
+                os.makedirs(base_path, exist_ok=True)
+                subprocess.run(["sudo", "mount", zvol_dev, base_path], check=True, timeout=15)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+                return jsonify(error=f"Failed to mount zvol on-demand: {e}"), 503
+        else:
+            return jsonify(error=f"Storage not found: {base_path}"), 404
+
+    # Get optional subdirectory path
+    subpath = request.args.get("path", "/").strip()
+    if subpath and subpath != "/":
+        # Sanitize path to prevent directory traversal
+        subpath = subpath.lstrip("/")
+        # Reject any path with .. or absolute paths
+        if ".." in subpath or subpath.startswith("/"):
+            return jsonify(error="Invalid path"), 400
+        target_path = os.path.join(base_path, subpath)
+    else:
+        target_path = base_path
+
+    # Normalize and verify the path is within the user's storage
+    target_path = os.path.normpath(target_path)
+    if not target_path.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    # Check if path exists
+    if not os.path.exists(target_path):
+        return jsonify(error=f"Path not found: {target_path}"), 404
+    
+    if not os.path.isdir(target_path):
+        return jsonify(error="Path is not a directory"), 400
+
+    # List files
+    files = []
+    try:
+        for entry_name in os.listdir(target_path):
+            # Skip system directories
+            if entry_name == 'lost+found':
+                continue
+            entry_path = os.path.join(target_path, entry_name)
+            try:
+                stat_info = os.stat(entry_path)
+                is_dir = os.path.isdir(entry_path)
+                updated_at = datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc).isoformat()
+                
+                files.append({
+                    "name": entry_name,
+                    "type": "folder" if is_dir else "file",
+                    "size": None if is_dir else stat_info.st_size,
+                    "updatedAt": updated_at,
+                })
+            except OSError:
+                # Skip files we can't stat
+                continue
+    except PermissionError:
+        return jsonify(error="Permission denied"), 403
+    except OSError as e:
+        return jsonify(error=str(e)), 500
+
+    # Sort: folders first, then files, alphabetically
+    files.sort(key=lambda x: (0 if x["type"] == "folder" else 1, x["name"].lower()))
+
+    return jsonify(files), 200
+
+
+@app.route("/files/<storage_uid>/mkdir", methods=["POST"])
+def create_folder(storage_uid: str):
+    """
+    Create a new folder in the user's storage directory.
+    Requires X-Provision-Secret header.
+    Body: { "path": "/", "folderName": "my-folder" }
+
+    Response:
+      { "success": true, "path": "/path/to/created/folder" }
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Parse body
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify(error="Invalid JSON body"), 400
+
+    path = data.get("path", "/").strip()
+    folder_name = data.get("folderName", "").strip()
+
+    if not folder_name:
+        return jsonify(error="folderName is required"), 400
+
+    # Sanitize: reject ".." in path and folderName
+    if ".." in path or ".." in folder_name:
+        return jsonify(error="Invalid path: directory traversal not allowed"), 400
+
+    # Build full path
+    base_path = f"/datapool/users/{storage_uid}"
+    path = path.lstrip("/")
+    if path:
+        target_dir = os.path.join(base_path, path, folder_name)
+    else:
+        target_dir = os.path.join(base_path, folder_name)
+
+    # Normalize and verify the path is within the user's storage
+    target_dir = os.path.normpath(target_dir)
+    if not target_dir.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    try:
+        os.makedirs(target_dir, exist_ok=False)
+        relative_path = target_dir.replace(base_path, "") or "/"
+        return jsonify(success=True, path=relative_path), 201
+    except FileExistsError:
+        return jsonify(error="Folder already exists"), 409
+    except PermissionError:
+        return jsonify(error="Permission denied"), 403
+    except OSError as e:
+        return jsonify(error=str(e)), 500
+
+
+@app.route("/files/<storage_uid>/upload", methods=["POST"])
+def upload_file(storage_uid: str):
+    """
+    Upload files to the user's storage directory.
+    Requires X-Provision-Secret header.
+    Multipart form data: 'files' (file field), 'path' (text field, default "/")
+
+    Response:
+      { "success": true, "uploaded": ["file1.txt", "file2.txt"] }
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Get path from form data
+    path = request.form.get("path", "/").strip()
+
+    # Sanitize path
+    if ".." in path:
+        return jsonify(error="Invalid path: directory traversal not allowed"), 400
+
+    # Build target directory
+    base_path = f"/datapool/users/{storage_uid}"
+    path = path.lstrip("/")
+    if path:
+        target_dir = os.path.join(base_path, path)
+    else:
+        target_dir = base_path
+
+    # Normalize and verify the path is within the user's storage
+    target_dir = os.path.normpath(target_dir)
+    if not target_dir.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    # Check if target directory exists
+    if not os.path.exists(target_dir):
+        return jsonify(error="Target directory does not exist"), 404
+
+    if not os.path.isdir(target_dir):
+        return jsonify(error="Target path is not a directory"), 400
+
+    # Get files from request
+    files = request.files.getlist("files")
+    if not files or len(files) == 0:
+        return jsonify(error="No files provided"), 400
+
+    uploaded = []
+    for file in files:
+        if file.filename:
+            # Use secure_filename to sanitize the filename
+            filename = secure_filename(file.filename)
+            if not filename:
+                continue
+
+            # Check for directory traversal in filename
+            if ".." in filename:
+                continue
+
+            file_path = os.path.join(target_dir, filename)
+
+            # Double-check path is within user storage
+            file_path = os.path.normpath(file_path)
+            if not file_path.startswith(base_path):
+                continue
+
+            try:
+                file.save(file_path)
+                uploaded.append(filename)
+            except IOError as e:
+                # Could be quota exceeded or disk full
+                return jsonify(error=f"Failed to save {filename}: {str(e)}"), 500
+
+    if not uploaded:
+        return jsonify(error="No valid files were uploaded"), 400
+
+    return jsonify(success=True, uploaded=uploaded), 200
+
+
+@app.route("/files/<storage_uid>/download", methods=["GET"])
+def download_file(storage_uid: str):
+    """
+    Download a file from the user's storage directory.
+    Requires X-Provision-Secret header.
+    Query param: ?file=relative/path/to/file.txt
+
+    Returns: Binary file stream
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Get file path from query params
+    file_path = request.args.get("file", "").strip()
+    if not file_path:
+        return jsonify(error="file parameter is required"), 400
+
+    # Sanitize: reject ".."
+    if ".." in file_path:
+        return jsonify(error="Invalid path: directory traversal not allowed"), 400
+
+    # Build full path
+    base_path = f"/datapool/users/{storage_uid}"
+    file_path = file_path.lstrip("/")
+    full_path = os.path.join(base_path, file_path)
+
+    # Normalize and verify the path is within the user's storage
+    full_path = os.path.normpath(full_path)
+    if not full_path.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    # Check if file exists
+    if not os.path.exists(full_path):
+        return jsonify(error="File not found"), 404
+
+    if os.path.isdir(full_path):
+        return jsonify(error="Cannot download a directory"), 400
+
+    # Get just the filename for the download
+    filename = os.path.basename(full_path)
+
+    try:
+        return send_file(full_path, as_attachment=True, download_name=filename)
+    except PermissionError:
+        return jsonify(error="Permission denied"), 403
+    except OSError as e:
+        return jsonify(error=str(e)), 500
+
+
+@app.route("/files/<storage_uid>/delete", methods=["DELETE"])
+def delete_file(storage_uid: str):
+    """
+    Delete a file or folder from the user's storage directory.
+    Requires X-Provision-Secret header.
+    Query param: ?file=relative/path/to/file.txt
+
+    Response:
+      { "success": true }
+    """
+    # Auth
+    if not PROVISION_SECRET:
+        return jsonify(error="Provision service misconfigured (no PROVISION_SECRET)"), 500
+    secret = request.headers.get("X-Provision-Secret")
+    if secret != PROVISION_SECRET:
+        return jsonify(error="Unauthorized"), 401
+
+    if not STORAGE_UID_PATTERN.match(storage_uid):
+        return jsonify(error="Invalid storageUid format"), 400
+
+    # Get file path from query params
+    file_path = request.args.get("file", "").strip()
+    if not file_path:
+        return jsonify(error="file parameter is required"), 400
+
+    # Sanitize: reject ".."
+    if ".." in file_path:
+        return jsonify(error="Invalid path: directory traversal not allowed"), 400
+
+    # Build full path
+    base_path = f"/datapool/users/{storage_uid}"
+    file_path = file_path.lstrip("/")
+    full_path = os.path.join(base_path, file_path)
+
+    # Normalize and verify the path is within the user's storage
+    full_path = os.path.normpath(full_path)
+    if not full_path.startswith(base_path):
+        return jsonify(error="Access denied: path outside user storage"), 403
+
+    # Prevent deleting the root storage directory
+    if full_path == base_path:
+        return jsonify(error="Cannot delete root storage directory"), 400
+
+    # Check if file/folder exists
+    if not os.path.exists(full_path):
+        return jsonify(error="File or folder not found"), 404
+
+    try:
+        if os.path.isdir(full_path):
+            shutil.rmtree(full_path)
+        else:
+            os.remove(full_path)
+        return jsonify(success=True), 200
+    except PermissionError:
+        return jsonify(error="Permission denied"), 403
+    except OSError as e:
+        return jsonify(error=str(e)), 500
+
+
+if __name__ == "__main__":
+    if not PROVISION_SECRET:
+        print("PROVISION_SECRET is not set; service will return 500 on provision.", file=sys.stderr)
+    if STORAGE_IP:
+        print(f"{NVME_LOG_PREFIX} STORAGE_IP={STORAGE_IP}, NVMe-oF target support enabled", flush=True)
+        rebuild_nvmet_targets_on_startup()
+    else:
+        print(f"{NVME_LOG_PREFIX} STORAGE_IP not set â€” NVMe-oF target support disabled", flush=True)
+    port = int(os.environ.get("PORT", "9999"))
+    app.run(host="0.0.0.0", port=port, threaded=True)
